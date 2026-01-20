@@ -1,0 +1,2 @@
+# Test chained operations
+(add (add (suc zero) (suc zero)) (add zero (suc zero)))

@@ -1,0 +1,2 @@
+# Test static optimization
+(add zero (suc (suc zero)))

@@ -1,0 +1,3 @@
+# Test deduplication and cache
+(add (suc zero) (suc zero))
+(add (suc zero) (suc zero))

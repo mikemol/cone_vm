@@ -1,0 +1,2 @@
+# Test deeply nested SUC
+(suc (suc (suc (suc zero))))
