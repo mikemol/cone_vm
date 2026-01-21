@@ -87,3 +87,21 @@ def test_cycle_candidates_add_suc():
     assert int(ledger.arg2[next_id]) == int(y_id)
     assert int(stratum.start) == start_count
     assert int(stratum.count) == 1
+
+
+def test_cycle_candidates_noop_on_suc():
+    _require_cycle_candidates()
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([1], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    frontier = jnp.array([suc_ids[0]], dtype=jnp.int32)
+    start_count = int(ledger.count)
+    ledger, next_frontier, stratum = pv.cycle_candidates(ledger, frontier)
+    assert int(next_frontier.shape[0]) == 1
+    assert int(next_frontier[0]) == int(suc_ids[0])
+    assert int(stratum.start) == start_count
+    assert int(stratum.count) == 0

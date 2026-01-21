@@ -165,13 +165,17 @@ def emit_candidates(ledger, frontier_ids):
 
     return CandidateBuffer(enabled=enabled, opcode=opcode, arg1=arg1, arg2=arg2)
 
-def compact_candidates(candidates):
-    enabled = candidates.enabled.astype(jnp.int32)
-    count = jnp.sum(enabled).astype(jnp.int32)
+def _candidate_perm(enabled):
+    enabled = enabled.astype(jnp.int32)
     size = enabled.shape[0]
     idx = jnp.arange(size, dtype=jnp.int32)
     sort_key = (1 - enabled) * (size + 1) + idx
-    perm = jnp.argsort(sort_key)
+    return jnp.argsort(sort_key).astype(jnp.int32)
+
+def compact_candidates(candidates):
+    enabled = candidates.enabled.astype(jnp.int32)
+    count = jnp.sum(enabled).astype(jnp.int32)
+    perm = _candidate_perm(enabled)
 
     compacted = CandidateBuffer(
         enabled=enabled[perm],
@@ -205,18 +209,25 @@ def validate_stratum_no_within_refs(ledger, stratum):
 def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     candidates = emit_candidates(ledger, frontier_ids)
     start = ledger.count.astype(jnp.int32)
-    ids, new_ledger, count = intern_candidates(ledger, candidates)
-    count_int = int(count)
-    if count_int == 0:
-        ids = jnp.zeros((0,), dtype=jnp.int32)
+    ids_compact, new_ledger, count = intern_candidates(ledger, candidates)
+    enabled = candidates.enabled.astype(jnp.int32)
+    perm = _candidate_perm(enabled)
+    inv_perm = _invert_perm(perm)
+    ids_full = ids_compact[inv_perm]
+    num_frontier = frontier_ids.shape[0]
+    if num_frontier == 0:
+        next_frontier = frontier_ids
     else:
-        ids = ids[:count_int]
+        idx0 = jnp.arange(num_frontier, dtype=jnp.int32) * 2
+        slot0_ids = ids_full[idx0]
+        enable0 = enabled[idx0] != 0
+        next_frontier = jnp.where(enable0, slot0_ids, frontier_ids)
     new_count = (new_ledger.count - start).astype(jnp.int32)
     stratum = Stratum(start=start, count=new_count)
     if validate_stratum:
         if not validate_stratum_no_within_refs(new_ledger, stratum):
             raise ValueError("Stratum contains within-tier references")
-    return new_ledger, ids, stratum
+    return new_ledger, next_frontier, stratum
 
 @jit
 def op_rank(arena):
