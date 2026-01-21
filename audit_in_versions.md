@@ -220,3 +220,25 @@ Methodology:
     - Only in in/in-10: cd, aggregation, parity, tree, adjacency, aggregate, coordinates, cut, elimination, idempotent, space, address
     - Only in IMPLEMENTATION_PLAN.md: tests, expected, add, null, pytest, program, txt, implement, implementation, tasks, baseline, cycle
   - Wedge product (bigram intersection): 10 | top: arg1 arg2, rank sort, opcode arg1, sort swizzle, normal form, op_add op_mul, rewrite rules, candidate emission, semantics explicit, swizzle morton
+
+## in/in-11.md
+- Unique tokens: 288
+- Unique bigrams: 451
+- Prior version: in/in-10.md
+  - Intersection: 116 | top: cd, coordinate, aggregation, parity, xor, milestone, coordinates, local, tree, x, new, ledger
+  - Symmetric difference: 431 (only in in/in-11.md: 172, only in in/in-10.md: 259)
+    - Only in in/in-11: op_coord_zero, exactly, interned, program, self, vm, already, arithmetic, coord_ptr, p, recursion, structural
+    - Only in in/in-10: explicit, frontier, adjacency, aggregate, diff, addressed, aggregates, changes, code, form, key, normalization
+  - Wedge product (bigram intersection): 31 | top: cd coordinate, cayley dickson, cd coordinates, cut elimination, address space, arg1 arg2, canonicalization hook, equality pointer, finitely observable, local rewrite, pointer equality, x x
+- Compare: prism_vm.py
+  - Intersection: 40 | top: int32, self, ledger, size, opcode, arg1, arg2, a1, a2, op, vm, x
+  - Symmetric difference: 799 (only in in/in-11.md: 248, only in prism_vm.py: 551)
+    - Only in in/in-11: coordinate, xor, cd, now, text, coordinates, equality, op_coord_zero, parity, pointer, depth, exactly
+    - Only in prism_vm.py: jnp, arena, dtype, uint32, manifest, none, perm, morton, active_count, block_size, ptr, astype
+  - Wedge product (bigram intersection): 5 | top: a1 a2, op a1, arg1 arg2, opcode arg1, x x
+- Compare: IMPLEMENTATION_PLAN.md
+  - Intersection: 72 | top: program, coordinate, bsp, rewrite, new, x, cnf, nodes, now, pointer, strata, vm
+  - Symmetric difference: 681 (only in in/in-11.md: 216, only in IMPLEMENTATION_PLAN.md: 465)
+    - Only in in/in-11: xor, cd, text, coordinates, equality, ledger, op_coord_zero, parity, depth, interned, self, already
+    - Only in IMPLEMENTATION_PLAN.md: tests, expected, add, null, pytest, rank, txt, arena, sort, swizzle, implement, implementation
+  - Wedge product (bigram intersection): 5 | top: arg1 arg2, opcode arg1, rewrite rules, new opcodes, tier refs
