@@ -57,6 +57,10 @@ class CandidateBuffer(NamedTuple):
     arg1: jnp.ndarray
     arg2: jnp.ndarray
 
+class Stratum(NamedTuple):
+    start: jnp.ndarray
+    count: jnp.ndarray
+
 def init_manifest():
     return Manifest(
         opcode=jnp.zeros(MAX_ROWS, dtype=jnp.int32),
@@ -186,6 +190,18 @@ def intern_candidates(ledger, candidates):
     a2 = compacted.arg2[:count_int]
     ids, new_ledger = intern_nodes(ledger, ops, a1, a2)
     return ids, new_ledger, count
+
+
+def validate_stratum_no_within_refs(ledger, stratum):
+    start = int(stratum.start)
+    count = int(stratum.count)
+    if count <= 0:
+        return True
+    ids = jnp.arange(start, start + count, dtype=jnp.int32)
+    a1 = ledger.arg1[ids]
+    a2 = ledger.arg2[ids]
+    ok = jnp.all(a1 < start) & jnp.all(a2 < start)
+    return bool(ok)
 
 def cycle_candidates(ledger, frontier_ids):
     candidates = emit_candidates(ledger, frontier_ids)
