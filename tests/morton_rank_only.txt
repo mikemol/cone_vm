@@ -1,0 +1,1 @@
+# BSP morton null hypothesis: rank-only ordering matches morton when derived from index.
