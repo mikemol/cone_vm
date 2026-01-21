@@ -88,6 +88,50 @@ def op_sort_and_swizzle(arena):
     active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
     return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count)
 
+@jit
+def op_interact(arena):
+    ops = arena.opcode
+    a1 = arena.arg1
+    a2 = arena.arg2
+    is_hot = arena.rank == RANK_HOT
+    is_add = ops == OP_ADD
+    op_x = ops[a1]
+    is_zero = op_x == OP_ZERO
+    is_suc = op_x == OP_SUC
+    mask_zero = is_hot & is_add & is_zero
+    mask_suc = is_hot & is_add & is_suc
+
+    spawn_counts = jnp.where(mask_suc, 1, 0)
+    offsets = jnp.cumsum(spawn_counts) - spawn_counts
+    total_spawn = jnp.sum(spawn_counts).astype(jnp.int32)
+    base_free = arena.count
+    new_add_idx = base_free + offsets
+
+    grandchild_x = a1[a1]
+
+    new_ops = jnp.where(mask_suc, OP_SUC, ops)
+    new_a1 = jnp.where(mask_suc, new_add_idx, a1)
+    new_a2 = jnp.where(mask_suc, 0, a2)
+
+    y_op = ops[a2]
+    y_a1 = a1[a2]
+    y_a2 = a2[a2]
+    new_ops = jnp.where(mask_zero, y_op, new_ops)
+    new_a1 = jnp.where(mask_zero, y_a1, new_a1)
+    new_a2 = jnp.where(mask_zero, y_a2, new_a2)
+
+    safe_idx = jnp.where(mask_suc, new_add_idx, 0)
+    safe_op = jnp.where(mask_suc, OP_ADD, new_ops[0])
+    safe_a1 = jnp.where(mask_suc, grandchild_x, new_a1[0])
+    safe_a2 = jnp.where(mask_suc, a2, new_a2[0])
+
+    final_ops = new_ops.at[safe_idx].set(safe_op, mode="drop")
+    final_a1 = new_a1.at[safe_idx].set(safe_a1, mode="drop")
+    final_a2 = new_a2.at[safe_idx].set(safe_a2, mode="drop")
+
+    new_count = arena.count + total_spawn
+    return Arena(final_ops, final_a1, final_a2, arena.rank, new_count)
+
 # --- 3. JAX Kernels (Static) ---
 # --- 3. JAX Kernels (Static) ---
 @jit
