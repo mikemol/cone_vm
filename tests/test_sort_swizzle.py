@@ -1,0 +1,35 @@
+import jax.numpy as jnp
+
+import prism_vm as pv
+
+
+def _arena_with_edges():
+    arena = pv.init_arena()
+    arena = arena._replace(
+        opcode=arena.opcode.at[2].set(pv.OP_ADD).at[3].set(pv.OP_SUC),
+        arg1=arena.arg1.at[2].set(3).at[3].set(1),
+        arg2=arena.arg2.at[2].set(1).at[3].set(0),
+        rank=arena.rank.at[1].set(pv.RANK_COLD)
+        .at[2].set(pv.RANK_HOT)
+        .at[3].set(pv.RANK_COLD),
+        count=jnp.array(4, dtype=jnp.int32),
+    )
+    return arena
+
+
+def test_swizzle_preserves_edges():
+    assert hasattr(pv, "op_sort_and_swizzle"), "op_sort_and_swizzle missing"
+    arena = _arena_with_edges()
+    sorted_arena = pv.op_sort_and_swizzle(arena)
+    assert int(sorted_arena.opcode[0]) == pv.OP_ADD
+    assert int(sorted_arena.arg1[0]) == 2
+    assert int(sorted_arena.arg2[0]) == 1
+    assert int(sorted_arena.count) == 3
+
+
+def test_swizzle_null_pointer_stays_zero():
+    assert hasattr(pv, "op_sort_and_swizzle"), "op_sort_and_swizzle missing"
+    arena = _arena_with_edges()
+    sorted_arena = pv.op_sort_and_swizzle(arena)
+    assert int(sorted_arena.opcode[2]) == pv.OP_SUC
+    assert int(sorted_arena.arg2[2]) == 0

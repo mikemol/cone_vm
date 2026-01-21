@@ -1,0 +1,1 @@
+# BSP sort+swizzle: pointers should be remapped after stable rank sort.
