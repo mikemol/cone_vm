@@ -45,6 +45,21 @@ Disable sort in BSP mode:
 mise exec -- python prism_vm.py --mode bsp --no-sort tests/test_add_cache.txt
 ```
 
+Enable Morton ordering in BSP mode:
+```
+mise exec -- python prism_vm.py --mode bsp --morton tests/test_add_cache.txt
+```
+
+Enable block-local (hierarchical) sorting in BSP mode:
+```
+mise exec -- python prism_vm.py --mode bsp --block-size 256 tests/test_add_cache.txt
+```
+
+Benchmark compare matrix (baseline + BSP variants, CSV output):
+```
+mise exec -- python bench_compare.py --runs 3 --cycles 3 --out bench_results.csv
+```
+
 ## Testing
 Install pytest (once):
 ```
