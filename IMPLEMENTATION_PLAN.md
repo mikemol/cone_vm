@@ -221,3 +221,20 @@ Performance checks:
 - `prism_vm.py`: new `PrismVM_BSP` and arena ops.
 - `tests/`: new fixtures for cycle-based evaluation.
 - `README.md`: documented modes and expected behavior.
+
+## Roadmap Extension: in-8 Pivot (Tensor/Rule-Table Engine)
+This is a later-stage pivot that replaces or augments the BSP pipeline with a
+branchless interaction-combinator engine based on a NodeTypes/Ports/FreeStack
+layout and rule-table rewrites.
+
+Prereqs:
+- Complete M1 through M5 (BSP cycle verified and stable).
+- Decide whether this is a separate backend or a full replacement.
+- Settle port encoding (3 ports vs 4-slot encoding) and invariants.
+
+Planned steps (tests-first, pytest + program fixtures):
+- M6: Data model for NodeTypes/Ports/FreeStack and port encoding invariants.
+- M7: Active-pair matching + stream compaction (null: no active pairs).
+- M8: Rule table and wiring templates (annihilation/commutation/erasure).
+- M9: Allocation via prefix sums + FreeStack reuse/overflow guards.
+- M10: Match/alloc/rewire/commit kernel pipeline and end-to-end reductions.
