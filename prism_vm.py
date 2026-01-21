@@ -13,6 +13,7 @@ OP_SUC  = 2
 OP_ADD  = 10
 OP_MUL  = 11
 OP_SORT = 99
+ZERO_PTR = 1
 
 OP_NAMES = {
     0: "NULL", 1: "zero", 2: "suc",
@@ -135,7 +136,7 @@ def emit_candidates(ledger, frontier_ids):
     is_add_suc = (f_ops == OP_ADD) & (op_a1 == OP_SUC)
     enable0 = is_add_zero | is_mul_zero | is_add_suc
 
-    y_id = jnp.where(is_add_zero, f_a2, jnp.int32(1))
+    y_id = jnp.where(is_add_zero, f_a2, jnp.int32(ZERO_PTR))
     val_x = ledger.arg1[f_a1]
     val_y = f_a2
 
@@ -763,7 +764,7 @@ def cycle_intrinsic(ledger, frontier_ids):
 
     next_frontier = frontier_ids
     next_frontier = jnp.where(is_add_zero, f_a2, next_frontier)
-    next_frontier = jnp.where(is_mul_zero, jnp.int32(1), next_frontier)
+    next_frontier = jnp.where(is_mul_zero, jnp.int32(ZERO_PTR), next_frontier)
     next_frontier = jnp.where(is_add_suc, l1_ids, next_frontier)
     next_frontier = jnp.where(is_mul_suc, l2_ids, next_frontier)
     return ledger, next_frontier
@@ -843,7 +844,7 @@ def kernel_mul(manifest, ptr):
     ops, a1, a2, count = manifest.opcode, manifest.arg1, manifest.arg2, manifest.active_count
     init_x = a1[ptr]
     y = a2[ptr]
-    init_acc = jnp.array(1, dtype=jnp.int32)
+    init_acc = jnp.array(ZERO_PTR, dtype=jnp.int32)
     init_val = (init_x, init_acc, ops, a1, a2, count)
 
     def cond(v):
