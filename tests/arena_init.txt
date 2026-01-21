@@ -1,0 +1,2 @@
+# BSP arena init: zero should be seeded at index 1, count at 2.
+# No program operations yet (fixture for BSP harness).

@@ -1,0 +1,1 @@
+# BSP arena init null hypothesis: no operations, no allocations beyond seed.
