@@ -8,13 +8,17 @@ This plan implements the features described in `in/in-4.md`, `in/in-5.md`,
 - Introduce a fluid arena with rank-based sorting and pointer swizzling.
 - Add a 2-bit rank scheduler with stable locality guarantees.
 - Implement a rank/sort/swizzle/interaction cycle.
-- Add Morton or 2:1 BSP locality as a secondary ordering key.
+- Add Morton or 2:1 BSP locality as a secondary ordering key (staged).
+- Converge on CNF-2 symmetric rewrite semantics with a fixed-arity candidate
+  pipeline and explicit strata discipline.
 - Preserve a stable, testable baseline while the new mode is built out.
 
 ## Non-Goals (Initial MVP)
 - Full hierarchical arena migration across levels (L1/L2/global).
 - Perfect allocator for all graph rewrite rules beyond ADD.
 - Full macro system or higher-order quotation semantics.
+- Treating 2:1 locality as a semantic invariant before functional correctness
+  is locked down.
 
 ## Baseline Summary (Current Code)
 `prism_vm.py` uses a stable heap (`Manifest`) with:
@@ -27,6 +31,15 @@ This plan implements the features described in `in/in-4.md`, `in/in-5.md`,
 ## Architecture Decision
 Add a **new execution mode** (`PrismVM_BSP`) while keeping the existing VM.
 This protects the current behavior and makes cross-validation possible.
+
+## Semantic Commitments (Staged)
+- CNF-2 symmetric rewrite semantics are the target for BSP. Every rewrite site
+  emits exactly two candidate slots (enabled or disabled).
+- 2:1 BSP swizzle/locality is staged as a performance invariant:
+  - M1-M3: rank-only sort (or no sort) is acceptable for correctness tests.
+  - M4+: 2:1 swizzle is mandatory for the performance profile, but must not
+    change denotation (same canonical ids/decoded normal forms).
+- Baseline `PrismVM` remains the oracle for functional results through M3.
 
 ## Workstreams and Tasks (Tests-First Policy)
 For each step below:
@@ -90,6 +103,8 @@ Tasks:
   - Update `count` to number of non-FREE nodes.
 - Use `jax.numpy.argsort` initially.
 - Later: replace with 4-bin partition (prefix sums) for speed.
+- Staging note: rank-only sort is sufficient for M1-M3 correctness. 2:1
+  swizzle is optional until M4.
 
 ### 4) Interaction Kernel (Rewrite Rules)
 Objective: implement `op_interact` to handle ADD rewrites in the fluid model.
@@ -131,7 +146,26 @@ Tasks:
   - Optionally store root in a dedicated arena field.
 - Add a `run_cycles(n)` helper for benchmarking and tests.
 
-### 6) Morton / 2:1 BSP Locality
+### 6) CNF-2 Candidate Pipeline (Rewrite -> Compact -> Intern)
+Objective: enforce fixed-arity rewrite semantics and explicit strata discipline.
+
+Tests (before implementation):
+- Pytest: `test_cnf2_fixed_arity` (expected: exactly 2 candidate slots per site).
+- Pytest: `test_candidate_compaction_enabled_only` (null: disabled slots dropped).
+- Pytest: `test_strata_no_within_tier_refs` (expected: new nodes only reference
+  prior strata).
+- Program: `tests/cnf2_basic.txt` (expected: same normal form as baseline).
+
+Tasks:
+- Add a `CandidateBuffer` structure:
+  - `enabled`, `opcode`, `arg1`, `arg2` arrays sized to `2 * |frontier|`.
+- Implement CNF-2 rewrite emission (always two slots; predicates control enable).
+- Implement compaction (enabled mask + prefix sums).
+- Intern compacted candidates via `intern_nodes` (can be fused in M2).
+- Add a lightweight `Stratum` record (offset + count) for new ids, and validators
+  to enforce no within-stratum dependencies.
+
+### 7) Morton / 2:1 BSP Locality
 Objective: add the 2:1 BSP ordering as a secondary sort key.
 
 Tests (before implementation):
@@ -139,6 +173,8 @@ Tests (before implementation):
 - Pytest null: `test_morton_disabled_matches_rank_sort` (null: rank-only same).
 - Program: `tests/morton_order.txt` (expected: consistent ordering).
 - Program null: `tests/morton_rank_only.txt` (expected: identical to rank-only).
+ - Pytest: `test_morton_denotation_invariant` (expected: same decoded result with
+   and without 2:1 swizzle).
 
 Tasks:
 - Add `swizzle_2to1_dev(x, y)` (device) and `swizzle_2to1_host(...)` (host).
@@ -149,7 +185,7 @@ Tasks:
   - `sort_key = (rank << high_bits) | morton`.
 - Ensure stable ordering inside ranks when Morton keys collide.
 
-### 7) Hierarchical Arenas (Phase 2)
+### 8) Hierarchical Arenas (Phase 2)
 Objective: implement multi-level arenas to constrain shatter.
 
 Tests (before implementation):
@@ -164,7 +200,7 @@ Tasks:
 - Add metadata arrays for block offsets and free ranges.
 - This is a later milestone once fluid arena is correct.
 
-### 8) Parser, REPL, and Telemetry
+### 9) Parser, REPL, and Telemetry
 Objective: maintain usability and instrumentation.
 
 Tests (before implementation):
@@ -184,22 +220,29 @@ Tasks:
 - Provide debug hooks to compare results with the baseline VM.
 
 ## Milestones
-- **M1: Arena skeleton**
+- **M1: Correctness spine (eager canonicalization)**
   - `Arena`, `init_arena`, `op_rank` compile and run.
-- **M2: Sort + swizzle**
-  - Pointers remain valid after a cycle; no interaction yet.
-- **M3: Interaction kernel**
-  - ADD rewrites produce correct results for small terms.
-- **M4: Morton ordering**
-  - Add secondary key and validate locality claims.
+  - `cycle_intrinsic + intern_nodes` used as the BSP reference path.
+  - Tests: root remap, univalence/dedup.
+- **M2: CNF-2 surface (candidate buffer)**
+  - Two-slot candidate emission + compaction (intern can be fused).
+  - Tests: fixed arity, enabled-only compaction, baseline equivalence.
+- **M3: Strata discipline**
+  - Explicit stratum boundary with validators (no within-tier refs).
+  - Baseline remains strict oracle.
+- **M4: Performance semantics**
+  - Mandatory 2:1 swizzle/morton ordering.
+  - Denotation-invariance tests across swizzle modes.
 - **M5: Hierarchical arenas (optional)**
   - Local block sort and merge.
 
 ## Testing Plan
-Unit tests:
-- `op_sort_and_swizzle` preserves graph structure for fixed inputs.
-- `inv_perm[perm[i]] == i` for all valid indices.
-- `op_rank` classifies opcodes correctly.
+Unit tests (ordered by dependency):
+- Root remap correctness after any permutation/sort.
+- Strata discipline: newly created nodes only reference prior strata.
+- Lossless univalence/dedup (interning returns canonical ids).
+- CNF-2 fixed arity: two candidate slots per rewrite site.
+- 2:1 denotation invariance once swizzle is mandatory.
 
 Integration tests:
 - Compare baseline `PrismVM` eval vs `PrismVM_BSP` after N cycles for:
