@@ -64,6 +64,14 @@ def init_arena():
     )
     return arena
 
+@jit
+def op_rank(arena):
+    ops = arena.opcode
+    is_free = ops == OP_NULL
+    is_inst = ops >= 10
+    new_rank = jnp.where(is_free, RANK_FREE, jnp.where(is_inst, RANK_HOT, RANK_COLD))
+    return arena._replace(rank=new_rank.astype(jnp.int8))
+
 # --- 3. JAX Kernels (Static) ---
 # --- 3. JAX Kernels (Static) ---
 @jit
