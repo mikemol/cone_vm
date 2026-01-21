@@ -1,0 +1,1 @@
+# Baseline repl fixture: ensures default mode remains PrismVM.

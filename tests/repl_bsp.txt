@@ -1,0 +1,1 @@
+# BSP repl fixture: ensures mode selection can target BSP path.
