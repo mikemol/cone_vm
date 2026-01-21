@@ -89,6 +89,22 @@ def op_sort_and_swizzle(arena):
     return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count)
 
 @jit
+def op_sort_and_swizzle_with_perm(arena):
+    size = arena.rank.shape[0]
+    idx = jnp.arange(size, dtype=jnp.int32)
+    sort_key = arena.rank.astype(jnp.int32) * (size + 1) + idx
+    perm = jnp.argsort(sort_key)
+    inv_perm = jnp.argsort(perm)
+    new_ops = arena.opcode[perm]
+    new_arg1 = arena.arg1[perm]
+    new_arg2 = arena.arg2[perm]
+    new_rank = arena.rank[perm]
+    swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
+    swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
+    active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
+    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count), inv_perm
+
+@jit
 def op_interact(arena):
     ops = arena.opcode
     a1 = arena.arg1
@@ -131,6 +147,16 @@ def op_interact(arena):
 
     new_count = arena.count + total_spawn
     return Arena(final_ops, final_a1, final_a2, arena.rank, new_count)
+
+def cycle(arena, root_ptr, do_sort=True):
+    arena = op_rank(arena)
+    if do_sort:
+        arena, inv_perm = op_sort_and_swizzle_with_perm(arena)
+        root_arr = jnp.array(root_ptr, dtype=jnp.int32)
+        root_arr = jnp.where(root_arr != 0, inv_perm[root_arr], 0)
+        root_ptr = int(root_arr)
+    arena = op_interact(arena)
+    return arena, root_ptr
 
 # --- 3. JAX Kernels (Static) ---
 # --- 3. JAX Kernels (Static) ---
