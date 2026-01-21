@@ -27,7 +27,6 @@ def test_intern_candidates_compacts_enabled():
     ledger = pv.init_ledger()
     ids, new_ledger, count = pv.intern_candidates(ledger, candidates)
     assert int(count) == 2
-
     expected_ids, expected_ledger = pv.intern_nodes(
         ledger,
         jnp.array([pv.OP_MUL, pv.OP_SUC], dtype=jnp.int32),
@@ -35,7 +34,7 @@ def test_intern_candidates_compacts_enabled():
         jnp.array([8, 7], dtype=jnp.int32),
     )
     assert int(new_ledger.count) == int(expected_ledger.count)
-    assert bool(jnp.array_equal(ids, expected_ids))
+    assert bool(jnp.array_equal(ids[: int(count)], expected_ids))
 
 
 def test_intern_candidates_dedup():

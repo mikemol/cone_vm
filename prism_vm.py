@@ -183,12 +183,10 @@ def compact_candidates(candidates):
 
 def intern_candidates(ledger, candidates):
     compacted, count = compact_candidates(candidates)
-    count_int = int(count)
-    if count_int == 0:
-        return jnp.zeros((0,), dtype=jnp.int32), ledger, count
-    ops = compacted.opcode[:count_int]
-    a1 = compacted.arg1[:count_int]
-    a2 = compacted.arg2[:count_int]
+    enabled = compacted.enabled.astype(jnp.int32)
+    ops = jnp.where(enabled, compacted.opcode, jnp.int32(0))
+    a1 = jnp.where(enabled, compacted.arg1, jnp.int32(0))
+    a2 = jnp.where(enabled, compacted.arg2, jnp.int32(0))
     ids, new_ledger = intern_nodes(ledger, ops, a1, a2)
     return ids, new_ledger, count
 
@@ -207,7 +205,12 @@ def validate_stratum_no_within_refs(ledger, stratum):
 def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     candidates = emit_candidates(ledger, frontier_ids)
     start = ledger.count.astype(jnp.int32)
-    ids, new_ledger, _ = intern_candidates(ledger, candidates)
+    ids, new_ledger, count = intern_candidates(ledger, candidates)
+    count_int = int(count)
+    if count_int == 0:
+        ids = jnp.zeros((0,), dtype=jnp.int32)
+    else:
+        ids = ids[:count_int]
     new_count = (new_ledger.count - start).astype(jnp.int32)
     stratum = Stratum(start=start, count=new_count)
     if validate_stratum:
@@ -384,8 +387,7 @@ def _apply_perm_and_swizzle(arena, perm):
     new_rank = arena.rank[perm]
     swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
     swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
-    active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
-    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count), inv_perm
+    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, arena.count), inv_perm
 
 @jit
 def _op_sort_and_swizzle_with_perm_full(arena):
@@ -1159,7 +1161,13 @@ def run_program_lines_bsp(
         print(f"   └─ Result  : \033[92m{vm.decode(root_ptr_int)}\033[0m")
     return vm
 
-def repl(mode="baseline", use_morton=False, block_size=None, bsp_mode="intrinsic"):
+def repl(
+    mode="baseline",
+    use_morton=False,
+    block_size=None,
+    bsp_mode="intrinsic",
+    validate_stratum=False,
+):
     if mode == "bsp":
         vm = PrismVM_BSP()
         print("\n🔮 Prism IR Shell (BSP Ledger)")
@@ -1181,6 +1189,7 @@ def repl(mode="baseline", use_morton=False, block_size=None, bsp_mode="intrinsic
                     use_morton=use_morton,
                     block_size=block_size,
                     bsp_mode=bsp_mode,
+                    validate_stratum=validate_stratum,
                 )
             else:
                 run_program_lines([inp], vm)
@@ -1192,6 +1201,7 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     mode = "baseline"
     bsp_mode = "intrinsic"
+    validate_stratum = False
     cycles = 1
     do_sort = True
     use_morton = False
@@ -1222,6 +1232,15 @@ if __name__ == "__main__":
             continue
         if arg.startswith("--bsp-mode="):
             bsp_mode = arg.split("=", 1)[1]
+            i += 1
+            continue
+        if arg == "--validate-stratum":
+            validate_stratum = True
+            i += 1
+            continue
+        if arg.startswith("--validate-stratum="):
+            value = arg.split("=", 1)[1].strip().lower()
+            validate_stratum = value in ("1", "true", "yes", "on")
             i += 1
             continue
         if arg == "--no-sort":
@@ -1256,8 +1275,15 @@ if __name__ == "__main__":
                 use_morton=use_morton,
                 block_size=block_size,
                 bsp_mode=bsp_mode,
+                validate_stratum=validate_stratum,
             )
         else:
             run_program_lines(lines)
     else:
-        repl(mode=mode, use_morton=use_morton, block_size=block_size, bsp_mode=bsp_mode)
+        repl(
+            mode=mode,
+            use_morton=use_morton,
+            block_size=block_size,
+            bsp_mode=bsp_mode,
+            validate_stratum=validate_stratum,
+        )

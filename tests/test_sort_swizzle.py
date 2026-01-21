@@ -24,7 +24,7 @@ def test_swizzle_preserves_edges():
     assert int(sorted_arena.opcode[0]) == pv.OP_ADD
     assert int(sorted_arena.arg1[0]) == 2
     assert int(sorted_arena.arg2[0]) == 1
-    assert int(sorted_arena.count) == 3
+    assert int(sorted_arena.count) == int(arena.count)
 
 
 def test_swizzle_null_pointer_stays_zero():
