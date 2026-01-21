@@ -104,6 +104,61 @@ def op_sort_and_swizzle_with_perm(arena):
     active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
     return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count), inv_perm
 
+def swizzle_2to1_host(x, y):
+    z = 0
+    for i in range(10):
+        x0 = (x >> (2 * i)) & 1
+        x1 = (x >> (2 * i + 1)) & 1
+        y0 = (y >> i) & 1
+        z |= (x0 << (3 * i))
+        z |= (x1 << (3 * i + 1))
+        z |= (y0 << (3 * i + 2))
+    return z
+
+@jit
+def swizzle_2to1_dev(x, y):
+    x = x.astype(jnp.uint32)
+    y = y.astype(jnp.uint32)
+    z = jnp.zeros_like(x, dtype=jnp.uint32)
+
+    def body(i, val):
+        z_acc, x_in, y_in = val
+        x_bits = x_in & jnp.uint32(3)
+        y_bit = y_in & jnp.uint32(1)
+        chunk = (y_bit << 2) | x_bits
+        z_acc = z_acc | (chunk << (3 * i))
+        return (z_acc, x_in >> 2, y_in >> 1)
+
+    res, _, _ = lax.fori_loop(0, 10, body, (z, x, y))
+    return res
+
+@jit
+def op_morton(arena):
+    size = arena.opcode.shape[0]
+    idx = jnp.arange(size, dtype=jnp.uint32)
+    x = idx
+    y = jnp.zeros_like(idx)
+    return swizzle_2to1_dev(x, y)
+
+@jit
+def op_sort_and_swizzle_morton(arena, morton):
+    size = arena.rank.shape[0]
+    idx = jnp.arange(size, dtype=jnp.uint64)
+    rank_u = arena.rank.astype(jnp.uint64)
+    morton_u = morton.astype(jnp.uint64)
+    idx_u = idx & jnp.uint64(0xFFFF)
+    sort_key = (rank_u << 48) | (morton_u << 16) | idx_u
+    perm = jnp.argsort(sort_key)
+    inv_perm = jnp.argsort(perm)
+    new_ops = arena.opcode[perm]
+    new_arg1 = arena.arg1[perm]
+    new_arg2 = arena.arg2[perm]
+    new_rank = arena.rank[perm]
+    swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
+    swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
+    active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
+    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count)
+
 @jit
 def op_interact(arena):
     ops = arena.opcode
