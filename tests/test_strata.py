@@ -21,8 +21,9 @@ def test_stratum_no_within_refs_passes():
     frontier = jnp.array([add_ids[0]], dtype=jnp.int32)
     candidates = pv.emit_candidates(ledger, frontier)
     start = int(ledger.count)
-    _, new_ledger, count = pv.intern_candidates(ledger, candidates)
-    stratum = pv.Stratum(start=jnp.int32(start), count=count)
+    _, new_ledger, _ = pv.intern_candidates(ledger, candidates)
+    new_count = int(new_ledger.count) - start
+    stratum = pv.Stratum(start=jnp.int32(start), count=jnp.int32(new_count))
     assert pv.validate_stratum_no_within_refs(new_ledger, stratum)
 
 
@@ -35,6 +36,7 @@ def test_stratum_no_within_refs_detects_self_ref():
         arg1=jnp.array([start], dtype=jnp.int32),
         arg2=jnp.array([0], dtype=jnp.int32),
     )
-    _, new_ledger, count = pv.intern_candidates(ledger, candidates)
-    stratum = pv.Stratum(start=jnp.int32(start), count=count)
+    _, new_ledger, _ = pv.intern_candidates(ledger, candidates)
+    new_count = int(new_ledger.count) - start
+    stratum = pv.Stratum(start=jnp.int32(start), count=jnp.int32(new_count))
     assert not pv.validate_stratum_no_within_refs(new_ledger, stratum)

@@ -20,7 +20,7 @@ def _eval_bsp_candidates(expr, max_steps=32):
     frontier = jnp.array([root_ptr], dtype=jnp.int32)
     last = None
     for _ in range(max_steps):
-        vm.ledger, next_frontier = pv.cycle_candidates(vm.ledger, frontier)
+        vm.ledger, next_frontier, _ = pv.cycle_candidates(vm.ledger, frontier)
         if int(next_frontier.shape[0]) == 0:
             return vm.decode(int(frontier[0]))
         curr = int(next_frontier[0])

@@ -27,10 +27,13 @@ def test_cycle_candidates_add_zero():
         jnp.array([y_id], dtype=jnp.int32),
     )
     frontier = jnp.array([add_ids[0]], dtype=jnp.int32)
-    ledger, next_frontier = pv.cycle_candidates(ledger, frontier)
+    start_count = int(ledger.count)
+    ledger, next_frontier, stratum = pv.cycle_candidates(ledger, frontier)
     assert int(next_frontier.shape[0]) == 1
     assert int(next_frontier[0]) == int(y_id)
     assert pv.PrismVM_BSP().decode(int(next_frontier[0])) == pv.PrismVM_BSP().decode(int(y_id))
+    assert int(stratum.start) == start_count
+    assert int(stratum.count) == 0
 
 
 def test_cycle_candidates_mul_zero():
@@ -43,9 +46,12 @@ def test_cycle_candidates_mul_zero():
         jnp.array([1], dtype=jnp.int32),
     )
     frontier = jnp.array([mul_ids[0]], dtype=jnp.int32)
-    ledger, next_frontier = pv.cycle_candidates(ledger, frontier)
+    start_count = int(ledger.count)
+    ledger, next_frontier, stratum = pv.cycle_candidates(ledger, frontier)
     assert int(next_frontier.shape[0]) == 1
     assert int(next_frontier[0]) == 1
+    assert int(stratum.start) == start_count
+    assert int(stratum.count) == 0
 
 
 def test_cycle_candidates_add_suc():
@@ -72,9 +78,12 @@ def test_cycle_candidates_add_suc():
         jnp.array([y_id], dtype=jnp.int32),
     )
     frontier = jnp.array([add_ids[0]], dtype=jnp.int32)
-    ledger, next_frontier = pv.cycle_candidates(ledger, frontier)
+    start_count = int(ledger.count)
+    ledger, next_frontier, stratum = pv.cycle_candidates(ledger, frontier)
     assert int(next_frontier.shape[0]) == 1
     next_id = next_frontier[0]
     assert int(ledger.opcode[next_id]) == pv.OP_ADD
     assert int(ledger.arg1[next_id]) == 1
     assert int(ledger.arg2[next_id]) == int(y_id)
+    assert int(stratum.start) == start_count
+    assert int(stratum.count) == 1

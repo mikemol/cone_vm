@@ -204,10 +204,16 @@ def validate_stratum_no_within_refs(ledger, stratum):
     ok = jnp.all(a1 < start) & jnp.all(a2 < start)
     return bool(ok)
 
-def cycle_candidates(ledger, frontier_ids):
+def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     candidates = emit_candidates(ledger, frontier_ids)
+    start = ledger.count.astype(jnp.int32)
     ids, new_ledger, _ = intern_candidates(ledger, candidates)
-    return new_ledger, ids
+    new_count = (new_ledger.count - start).astype(jnp.int32)
+    stratum = Stratum(start=start, count=new_count)
+    if validate_stratum:
+        if not validate_stratum_no_within_refs(new_ledger, stratum):
+            raise ValueError("Stratum contains within-tier references")
+    return new_ledger, ids, stratum
 
 @jit
 def op_rank(arena):
@@ -1125,6 +1131,8 @@ def run_program_lines_bsp(
     l2_block_size=None,
     l1_block_size=None,
     do_global=False,
+    bsp_mode="intrinsic",
+    validate_stratum=False,
 ):
     if vm is None:
         vm = PrismVM_BSP()
@@ -1136,14 +1144,22 @@ def run_program_lines_bsp(
         root_ptr = vm.parse(tokens)
         frontier = jnp.array([root_ptr], dtype=jnp.int32)
         for _ in range(max(1, cycles)):
-            vm.ledger, frontier = cycle_intrinsic(vm.ledger, frontier)
+            if bsp_mode == "cnf2":
+                vm.ledger, next_frontier, _ = cycle_candidates(
+                    vm.ledger, frontier, validate_stratum=validate_stratum
+                )
+                if int(next_frontier.shape[0]) == 0:
+                    next_frontier = frontier
+                frontier = next_frontier
+            else:
+                vm.ledger, frontier = cycle_intrinsic(vm.ledger, frontier)
         root_ptr = frontier[0]
         root_ptr_int = int(root_ptr)
         print(f"   ├─ Ledger   : {int(vm.ledger.count)} nodes")
         print(f"   └─ Result  : \033[92m{vm.decode(root_ptr_int)}\033[0m")
     return vm
 
-def repl(mode="baseline", use_morton=False, block_size=None):
+def repl(mode="baseline", use_morton=False, block_size=None, bsp_mode="intrinsic"):
     if mode == "bsp":
         vm = PrismVM_BSP()
         print("\n🔮 Prism IR Shell (BSP Ledger)")
@@ -1160,7 +1176,11 @@ def repl(mode="baseline", use_morton=False, block_size=None):
             if not inp: continue
             if mode == "bsp":
                 run_program_lines_bsp(
-                    [inp], vm, use_morton=use_morton, block_size=block_size
+                    [inp],
+                    vm,
+                    use_morton=use_morton,
+                    block_size=block_size,
+                    bsp_mode=bsp_mode,
                 )
             else:
                 run_program_lines([inp], vm)
@@ -1171,6 +1191,7 @@ if __name__ == "__main__":
     import sys
     args = sys.argv[1:]
     mode = "baseline"
+    bsp_mode = "intrinsic"
     cycles = 1
     do_sort = True
     use_morton = False
@@ -1193,6 +1214,14 @@ if __name__ == "__main__":
             continue
         if arg.startswith("--cycles="):
             cycles = int(arg.split("=", 1)[1])
+            i += 1
+            continue
+        if arg == "--bsp-mode" and i + 1 < len(args):
+            bsp_mode = args[i + 1]
+            i += 2
+            continue
+        if arg.startswith("--bsp-mode="):
+            bsp_mode = arg.split("=", 1)[1]
             i += 1
             continue
         if arg == "--no-sort":
@@ -1226,8 +1255,9 @@ if __name__ == "__main__":
                 do_sort=do_sort,
                 use_morton=use_morton,
                 block_size=block_size,
+                bsp_mode=bsp_mode,
             )
         else:
             run_program_lines(lines)
     else:
-        repl(mode=mode, use_morton=use_morton, block_size=block_size)
+        repl(mode=mode, use_morton=use_morton, block_size=block_size, bsp_mode=bsp_mode)
