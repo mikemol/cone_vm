@@ -88,6 +88,27 @@ def op_sort_and_swizzle(arena):
     active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
     return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count)
 
+def op_sort_and_swizzle_blocked(arena, block_size):
+    size = int(arena.rank.shape[0])
+    if block_size <= 0 or size % block_size != 0:
+        raise ValueError("block_size must evenly divide arena size")
+    num_blocks = size // block_size
+    ranks = arena.rank.reshape((num_blocks, block_size))
+    idx = jnp.arange(block_size, dtype=jnp.int32)
+    sort_key = ranks.astype(jnp.int32) * (block_size + 1) + idx
+    perm_local = jnp.argsort(sort_key, axis=1)
+    base = (jnp.arange(num_blocks, dtype=jnp.int32) * block_size)[:, None]
+    perm = (base + perm_local).reshape((size,))
+    inv_perm = jnp.argsort(perm)
+    new_ops = arena.opcode[perm]
+    new_arg1 = arena.arg1[perm]
+    new_arg2 = arena.arg2[perm]
+    new_rank = arena.rank[perm]
+    swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
+    swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
+    active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
+    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count)
+
 @jit
 def op_sort_and_swizzle_with_perm(arena):
     size = arena.rank.shape[0]
