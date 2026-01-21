@@ -6,7 +6,7 @@ def test_repl_mode_switch():
     assert hasattr(pv, "PrismVM_BSP"), "PrismVM_BSP missing"
     vm = pv.make_vm("bsp")
     assert isinstance(vm, pv.PrismVM_BSP)
-    assert hasattr(vm, "arena")
+    assert hasattr(vm, "ledger")
 
 
 def test_repl_default_is_baseline():

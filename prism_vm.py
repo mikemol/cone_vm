@@ -2,6 +2,7 @@ from jax import jit, lax
 import jax
 import jax.numpy as jnp
 from typing import NamedTuple, Dict, Callable, Tuple
+import os
 import re
 import time
 
@@ -364,21 +365,74 @@ def op_sort_and_swizzle_blocked(arena, block_size, morton=None):
     )
     return sorted_arena
 
-@jit
-def op_sort_and_swizzle_with_perm(arena):
-    size = arena.rank.shape[0]
-    idx = jnp.arange(size, dtype=jnp.int32)
-    sort_key = arena.rank.astype(jnp.int32) * (size + 1) + idx
-    perm = jnp.argsort(sort_key)
-    inv_perm = jnp.argsort(perm)
-    new_ops = arena.opcode[perm]
-    new_arg1 = arena.arg1[perm]
-    new_arg2 = arena.arg2[perm]
-    new_rank = arena.rank[perm]
-    swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
-    swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
-    active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
-    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count), inv_perm
+def _apply_perm_to_morton(morton, inv_perm):
+    if morton is None:
+        return None
+    perm = _invert_perm(inv_perm)
+    return morton[perm]
+
+def _walk_block_sizes(start_block_size, size):
+    sizes = []
+    if start_block_size <= 0 or start_block_size >= size:
+        return sizes
+    block_size = start_block_size
+    while block_size < size:
+        next_block = block_size * 2
+        if next_block >= size:
+            sizes.append(size)
+            break
+        if size % next_block != 0:
+            sizes.append(size)
+            break
+        sizes.append(next_block)
+        block_size = next_block
+    return sizes
+
+def op_sort_and_swizzle_hierarchical_with_perm(
+    arena, l2_block_size, l1_block_size, morton=None, do_global=False
+):
+    size = int(arena.rank.shape[0])
+    if l2_block_size <= 0 or l1_block_size <= 0:
+        raise ValueError("block sizes must be positive")
+    if size % l2_block_size != 0 or size % l1_block_size != 0:
+        raise ValueError("block sizes must evenly divide arena size")
+    if l1_block_size % l2_block_size != 0:
+        raise ValueError("l1_block_size must be a multiple of l2_block_size")
+
+    arena, inv_perm = op_sort_and_swizzle_blocked_with_perm(
+        arena, l2_block_size, morton=morton
+    )
+    morton = _apply_perm_to_morton(morton, inv_perm)
+    inv_perm_total = inv_perm
+
+    if l1_block_size > l2_block_size:
+        arena, inv_perm_l1 = op_sort_and_swizzle_blocked_with_perm(
+            arena, l1_block_size, morton=morton
+        )
+        morton = _apply_perm_to_morton(morton, inv_perm_l1)
+        inv_perm_total = inv_perm_l1[inv_perm_total]
+
+    if do_global and l1_block_size < size:
+        for block_size in _walk_block_sizes(l1_block_size, size):
+            arena, inv_perm_global = op_sort_and_swizzle_blocked_with_perm(
+                arena, block_size, morton=morton
+            )
+            morton = _apply_perm_to_morton(morton, inv_perm_global)
+            inv_perm_total = inv_perm_global[inv_perm_total]
+
+    return arena, inv_perm_total
+
+def op_sort_and_swizzle_hierarchical(
+    arena, l2_block_size, l1_block_size, morton=None, do_global=False
+):
+    sorted_arena, _ = op_sort_and_swizzle_hierarchical_with_perm(
+        arena,
+        l2_block_size,
+        l1_block_size,
+        morton=morton,
+        do_global=do_global,
+    )
+    return sorted_arena
 
 def swizzle_2to1_host(x, y):
     z = 0
@@ -408,51 +462,108 @@ def swizzle_2to1_dev(x, y):
     res, _, _ = lax.fori_loop(0, 10, body, (z, x, y))
     return res
 
+def _build_pallas_swizzle(backend):
+    try:
+        import jax as jax_module
+        import jax.experimental.pallas as pl
+        if backend == "triton":
+            import jax.experimental.pallas.triton  # noqa: F401
+    except Exception:
+        return None
+
+    if jax_module.default_backend() == "cpu":
+        return None
+    if backend == "triton" and jax_module.default_backend() != "gpu":
+        return None
+
+    def kernel(x_ref, y_ref, out_ref):
+        x_val = x_ref[0].astype(jnp.uint32)
+        y_val = y_ref[0].astype(jnp.uint32)
+        z = jnp.uint32(0)
+        for i in range(10):
+            x_bits = x_val & jnp.uint32(3)
+            y_bit = y_val & jnp.uint32(1)
+            chunk = (y_bit << 2) | x_bits
+            z = z | (chunk << (3 * i))
+            x_val = x_val >> 2
+            y_val = y_val >> 1
+        out_ref[0] = z
+
+    def swizzle(x, y):
+        out_shape = jax_module.ShapeDtypeStruct(x.shape, jnp.uint32)
+        in_specs = [
+            pl.BlockSpec((1,), lambda i: (i,)),
+            pl.BlockSpec((1,), lambda i: (i,)),
+        ]
+        out_specs = pl.BlockSpec((1,), lambda i: (i,))
+        grid = (x.shape[0],)
+        return pl.pallas_call(
+            kernel,
+            out_shape=out_shape,
+            in_specs=in_specs,
+            out_specs=out_specs,
+            grid=grid,
+            backend="triton" if backend == "triton" else None,
+        )(x, y)
+
+    return swizzle
+
+_SWIZZLE_BACKEND = os.environ.get("PRISM_SWIZZLE_BACKEND", "jax").strip().lower()
+_SWIZZLE_ACCEL = None
+if _SWIZZLE_BACKEND in ("pallas", "triton"):
+    _SWIZZLE_ACCEL = _build_pallas_swizzle(_SWIZZLE_BACKEND)
+    if _SWIZZLE_ACCEL is None:
+        _SWIZZLE_BACKEND = "jax"
+
+def swizzle_2to1(x, y):
+    if _SWIZZLE_ACCEL is not None:
+        return _SWIZZLE_ACCEL(x, y)
+    return swizzle_2to1_dev(x, y)
+
 @jit
 def op_morton(arena):
     size = arena.opcode.shape[0]
     idx = jnp.arange(size, dtype=jnp.uint32)
     x = idx
     y = jnp.zeros_like(idx)
-    return swizzle_2to1_dev(x, y)
+    return swizzle_2to1(x, y)
 
 @jit
-def op_sort_and_swizzle_morton(arena, morton):
+def _op_sort_and_swizzle_morton_with_perm_full(arena, morton):
     size = arena.rank.shape[0]
     idx = jnp.arange(size, dtype=jnp.uint32)
     rank_u = arena.rank.astype(jnp.uint32)
     morton_u = morton.astype(jnp.uint32) & jnp.uint32(0x3FFF)
     idx_u = idx & jnp.uint32(0xFFFF)
     sort_key = (rank_u << 30) | (morton_u << 16) | idx_u
-    perm = jnp.argsort(sort_key)
-    inv_perm = jnp.argsort(perm)
-    new_ops = arena.opcode[perm]
-    new_arg1 = arena.arg1[perm]
-    new_arg2 = arena.arg2[perm]
-    new_rank = arena.rank[perm]
-    swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
-    swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
-    active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
-    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count)
+    perm = jnp.argsort(sort_key).astype(jnp.int32)
+    return _apply_perm_and_swizzle(arena, perm)
 
-@jit
+def _op_sort_and_swizzle_morton_with_perm_prefix(arena, morton, active_count):
+    size = arena.rank.shape[0]
+    if active_count <= 1:
+        perm = jnp.arange(size, dtype=jnp.int32)
+        return _apply_perm_and_swizzle(arena, perm)
+    idx = jnp.arange(active_count, dtype=jnp.uint32)
+    rank_u = arena.rank[:active_count].astype(jnp.uint32)
+    morton_u = morton[:active_count].astype(jnp.uint32) & jnp.uint32(0x3FFF)
+    idx_u = idx & jnp.uint32(0xFFFF)
+    sort_key = (rank_u << 30) | (morton_u << 16) | idx_u
+    perm_active = jnp.argsort(sort_key).astype(jnp.int32)
+    tail = jnp.arange(active_count, size, dtype=jnp.int32)
+    perm = jnp.concatenate([perm_active, tail], axis=0)
+    return _apply_perm_and_swizzle(arena, perm)
+
 def op_sort_and_swizzle_morton_with_perm(arena, morton):
+    active_count = _active_prefix_count(arena)
     size = arena.rank.shape[0]
-    idx = jnp.arange(size, dtype=jnp.uint32)
-    rank_u = arena.rank.astype(jnp.uint32)
-    morton_u = morton.astype(jnp.uint32) & jnp.uint32(0x3FFF)
-    idx_u = idx & jnp.uint32(0xFFFF)
-    sort_key = (rank_u << 30) | (morton_u << 16) | idx_u
-    perm = jnp.argsort(sort_key)
-    inv_perm = jnp.argsort(perm)
-    new_ops = arena.opcode[perm]
-    new_arg1 = arena.arg1[perm]
-    new_arg2 = arena.arg2[perm]
-    new_rank = arena.rank[perm]
-    swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
-    swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
-    active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
-    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count), inv_perm
+    if active_count >= size:
+        return _op_sort_and_swizzle_morton_with_perm_full(arena, morton)
+    return _op_sort_and_swizzle_morton_with_perm_prefix(arena, morton, active_count)
+
+def op_sort_and_swizzle_morton(arena, morton):
+    sorted_arena, _ = op_sort_and_swizzle_morton_with_perm(arena, morton)
+    return sorted_arena
 
 @jit
 def op_interact(arena):
@@ -462,49 +573,126 @@ def op_interact(arena):
     is_hot = arena.rank == RANK_HOT
     is_add = ops == OP_ADD
     op_x = ops[a1]
-    is_zero = op_x == OP_ZERO
-    is_suc = op_x == OP_SUC
-    mask_zero = is_hot & is_add & is_zero
-    mask_suc = is_hot & is_add & is_suc
+    mask_zero = is_hot & is_add & (op_x == OP_ZERO)
+    mask_suc = is_hot & is_add & (op_x == OP_SUC)
 
-    spawn_counts = jnp.where(mask_suc, 1, 0)
-    offsets = jnp.cumsum(spawn_counts) - spawn_counts
-    total_spawn = jnp.sum(spawn_counts).astype(jnp.int32)
-    base_free = arena.count
-    new_add_idx = base_free + offsets
-
-    grandchild_x = a1[a1]
-
-    new_ops = jnp.where(mask_suc, OP_SUC, ops)
-    new_a1 = jnp.where(mask_suc, new_add_idx, a1)
-    new_a2 = jnp.where(mask_suc, 0, a2)
-
+    # First: local rewrites that don't allocate.
     y_op = ops[a2]
     y_a1 = a1[a2]
     y_a2 = a2[a2]
-    new_ops = jnp.where(mask_zero, y_op, new_ops)
-    new_a1 = jnp.where(mask_zero, y_a1, new_a1)
-    new_a2 = jnp.where(mask_zero, y_a2, new_a2)
+    new_ops = jnp.where(mask_zero, y_op, ops)
+    new_a1 = jnp.where(mask_zero, y_a1, a1)
+    new_a2 = jnp.where(mask_zero, y_a2, a2)
 
-    safe_idx = jnp.where(mask_suc, new_add_idx, 0)
-    safe_op = jnp.where(mask_suc, OP_ADD, new_ops[0])
-    safe_a1 = jnp.where(mask_suc, grandchild_x, new_a1[0])
-    safe_a2 = jnp.where(mask_suc, a2, new_a2[0])
+    # Second: allocation for suc-case.
+    spawn = mask_suc.astype(jnp.int32)
+    offsets = jnp.cumsum(spawn) - spawn
+    total_spawn = jnp.sum(spawn).astype(jnp.int32)
+    base_free = arena.count
+    new_add_idx = base_free + offsets
 
-    final_ops = new_ops.at[safe_idx].set(safe_op, mode="drop")
-    final_a1 = new_a1.at[safe_idx].set(safe_a1, mode="drop")
-    final_a2 = new_a2.at[safe_idx].set(safe_a2, mode="drop")
+    new_ops = jnp.where(mask_suc, OP_SUC, new_ops)
+    new_a1 = jnp.where(mask_suc, new_add_idx, new_a1)
+    new_a2 = jnp.where(mask_suc, 0, new_a2)
 
-    new_count = arena.count + total_spawn
-    return Arena(final_ops, final_a1, final_a2, arena.rank, new_count)
+    # Scatter-create the spawned add nodes only where mask_suc is true.
+    idxs = jnp.where(mask_suc, new_add_idx, jnp.int32(-1))
+    grandchild_x = a1[a1]
+    payload_op = jnp.full_like(idxs, OP_ADD)
+    payload_a1 = grandchild_x
+    payload_a2 = a2
 
-def cycle(arena, root_ptr, do_sort=True, use_morton=False, block_size=None, morton=None):
+    valid = idxs >= 0
+    idxs2 = jnp.where(valid, idxs, 0)
+
+    final_ops = new_ops.at[idxs2].set(
+        jnp.where(valid, payload_op, new_ops[0]), mode="drop"
+    )
+    final_a1 = new_a1.at[idxs2].set(
+        jnp.where(valid, payload_a1, new_a1[0]), mode="drop"
+    )
+    final_a2 = new_a2.at[idxs2].set(
+        jnp.where(valid, payload_a2, new_a2[0]), mode="drop"
+    )
+
+    return Arena(final_ops, final_a1, final_a2, arena.rank, arena.count + total_spawn)
+
+@jit
+def cycle_intrinsic(ledger, frontier_ids):
+    f_ops = ledger.opcode[frontier_ids]
+    f_a1 = ledger.arg1[frontier_ids]
+    f_a2 = ledger.arg2[frontier_ids]
+
+    op_a1 = ledger.opcode[f_a1]
+    is_add_suc = (f_ops == OP_ADD) & (op_a1 == OP_SUC)
+    is_mul_suc = (f_ops == OP_MUL) & (op_a1 == OP_SUC)
+    is_add_zero = (f_ops == OP_ADD) & (op_a1 == OP_ZERO)
+    is_mul_zero = (f_ops == OP_MUL) & (op_a1 == OP_ZERO)
+
+    val_x = ledger.arg1[f_a1]
+    val_y = f_a2
+
+    l1_ops = jnp.zeros_like(f_ops)
+    l1_a1 = jnp.zeros_like(f_a1)
+    l1_a2 = jnp.zeros_like(f_a2)
+    l1_ops = jnp.where(is_add_suc, OP_ADD, l1_ops)
+    l1_a1 = jnp.where(is_add_suc, val_x, l1_a1)
+    l1_a2 = jnp.where(is_add_suc, val_y, l1_a2)
+    l1_ops = jnp.where(is_mul_suc, OP_MUL, l1_ops)
+    l1_a1 = jnp.where(is_mul_suc, val_x, l1_a1)
+    l1_a2 = jnp.where(is_mul_suc, val_y, l1_a2)
+
+    l1_ids, ledger = intern_nodes(ledger, l1_ops, l1_a1, l1_a2)
+
+    l2_ops = jnp.zeros_like(f_ops)
+    l2_a1 = jnp.zeros_like(f_a1)
+    l2_a2 = jnp.zeros_like(f_a2)
+    l2_ops = jnp.where(is_add_suc, OP_SUC, l2_ops)
+    l2_a1 = jnp.where(is_add_suc, l1_ids, l2_a1)
+    l2_ops = jnp.where(is_mul_suc, OP_ADD, l2_ops)
+    l2_a1 = jnp.where(is_mul_suc, val_y, l2_a1)
+    l2_a2 = jnp.where(is_mul_suc, l1_ids, l2_a2)
+
+    l2_ids, ledger = intern_nodes(ledger, l2_ops, l2_a1, l2_a2)
+
+    next_frontier = frontier_ids
+    next_frontier = jnp.where(is_add_zero, f_a2, next_frontier)
+    next_frontier = jnp.where(is_mul_zero, jnp.int32(1), next_frontier)
+    next_frontier = jnp.where(is_add_suc, l1_ids, next_frontier)
+    next_frontier = jnp.where(is_mul_suc, l2_ids, next_frontier)
+    return ledger, next_frontier
+
+def cycle(
+    arena,
+    root_ptr,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    morton=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+):
+    """Run one BSP cycle; keep root_ptr as a JAX scalar to avoid host sync."""
     arena = op_rank(arena)
+    root_arr = jnp.asarray(root_ptr, dtype=jnp.int32)
     if do_sort:
         morton_arr = None
         if use_morton or morton is not None:
             morton_arr = morton if morton is not None else op_morton(arena)
-        if block_size is not None:
+        if l2_block_size is not None or l1_block_size is not None:
+            if l2_block_size is None:
+                l2_block_size = l1_block_size
+            if l1_block_size is None:
+                l1_block_size = l2_block_size
+            arena, inv_perm = op_sort_and_swizzle_hierarchical_with_perm(
+                arena,
+                l2_block_size,
+                l1_block_size,
+                morton=morton_arr,
+                do_global=do_global,
+            )
+        elif block_size is not None:
             arena, inv_perm = op_sort_and_swizzle_blocked_with_perm(
                 arena, block_size, morton=morton_arr
             )
@@ -512,11 +700,9 @@ def cycle(arena, root_ptr, do_sort=True, use_morton=False, block_size=None, mort
             arena, inv_perm = op_sort_and_swizzle_morton_with_perm(arena, morton_arr)
         else:
             arena, inv_perm = op_sort_and_swizzle_with_perm(arena)
-        root_arr = jnp.array(root_ptr, dtype=jnp.int32)
         root_arr = jnp.where(root_arr != 0, inv_perm[root_arr], 0)
-        root_ptr = int(root_arr)
     arena = op_interact(arena)
-    return arena, root_ptr
+    return arena, root_arr
 
 # --- 3. JAX Kernels (Static) ---
 # --- 3. JAX Kernels (Static) ---
@@ -548,8 +734,37 @@ def kernel_add(manifest, ptr):
 # Kernel stub for MUL
 @jit
 def kernel_mul(manifest, ptr):
-    # Returns pointer to ZERO (1)
-    return manifest, jnp.array(1, dtype=jnp.int32)
+    ops, a1, a2, count = manifest.opcode, manifest.arg1, manifest.arg2, manifest.active_count
+    init_x = a1[ptr]
+    y = a2[ptr]
+    init_acc = jnp.array(1, dtype=jnp.int32)
+    init_val = (init_x, init_acc, ops, a1, a2, count)
+
+    def cond(v):
+        curr_x, _, b_ops, _, _, _ = v
+        return b_ops[curr_x] == OP_SUC
+
+    def body(v):
+        curr_x, acc, b_ops, b_a1, b_a2, b_count = v
+        next_x = b_a1[curr_x]
+        add_idx = b_count
+        next_ops = b_ops.at[add_idx].set(OP_ADD)
+        next_a1 = b_a1.at[add_idx].set(y)
+        next_a2 = b_a2.at[add_idx].set(acc)
+        next_count = b_count + 1
+        add_manifest = Manifest(next_ops, next_a1, next_a2, next_count)
+        updated_manifest, next_acc = kernel_add(add_manifest, add_idx)
+        return (
+            next_x,
+            next_acc,
+            updated_manifest.opcode,
+            updated_manifest.arg1,
+            updated_manifest.arg2,
+            updated_manifest.active_count,
+        )
+
+    _, final_acc, f_ops, f_a1, f_a2, f_count = lax.while_loop(cond, body, init_val)
+    return manifest._replace(opcode=f_ops, arg1=f_a1, arg2=f_a2, active_count=f_count), final_acc
 
 def _dispatch_identity(args):
     manifest, ptr = args
@@ -675,9 +890,9 @@ class PrismVM:
         return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
 
 
-class PrismVM_BSP:
+class PrismVM_BSP_Legacy:
     def __init__(self):
-        print("⚡ Prism IR: Initializing BSP Arena...")
+        print("⚡ Prism IR: Initializing BSP Arena (Legacy)...")
         self.arena = init_arena()
 
     def _alloc(self, op, a1=0, a2=0):
@@ -709,6 +924,41 @@ class PrismVM_BSP:
         op = int(self.arena.opcode[ptr])
         if op == OP_ZERO: return "zero"
         if op == OP_SUC:  return f"(suc {self.decode(int(self.arena.arg1[ptr]))})"
+        return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
+
+class PrismVM_BSP:
+    def __init__(self):
+        print("⚡ Prism IR: Initializing BSP Ledger...")
+        self.ledger = init_ledger()
+
+    def _intern(self, op, a1=0, a2=0):
+        ids, self.ledger = intern_nodes(
+            self.ledger,
+            jnp.array([op], dtype=jnp.int32),
+            jnp.array([a1], dtype=jnp.int32),
+            jnp.array([a2], dtype=jnp.int32),
+        )
+        return int(ids[0])
+
+    def parse(self, tokens):
+        token = tokens.pop(0)
+        if token == "zero": return self._intern(OP_ZERO, 0, 0)
+        if token == "suc":  return self._intern(OP_SUC, self.parse(tokens), 0)
+        if token in ["add", "mul"]:
+            op = OP_ADD if token == "add" else OP_MUL
+            a1 = self.parse(tokens)
+            a2 = self.parse(tokens)
+            return self._intern(op, a1, a2)
+        if token == "(":
+            val = self.parse(tokens)
+            tokens.pop(0)
+            return val
+        raise ValueError(f"Unknown: {token}")
+
+    def decode(self, ptr):
+        op = int(self.ledger.opcode[ptr])
+        if op == OP_ZERO: return "zero"
+        if op == OP_SUC:  return f"(suc {self.decode(int(self.ledger.arg1[ptr]))})"
         return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
 
 
@@ -758,7 +1008,17 @@ def run_program_lines(lines, vm=None):
         print(f"   └─ Result  : \033[92m{vm.decode(res_ptr)}\033[0m")
     return vm
 
-def run_program_lines_bsp(lines, vm=None, cycles=1, do_sort=True, use_morton=False, block_size=None):
+def run_program_lines_bsp(
+    lines,
+    vm=None,
+    cycles=1,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+):
     if vm is None:
         vm = PrismVM_BSP()
     for inp in lines:
@@ -767,23 +1027,19 @@ def run_program_lines_bsp(lines, vm=None, cycles=1, do_sort=True, use_morton=Fal
             continue
         tokens = re.findall(r"\(|\)|[a-z]+", inp)
         root_ptr = vm.parse(tokens)
+        frontier = jnp.array([root_ptr], dtype=jnp.int32)
         for _ in range(max(1, cycles)):
-            vm.arena, root_ptr = cycle(
-                vm.arena,
-                root_ptr,
-                do_sort=do_sort,
-                use_morton=use_morton,
-                block_size=block_size,
-            )
-        hot, warm, cold, free = _rank_counts(vm.arena)
-        print(f"   ├─ BSP Cycle: HOT {hot} WARM {warm} COLD {cold} FREE {free}")
-        print(f"   └─ Result  : \033[92m{vm.decode(root_ptr)}\033[0m")
+            vm.ledger, frontier = cycle_intrinsic(vm.ledger, frontier)
+        root_ptr = frontier[0]
+        root_ptr_int = int(root_ptr)
+        print(f"   ├─ Ledger   : {int(vm.ledger.count)} nodes")
+        print(f"   └─ Result  : \033[92m{vm.decode(root_ptr_int)}\033[0m")
     return vm
 
 def repl(mode="baseline", use_morton=False, block_size=None):
     if mode == "bsp":
         vm = PrismVM_BSP()
-        print("\n🔮 Prism IR Shell (BSP Arena)")
+        print("\n🔮 Prism IR Shell (BSP Ledger)")
         print("   Try: (add (suc zero) (suc zero))")
     else:
         vm = PrismVM()
