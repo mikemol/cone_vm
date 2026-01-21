@@ -55,10 +55,49 @@ Enable block-local (hierarchical) sorting in BSP mode:
 mise exec -- python prism_vm.py --mode bsp --block-size 256 tests/test_add_cache.txt
 ```
 
+Swizzle backend (optional GPU acceleration, falls back to JAX on CPU; set `pallas` or `triton`):
+```
+PRISM_SWIZZLE_BACKEND=triton mise exec -- python prism_vm.py --mode bsp --morton tests/test_add_cache.txt
+```
+
 Benchmark compare matrix (baseline + BSP variants, CSV output):
 ```
 mise exec -- python bench_compare.py --runs 3 --cycles 3 --out bench_results.csv
 ```
+
+Benchmark with swizzle backend sweep:
+```
+mise exec -- python bench_compare.py --swizzle-backends jax,pallas,triton --runs 3 --cycles 3 --out bench_results.csv
+```
+
+Benchmark with hierarchical modes (L2/L1/global) enabled:
+```
+mise exec -- python bench_compare.py --hierarchy-l1-mult 4 --runs 3 --cycles 3 --out bench_results.csv
+```
+
+Note: hierarchy modes are included by default; use `--hierarchy-no-global` to drop the global stage, or `--hierarchy-morton` to include Morton variants.
+
+Target hierarchy stress workloads only:
+```
+mise exec -- python bench_compare.py --workloads arena_hierarchy_l2256_l11024 --runs 3 --cycles 3 --out bench_results.csv
+```
+
+Override hierarchy workload sizes explicitly:
+```
+mise exec -- python bench_compare.py --hierarchy-workload-l2 128 --hierarchy-workload-l1 512 --runs 3 --cycles 3 --out bench_results.csv
+```
+
+Sweep arena sizes and block sizes to find inflection points:
+```
+mise exec -- python bench_compare.py --block-sizes 64,128,256,512 --arena-counts 8000,16000,32000 --runs 3 --cycles 3 --out bench_results.csv
+```
+
+Phoronix-style suite (CSV + Markdown + SVG/PNG plots, CPU/GPU):
+```
+mise exec -- python bench_phoronix.py --block-sizes 64,128,256,512 --arena-counts 8000,16000,32000 --runs 3 --cycles 3 --out-dir bench_phoronix
+```
+
+Note: `bench_phoronix.py` uses matplotlib if available; otherwise it falls back to a minimal built-in plotter.
 
 ## Testing
 Install pytest (once):
