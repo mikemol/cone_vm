@@ -76,7 +76,7 @@ def init_arena():
     return arena
 
 def init_ledger():
-    max_key = jnp.iinfo(jnp.uint32).max
+    max_key = jnp.uint32(jnp.iinfo(jnp.uint32).max)
 
     opcode = jnp.zeros(MAX_NODES, dtype=jnp.int32)
     arg1 = jnp.zeros(MAX_NODES, dtype=jnp.int32)
@@ -239,8 +239,10 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
 
     all_hi, all_lo = _pack_key(new_opcode, new_arg1, new_arg2)
     valid_all = jnp.arange(all_hi.shape[0], dtype=jnp.int32) < new_count
-    sortable_hi = jnp.where(valid_all, all_hi, max_key)
-    sortable_lo = jnp.where(valid_all, all_lo, max_key)
+    pad_hi = jnp.full_like(all_hi, max_key)
+    pad_lo = jnp.full_like(all_lo, max_key)
+    sortable_hi = jnp.where(valid_all, all_hi, pad_hi)
+    sortable_lo = jnp.where(valid_all, all_lo, pad_lo)
 
     order = jnp.lexsort((sortable_lo, sortable_hi)).astype(jnp.int32)
     new_keys_hi_sorted = sortable_hi[order]
