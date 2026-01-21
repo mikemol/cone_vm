@@ -72,6 +72,22 @@ def op_rank(arena):
     new_rank = jnp.where(is_free, RANK_FREE, jnp.where(is_inst, RANK_HOT, RANK_COLD))
     return arena._replace(rank=new_rank.astype(jnp.int8))
 
+@jit
+def op_sort_and_swizzle(arena):
+    size = arena.rank.shape[0]
+    idx = jnp.arange(size, dtype=jnp.int32)
+    sort_key = arena.rank.astype(jnp.int32) * (size + 1) + idx
+    perm = jnp.argsort(sort_key)
+    inv_perm = jnp.argsort(perm)
+    new_ops = arena.opcode[perm]
+    new_arg1 = arena.arg1[perm]
+    new_arg2 = arena.arg2[perm]
+    new_rank = arena.rank[perm]
+    swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
+    swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
+    active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
+    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count)
+
 # --- 3. JAX Kernels (Static) ---
 # --- 3. JAX Kernels (Static) ---
 @jit
