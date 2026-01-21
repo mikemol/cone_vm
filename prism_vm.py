@@ -10,13 +10,21 @@ OP_ZERO = 1
 OP_SUC  = 2
 OP_ADD  = 10
 OP_MUL  = 11
+OP_SORT = 99
 
 OP_NAMES = {
     0: "NULL", 1: "zero", 2: "suc",
-    10: "add", 11: "mul"
+    10: "add", 11: "mul", 99: "sort"
 }
 
 MAX_ROWS = 1024 * 32
+MAX_NODES = 1024 * 64
+
+# --- Rank (2-bit Scheduler) ---
+RANK_HOT = 0
+RANK_WARM = 1
+RANK_COLD = 2
+RANK_FREE = 3
 
 # --- 2. Manifest (Heap) ---
 class Manifest(NamedTuple):
@@ -25,6 +33,13 @@ class Manifest(NamedTuple):
     arg2:   jnp.ndarray
     active_count: jnp.ndarray
 
+class Arena(NamedTuple):
+    opcode: jnp.ndarray
+    arg1:   jnp.ndarray
+    arg2:   jnp.ndarray
+    rank:   jnp.ndarray
+    count:  jnp.ndarray
+
 def init_manifest():
     return Manifest(
         opcode=jnp.zeros(MAX_ROWS, dtype=jnp.int32),
@@ -32,6 +47,22 @@ def init_manifest():
         arg2=jnp.zeros(MAX_ROWS, dtype=jnp.int32),
         active_count=jnp.array(1, dtype=jnp.int32)
     )
+
+def init_arena():
+    arena = Arena(
+        opcode=jnp.zeros(MAX_NODES, dtype=jnp.int32),
+        arg1=jnp.zeros(MAX_NODES, dtype=jnp.int32),
+        arg2=jnp.zeros(MAX_NODES, dtype=jnp.int32),
+        rank=jnp.full(MAX_NODES, RANK_FREE, dtype=jnp.int8),
+        count=jnp.array(1, dtype=jnp.int32),
+    )
+    arena = arena._replace(
+        opcode=arena.opcode.at[1].set(OP_ZERO),
+        arg1=arena.arg1.at[1].set(0),
+        arg2=arena.arg2.at[1].set(0),
+        count=jnp.array(2, dtype=jnp.int32),
+    )
+    return arena
 
 # --- 3. JAX Kernels (Static) ---
 # --- 3. JAX Kernels (Static) ---
