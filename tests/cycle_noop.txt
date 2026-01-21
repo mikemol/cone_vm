@@ -1,0 +1,1 @@
+# BSP cycle null hypothesis: without sort, root pointer remains unchanged.

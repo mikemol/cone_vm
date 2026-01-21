@@ -1,0 +1,1 @@
+# BSP cycle: root pointer should be remapped after sort+swizzle.
