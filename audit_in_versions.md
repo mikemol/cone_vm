@@ -198,3 +198,25 @@ Methodology:
     - Only in in/in-9: mathcal, l, f, mathrm, text, c, eager, cnf, stratum, identity, candidate, exactly
     - Only in IMPLEMENTATION_PLAN.md: expected, null, pytest, program, rank, txt, cycle, implement, tasks, objective, stable, hot
   - Wedge product (bigram intersection): 12 | top: x y, add suc, rewrite rules, suc x, add zero, root pointer, zero suc, zero y, arena manifest, e g, node boundary, optional local
+
+## in/in-10.md
+- Unique tokens: 375
+- Unique bigrams: 635
+- Prior version: in/in-9.md
+  - Intersection: 131 | top: rewrite, text, cnf, stratum, new, code, identity, candidate, semantics, bsp, canonicalization, reviewer
+  - Symmetric difference: 912 (only in in/in-10.md: 244, only in in/in-9.md: 668)
+    - Only in in/in-10: cd, aggregation, coordinate, parity, tree, milestone, adjacency, aggregate, coordinates, cut, diff, elimination
+    - Only in in/in-9: mathcal, l, f, n, mathrm, c, eager, step, exactly, prior, k, candidates
+  - Wedge product (bigram intersection): 11 | top: normal form, address space, arena ledger, rewrite rules, core semantic, local rewrite, rewrite allocation, candidate emission, execution model, frontier propagation, stratum invariant
+- Compare: prism_vm.py
+  - Intersection: 41 | top: arena, ledger, opcode, arg1, morton, arg2, op, x, rank, shape, op_add, ops
+  - Symmetric difference: 884 (only in in/in-10.md: 334, only in prism_vm.py: 550)
+    - Only in in/in-10: cd, aggregation, coordinate, parity, tree, milestone, explicit, invariant, canonicalization, adjacency, aggregate, coordinates
+    - Only in prism_vm.py: jnp, int32, self, dtype, size, uint32, manifest, none, perm, active_count, block_size, ptr
+  - Wedge product (bigram intersection): 7 | top: arg1 arg2, opcode arg1, op arg1, x x, arg2 op, op_add op_mul, tier references
+- Compare: IMPLEMENTATION_PLAN.md
+  - Intersection: 93 | top: rank, arena, bsp, coordinate, sort, rewrite, new, swizzle, explicit, cnf, invariant, local
+  - Symmetric difference: 726 (only in in/in-10.md: 282, only in IMPLEMENTATION_PLAN.md: 444)
+    - Only in in/in-10: cd, aggregation, parity, tree, adjacency, aggregate, coordinates, cut, elimination, idempotent, space, address
+    - Only in IMPLEMENTATION_PLAN.md: tests, expected, add, null, pytest, program, txt, implement, implementation, tasks, baseline, cycle
+  - Wedge product (bigram intersection): 10 | top: arg1 arg2, rank sort, opcode arg1, sort swizzle, normal form, op_add op_mul, rewrite rules, candidate emission, semantics explicit, swizzle morton
