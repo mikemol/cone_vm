@@ -1,4 +1,5 @@
 from jax import jit, lax
+import jax
 import jax.numpy as jnp
 from typing import NamedTuple, Dict, Callable, Tuple
 import re
@@ -22,7 +23,7 @@ MAX_NODES = 1024 * 64
 
 # --- Rank (2-bit Scheduler) ---
 RANK_HOT = 0
-RANK_WARM = 1
+RANK_WARM = 1  # Reserved for future policies.
 RANK_COLD = 2
 RANK_FREE = 3
 
@@ -38,6 +39,15 @@ class Arena(NamedTuple):
     arg1:   jnp.ndarray
     arg2:   jnp.ndarray
     rank:   jnp.ndarray
+    count:  jnp.ndarray
+
+class Ledger(NamedTuple):
+    opcode: jnp.ndarray
+    arg1:   jnp.ndarray
+    arg2:   jnp.ndarray
+    keys_hi_sorted: jnp.ndarray
+    keys_lo_sorted: jnp.ndarray
+    ids_sorted: jnp.ndarray
     count:  jnp.ndarray
 
 def init_manifest():
@@ -64,6 +74,35 @@ def init_arena():
     )
     return arena
 
+def init_ledger():
+    max_key = jnp.iinfo(jnp.uint32).max
+
+    opcode = jnp.zeros(MAX_NODES, dtype=jnp.int32)
+    arg1 = jnp.zeros(MAX_NODES, dtype=jnp.int32)
+    arg2 = jnp.zeros(MAX_NODES, dtype=jnp.int32)
+
+    opcode = opcode.at[1].set(OP_ZERO)
+
+    keys_hi_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint32)
+    keys_lo_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint32)
+    ids_sorted = jnp.zeros(MAX_NODES, dtype=jnp.int32)
+
+    k0_hi, k0_lo = _pack_key(jnp.uint32(OP_NULL), jnp.uint32(0), jnp.uint32(0))
+    k1_hi, k1_lo = _pack_key(jnp.uint32(OP_ZERO), jnp.uint32(0), jnp.uint32(0))
+    keys_hi_sorted = keys_hi_sorted.at[0].set(k0_hi).at[1].set(k1_hi)
+    keys_lo_sorted = keys_lo_sorted.at[0].set(k0_lo).at[1].set(k1_lo)
+    ids_sorted = ids_sorted.at[0].set(0).at[1].set(1)
+
+    return Ledger(
+        opcode=opcode,
+        arg1=arg1,
+        arg2=arg2,
+        keys_hi_sorted=keys_hi_sorted,
+        keys_lo_sorted=keys_lo_sorted,
+        ids_sorted=ids_sorted,
+        count=jnp.array(2, dtype=jnp.int32),
+    )
+
 @jit
 def op_rank(arena):
     ops = arena.opcode
@@ -72,43 +111,159 @@ def op_rank(arena):
     new_rank = jnp.where(is_free, RANK_FREE, jnp.where(is_inst, RANK_HOT, RANK_COLD))
     return arena._replace(rank=new_rank.astype(jnp.int8))
 
+def _invert_perm(perm):
+    inv = jnp.empty_like(perm)
+    return inv.at[perm].set(jnp.arange(perm.shape[0], dtype=perm.dtype))
+
+def _pack_key(op, a1, a2):
+    op_u = op.astype(jnp.uint32)
+    a1_u = a1.astype(jnp.uint32) & jnp.uint32(0xFFFF)
+    a2_u = a2.astype(jnp.uint32) & jnp.uint32(0xFFFF)
+    key_hi = (op_u << 16) | a1_u
+    key_lo = a2_u
+    return key_hi, key_lo
+
 @jit
-def op_sort_and_swizzle(arena):
+def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
+    """
+    Batch-intern a list of proposed (op,a1,a2) nodes into the canonical Ledger.
+
+    Args:
+      ledger: Ledger
+      proposed_ops/a1/a2: int32 arrays, shape [N]
+
+    Returns:
+      final_ids: int32 array, shape [N], canonical ids for each proposal
+      new_ledger: Ledger, updated
+    """
+    max_key = jnp.iinfo(jnp.uint32).max
+
+    P_hi, P_lo = _pack_key(proposed_ops, proposed_a1, proposed_a2)
+    perm = jnp.lexsort((P_lo, P_hi)).astype(jnp.int32)
+
+    s_hi = P_hi[perm]
+    s_lo = P_lo[perm]
+    s_ops = proposed_ops[perm]
+    s_a1 = proposed_a1[perm]
+    s_a2 = proposed_a2[perm]
+
+    is_diff = jnp.concatenate([
+        jnp.array([True]),
+        (s_hi[1:] != s_hi[:-1]) | (s_lo[1:] != s_lo[:-1]),
+    ])
+
+    idx = jnp.arange(s_hi.shape[0], dtype=jnp.int32)
+
+    def scan_fn(carry, x):
+        is_leader, i = x
+        new_carry = jnp.where(is_leader, i, carry)
+        return new_carry, new_carry
+
+    _, leader_idx = lax.scan(scan_fn, jnp.int32(0), (is_diff, idx))
+
+    L_hi = ledger.keys_hi_sorted
+    L_lo = ledger.keys_lo_sorted
+    L_ids = ledger.ids_sorted
+
+    count = ledger.count.astype(jnp.int32)
+
+    def _lex_less(a_hi, a_lo, b_hi, b_lo):
+        return jnp.logical_or(a_hi < b_hi, jnp.logical_and(a_hi == b_hi, a_lo < b_lo))
+
+    def _search_one(t_hi, t_lo):
+        lo = jnp.int32(0)
+        hi = count
+
+        def cond(state):
+            lo_i, hi_i = state
+            return lo_i < hi_i
+
+        def body(state):
+            lo_i, hi_i = state
+            mid = (lo_i + hi_i) // 2
+            mid_hi = L_hi[mid]
+            mid_lo = L_lo[mid]
+            go_right = _lex_less(mid_hi, mid_lo, t_hi, t_lo)
+            lo_i = jnp.where(go_right, mid + 1, lo_i)
+            hi_i = jnp.where(go_right, hi_i, mid)
+            return (lo_i, hi_i)
+
+        lo, _ = lax.while_loop(cond, body, (lo, hi))
+        return lo
+
+    insert_pos = jax.vmap(_search_one)(s_hi, s_lo)
+    safe_pos = jnp.minimum(insert_pos, count - 1)
+
+    found_match = (
+        (insert_pos < count)
+        & (L_hi[safe_pos] == s_hi)
+        & (L_lo[safe_pos] == s_lo)
+    )
+    matched_ids = L_ids[safe_pos].astype(jnp.int32)
+
+    is_new = is_diff & (~found_match)
+
+    spawn = is_new.astype(jnp.int32)
+    offsets = jnp.cumsum(spawn) - spawn
+    num_new = jnp.sum(spawn).astype(jnp.int32)
+
+    write_start = ledger.count.astype(jnp.int32)
+    new_ids_for_sorted = jnp.where(found_match, matched_ids, write_start + offsets)
+
+    leader_ids = jnp.where(is_diff, new_ids_for_sorted, jnp.int32(0))
+    ids_sorted_order = leader_ids[leader_idx]
+
+    inv_perm = _invert_perm(perm)
+    final_ids = ids_sorted_order[inv_perm]
+
+    new_opcode = ledger.opcode
+    new_arg1 = ledger.arg1
+    new_arg2 = ledger.arg2
+
+    write_idx = jnp.where(is_new, write_start + offsets, jnp.int32(-1))
+    valid_w = write_idx >= 0
+    safe_w = jnp.where(valid_w, write_idx, 0)
+
+    new_opcode = new_opcode.at[safe_w].set(
+        jnp.where(valid_w, s_ops, new_opcode[0]), mode="drop"
+    )
+    new_arg1 = new_arg1.at[safe_w].set(
+        jnp.where(valid_w, s_a1, new_arg1[0]), mode="drop"
+    )
+    new_arg2 = new_arg2.at[safe_w].set(
+        jnp.where(valid_w, s_a2, new_arg2[0]), mode="drop"
+    )
+
+    new_count = ledger.count + num_new
+
+    all_hi, all_lo = _pack_key(new_opcode, new_arg1, new_arg2)
+    valid_all = jnp.arange(all_hi.shape[0], dtype=jnp.int32) < new_count
+    sortable_hi = jnp.where(valid_all, all_hi, max_key)
+    sortable_lo = jnp.where(valid_all, all_lo, max_key)
+
+    order = jnp.lexsort((sortable_lo, sortable_hi)).astype(jnp.int32)
+    new_keys_hi_sorted = sortable_hi[order]
+    new_keys_lo_sorted = sortable_lo[order]
+    new_ids_sorted = order
+
+    new_ledger = Ledger(
+        opcode=new_opcode,
+        arg1=new_arg1,
+        arg2=new_arg2,
+        keys_hi_sorted=new_keys_hi_sorted,
+        keys_lo_sorted=new_keys_lo_sorted,
+        ids_sorted=new_ids_sorted,
+        count=new_count,
+    )
+    return final_ids, new_ledger
+
+def _active_prefix_count(arena):
     size = arena.rank.shape[0]
-    idx = jnp.arange(size, dtype=jnp.int32)
-    sort_key = arena.rank.astype(jnp.int32) * (size + 1) + idx
-    perm = jnp.argsort(sort_key)
-    inv_perm = jnp.argsort(perm)
-    new_ops = arena.opcode[perm]
-    new_arg1 = arena.arg1[perm]
-    new_arg2 = arena.arg2[perm]
-    new_rank = arena.rank[perm]
-    swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
-    swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
-    active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
-    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count)
+    # Avoid host-syncing on arena.count; sort full size for consistent behavior.
+    return size
 
-def _blocked_perm(arena, block_size, morton=None):
-    size = int(arena.rank.shape[0])
-    if block_size <= 0 or size % block_size != 0:
-        raise ValueError("block_size must evenly divide arena size")
-    num_blocks = size // block_size
-    ranks = arena.rank.reshape((num_blocks, block_size)).astype(jnp.uint32)
-    idx = jnp.arange(block_size, dtype=jnp.uint32)
-    idx_u = idx & jnp.uint32(0xFFFF)
-    if morton is None:
-        morton_u = jnp.zeros_like(ranks, dtype=jnp.uint32)
-    else:
-        morton_u = morton.reshape((num_blocks, block_size)).astype(jnp.uint32) & jnp.uint32(0x3FFF)
-    sort_key = (ranks << 30) | (morton_u << 16) | idx_u
-    perm_local = jnp.argsort(sort_key, axis=1)
-    base = (jnp.arange(num_blocks, dtype=jnp.uint32) * block_size)[:, None]
-    perm = (base + perm_local).reshape((size,)).astype(jnp.int32)
-    return perm
-
-def op_sort_and_swizzle_blocked_with_perm(arena, block_size, morton=None):
-    perm = _blocked_perm(arena, block_size, morton=morton)
-    inv_perm = jnp.argsort(perm)
+def _apply_perm_and_swizzle(arena, perm):
+    inv_perm = _invert_perm(perm)
     new_ops = arena.opcode[perm]
     new_arg1 = arena.arg1[perm]
     new_arg2 = arena.arg2[perm]
@@ -117,6 +272,91 @@ def op_sort_and_swizzle_blocked_with_perm(arena, block_size, morton=None):
     swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
     active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
     return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count), inv_perm
+
+@jit
+def _op_sort_and_swizzle_with_perm_full(arena):
+    size = arena.rank.shape[0]
+    idx = jnp.arange(size, dtype=jnp.int32)
+    sort_key = arena.rank.astype(jnp.int32) * (size + 1) + idx
+    perm = jnp.argsort(sort_key)
+    return _apply_perm_and_swizzle(arena, perm)
+
+def _op_sort_and_swizzle_with_perm_prefix(arena, active_count):
+    size = arena.rank.shape[0]
+    if active_count <= 1:
+        perm = jnp.arange(size, dtype=jnp.int32)
+        return _apply_perm_and_swizzle(arena, perm)
+    idx = jnp.arange(active_count, dtype=jnp.int32)
+    sort_key = arena.rank[:active_count].astype(jnp.int32) * (active_count + 1) + idx
+    perm_active = jnp.argsort(sort_key)
+    tail = jnp.arange(active_count, size, dtype=jnp.int32)
+    perm = jnp.concatenate([perm_active, tail], axis=0)
+    return _apply_perm_and_swizzle(arena, perm)
+
+def op_sort_and_swizzle_with_perm(arena):
+    active_count = _active_prefix_count(arena)
+    size = arena.rank.shape[0]
+    if active_count >= size:
+        return _op_sort_and_swizzle_with_perm_full(arena)
+    return _op_sort_and_swizzle_with_perm_prefix(arena, active_count)
+
+def op_sort_and_swizzle(arena):
+    sorted_arena, _ = op_sort_and_swizzle_with_perm(arena)
+    return sorted_arena
+
+def _blocked_perm(arena, block_size, morton=None, active_count=None):
+    size = int(arena.rank.shape[0])
+    if block_size <= 0 or size % block_size != 0:
+        raise ValueError("block_size must evenly divide arena size")
+    num_blocks = size // block_size
+    if active_count is None or active_count >= size:
+        active_blocks = num_blocks
+    else:
+        active_blocks = (active_count + block_size - 1) // block_size
+        if active_blocks < 0:
+            active_blocks = 0
+        if active_blocks > num_blocks:
+            active_blocks = num_blocks
+
+    ranks = arena.rank.reshape((num_blocks, block_size)).astype(jnp.uint32)
+    idx = jnp.arange(block_size, dtype=jnp.uint32)
+    idx_u = idx & jnp.uint32(0xFFFF)
+    if morton is None:
+        morton_u = jnp.zeros_like(ranks, dtype=jnp.uint32)
+    else:
+        morton_u = morton.reshape((num_blocks, block_size)).astype(jnp.uint32) & jnp.uint32(0x3FFF)
+
+    if active_blocks <= 0:
+        return jnp.arange(size, dtype=jnp.int32)
+
+    if active_blocks == num_blocks:
+        sort_key = (ranks << 30) | (morton_u << 16) | idx_u
+        perm_local = jnp.argsort(sort_key, axis=1)
+        base = (jnp.arange(num_blocks, dtype=jnp.uint32) * block_size)[:, None]
+        perm = (base + perm_local).reshape((size,)).astype(jnp.int32)
+        return perm
+
+    ranks_active = ranks[:active_blocks]
+    morton_active = morton_u[:active_blocks]
+    if active_count is not None and active_count < active_blocks * block_size:
+        base = (jnp.arange(active_blocks, dtype=jnp.uint32) * block_size)[:, None]
+        block_idx = base + idx_u[None, :]
+        tail_mask = block_idx >= active_count
+        ranks_active = jnp.where(tail_mask, jnp.uint32(RANK_FREE), ranks_active)
+        morton_active = jnp.where(tail_mask, jnp.uint32(0), morton_active)
+
+    sort_key = (ranks_active << 30) | (morton_active << 16) | idx_u
+    perm_local = jnp.argsort(sort_key, axis=1)
+    base = (jnp.arange(active_blocks, dtype=jnp.uint32) * block_size)[:, None]
+    perm_active = (base + perm_local).reshape((active_blocks * block_size,)).astype(jnp.int32)
+    tail = jnp.arange(active_blocks * block_size, size, dtype=jnp.int32)
+    perm = jnp.concatenate([perm_active, tail], axis=0)
+    return perm
+
+def op_sort_and_swizzle_blocked_with_perm(arena, block_size, morton=None):
+    active_count = _active_prefix_count(arena)
+    perm = _blocked_perm(arena, block_size, morton=morton, active_count=active_count)
+    return _apply_perm_and_swizzle(arena, perm)
 
 def op_sort_and_swizzle_blocked(arena, block_size, morton=None):
     sorted_arena, _ = op_sort_and_swizzle_blocked_with_perm(
