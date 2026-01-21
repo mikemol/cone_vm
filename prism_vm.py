@@ -391,6 +391,55 @@ class PrismVM:
         return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
 
 
+class PrismVM_BSP:
+    def __init__(self):
+        print("⚡ Prism IR: Initializing BSP Arena...")
+        self.arena = init_arena()
+
+    def _alloc(self, op, a1=0, a2=0):
+        idx = int(self.arena.count)
+        self.arena = self.arena._replace(
+            opcode=self.arena.opcode.at[idx].set(op),
+            arg1=self.arena.arg1.at[idx].set(a1),
+            arg2=self.arena.arg2.at[idx].set(a2),
+            count=jnp.array(idx + 1, dtype=jnp.int32),
+        )
+        return idx
+
+    def parse(self, tokens):
+        token = tokens.pop(0)
+        if token == "zero": return self._alloc(OP_ZERO, 0, 0)
+        if token == "suc":  return self._alloc(OP_SUC, self.parse(tokens), 0)
+        if token in ["add", "mul"]:
+            op = OP_ADD if token == "add" else OP_MUL
+            a1 = self.parse(tokens)
+            a2 = self.parse(tokens)
+            return self._alloc(op, a1, a2)
+        if token == "(":
+            val = self.parse(tokens)
+            tokens.pop(0)
+            return val
+        raise ValueError(f"Unknown: {token}")
+
+    def decode(self, ptr):
+        op = int(self.arena.opcode[ptr])
+        if op == OP_ZERO: return "zero"
+        if op == OP_SUC:  return f"(suc {self.decode(int(self.arena.arg1[ptr]))})"
+        return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
+
+
+def make_vm(mode="baseline"):
+    if mode == "bsp":
+        return PrismVM_BSP()
+    return PrismVM()
+
+def _rank_counts(arena):
+    hot = int(jnp.sum(arena.rank == RANK_HOT))
+    warm = int(jnp.sum(arena.rank == RANK_WARM))
+    cold = int(jnp.sum(arena.rank == RANK_COLD))
+    free = int(jnp.sum(arena.rank == RANK_FREE))
+    return hot, warm, cold, free
+
 # --- 5. Telemetric REPL ---
 def run_program_lines(lines, vm=None):
     if vm is None:
@@ -425,25 +474,85 @@ def run_program_lines(lines, vm=None):
         print(f"   └─ Result  : \033[92m{vm.decode(res_ptr)}\033[0m")
     return vm
 
-def repl():
-    vm = PrismVM()
-    print("\n🔮 Prism IR Shell (Static Analysis + Deduplication)")
-    print("   Try: (add (suc zero) (suc zero))")
-    print("   Try: (add zero (suc (suc zero))) <- Triggers Optimizer")
+def run_program_lines_bsp(lines, vm=None, cycles=1, do_sort=True):
+    if vm is None:
+        vm = PrismVM_BSP()
+    for inp in lines:
+        inp = inp.strip()
+        if not inp or inp.startswith("#"):
+            continue
+        tokens = re.findall(r"\(|\)|[a-z]+", inp)
+        root_ptr = vm.parse(tokens)
+        for _ in range(max(1, cycles)):
+            vm.arena, root_ptr = cycle(vm.arena, root_ptr, do_sort=do_sort)
+        hot, warm, cold, free = _rank_counts(vm.arena)
+        print(f"   ├─ BSP Cycle: HOT {hot} WARM {warm} COLD {cold} FREE {free}")
+        print(f"   └─ Result  : \033[92m{vm.decode(root_ptr)}\033[0m")
+    return vm
+
+def repl(mode="baseline"):
+    if mode == "bsp":
+        vm = PrismVM_BSP()
+        print("\n🔮 Prism IR Shell (BSP Arena)")
+        print("   Try: (add (suc zero) (suc zero))")
+    else:
+        vm = PrismVM()
+        print("\n🔮 Prism IR Shell (Static Analysis + Deduplication)")
+        print("   Try: (add (suc zero) (suc zero))")
+        print("   Try: (add zero (suc (suc zero))) <- Triggers Optimizer")
     while True:
         try:
             inp = input("\nλ> ").strip()
             if inp == "exit": break
             if not inp: continue
-            run_program_lines([inp], vm)
+            if mode == "bsp":
+                run_program_lines_bsp([inp], vm)
+            else:
+                run_program_lines([inp], vm)
         except Exception as e:
             print(f"   ERROR: {e}")
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1:
-        with open(sys.argv[1]) as f:
+    args = sys.argv[1:]
+    mode = "baseline"
+    cycles = 1
+    do_sort = True
+    path = None
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("--mode", "-m") and i + 1 < len(args):
+            mode = args[i + 1]
+            i += 2
+            continue
+        if arg.startswith("--mode="):
+            mode = arg.split("=", 1)[1]
+            i += 1
+            continue
+        if arg == "--cycles" and i + 1 < len(args):
+            cycles = int(args[i + 1])
+            i += 2
+            continue
+        if arg.startswith("--cycles="):
+            cycles = int(arg.split("=", 1)[1])
+            i += 1
+            continue
+        if arg == "--no-sort":
+            do_sort = False
+            i += 1
+            continue
+        if path is None:
+            path = arg
+            i += 1
+            continue
+        i += 1
+    if path:
+        with open(path) as f:
             lines = f.readlines()
-        run_program_lines(lines)
+        if mode == "bsp":
+            run_program_lines_bsp(lines, cycles=cycles, do_sort=do_sort)
+        else:
+            run_program_lines(lines)
     else:
-        repl()
+        repl(mode=mode)
