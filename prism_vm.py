@@ -51,6 +51,12 @@ class Ledger(NamedTuple):
     ids_sorted: jnp.ndarray
     count:  jnp.ndarray
 
+class CandidateBuffer(NamedTuple):
+    enabled: jnp.ndarray
+    opcode: jnp.ndarray
+    arg1: jnp.ndarray
+    arg2: jnp.ndarray
+
 def init_manifest():
     return Manifest(
         opcode=jnp.zeros(MAX_ROWS, dtype=jnp.int32),
@@ -103,6 +109,32 @@ def init_ledger():
         ids_sorted=ids_sorted,
         count=jnp.array(2, dtype=jnp.int32),
     )
+
+def emit_candidates(ledger, frontier_ids):
+    del ledger
+    num_frontier = frontier_ids.shape[0]
+    size = num_frontier * 2
+    enabled = jnp.zeros(size, dtype=jnp.int32)
+    opcode = jnp.zeros(size, dtype=jnp.int32)
+    arg1 = jnp.zeros(size, dtype=jnp.int32)
+    arg2 = jnp.zeros(size, dtype=jnp.int32)
+    return CandidateBuffer(enabled=enabled, opcode=opcode, arg1=arg1, arg2=arg2)
+
+def compact_candidates(candidates):
+    enabled = candidates.enabled.astype(jnp.int32)
+    count = jnp.sum(enabled).astype(jnp.int32)
+    size = enabled.shape[0]
+    idx = jnp.arange(size, dtype=jnp.int32)
+    sort_key = (1 - enabled) * (size + 1) + idx
+    perm = jnp.argsort(sort_key)
+
+    compacted = CandidateBuffer(
+        enabled=enabled[perm],
+        opcode=candidates.opcode[perm],
+        arg1=candidates.arg1[perm],
+        arg2=candidates.arg2[perm],
+    )
+    return compacted, count
 
 @jit
 def op_rank(arena):
