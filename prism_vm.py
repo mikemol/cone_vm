@@ -143,11 +143,11 @@ def op_morton(arena):
 @jit
 def op_sort_and_swizzle_morton(arena, morton):
     size = arena.rank.shape[0]
-    idx = jnp.arange(size, dtype=jnp.uint64)
-    rank_u = arena.rank.astype(jnp.uint64)
-    morton_u = morton.astype(jnp.uint64)
-    idx_u = idx & jnp.uint64(0xFFFF)
-    sort_key = (rank_u << 48) | (morton_u << 16) | idx_u
+    idx = jnp.arange(size, dtype=jnp.uint32)
+    rank_u = arena.rank.astype(jnp.uint32)
+    morton_u = morton.astype(jnp.uint32) & jnp.uint32(0x3FFF)
+    idx_u = idx & jnp.uint32(0xFFFF)
+    sort_key = (rank_u << 30) | (morton_u << 16) | idx_u
     perm = jnp.argsort(sort_key)
     inv_perm = jnp.argsort(perm)
     new_ops = arena.opcode[perm]

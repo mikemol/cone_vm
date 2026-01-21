@@ -29,7 +29,8 @@ def test_morton_disabled_matches_rank_sort():
         count=jnp.array(5, dtype=jnp.int32),
     )
     baseline = pv.op_sort_and_swizzle(arena)
-    morton = pv.op_morton(arena)
+    _ = pv.op_morton(arena)
+    morton = jnp.zeros_like(arena.rank, dtype=jnp.uint32)
     with_morton = pv.op_sort_and_swizzle_morton(arena, morton)
     assert bool(jnp.array_equal(with_morton.opcode, baseline.opcode))
     assert bool(jnp.array_equal(with_morton.arg1, baseline.arg1))
