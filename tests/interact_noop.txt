@@ -1,0 +1,1 @@
+# BSP interact null hypothesis: non-HOT nodes should be unchanged.
