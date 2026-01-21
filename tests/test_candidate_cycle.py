@@ -1,0 +1,48 @@
+import jax.numpy as jnp
+import pytest
+
+import prism_vm as pv
+
+
+def _require_cycle_candidates():
+    if not hasattr(pv, "cycle_candidates"):
+        pytest.xfail("cycle_candidates not implemented")
+
+
+def test_cycle_candidates_add_zero():
+    _require_cycle_candidates()
+    ledger = pv.init_ledger()
+
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([1], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    y_id = suc_ids[0]
+    add_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([1], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    frontier = jnp.array([add_ids[0]], dtype=jnp.int32)
+    ledger, next_frontier = pv.cycle_candidates(ledger, frontier)
+    assert int(next_frontier.shape[0]) == 1
+    assert int(next_frontier[0]) == int(y_id)
+    assert pv.PrismVM_BSP().decode(int(next_frontier[0])) == pv.PrismVM_BSP().decode(int(y_id))
+
+
+def test_cycle_candidates_mul_zero():
+    _require_cycle_candidates()
+    ledger = pv.init_ledger()
+    mul_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_MUL], dtype=jnp.int32),
+        jnp.array([1], dtype=jnp.int32),
+        jnp.array([1], dtype=jnp.int32),
+    )
+    frontier = jnp.array([mul_ids[0]], dtype=jnp.int32)
+    ledger, next_frontier = pv.cycle_candidates(ledger, frontier)
+    assert int(next_frontier.shape[0]) == 1
+    assert int(next_frontier[0]) == 1

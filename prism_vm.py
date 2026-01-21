@@ -111,13 +111,40 @@ def init_ledger():
     )
 
 def emit_candidates(ledger, frontier_ids):
-    del ledger
     num_frontier = frontier_ids.shape[0]
     size = num_frontier * 2
     enabled = jnp.zeros(size, dtype=jnp.int32)
     opcode = jnp.zeros(size, dtype=jnp.int32)
     arg1 = jnp.zeros(size, dtype=jnp.int32)
     arg2 = jnp.zeros(size, dtype=jnp.int32)
+
+    if num_frontier == 0:
+        return CandidateBuffer(enabled=enabled, opcode=opcode, arg1=arg1, arg2=arg2)
+
+    f_ops = ledger.opcode[frontier_ids]
+    f_a1 = ledger.arg1[frontier_ids]
+    f_a2 = ledger.arg2[frontier_ids]
+    op_a1 = ledger.opcode[f_a1]
+
+    is_add_zero = (f_ops == OP_ADD) & (op_a1 == OP_ZERO)
+    is_mul_zero = (f_ops == OP_MUL) & (op_a1 == OP_ZERO)
+    enable0 = is_add_zero | is_mul_zero
+
+    y_id = jnp.where(is_add_zero, f_a2, jnp.int32(1))
+    cand0_op = ledger.opcode[y_id]
+    cand0_a1 = ledger.arg1[y_id]
+    cand0_a2 = ledger.arg2[y_id]
+
+    cand0_op = jnp.where(enable0, cand0_op, jnp.int32(0))
+    cand0_a1 = jnp.where(enable0, cand0_a1, jnp.int32(0))
+    cand0_a2 = jnp.where(enable0, cand0_a2, jnp.int32(0))
+
+    idx0 = jnp.arange(num_frontier, dtype=jnp.int32) * 2
+    enabled = enabled.at[idx0].set(enable0.astype(jnp.int32))
+    opcode = opcode.at[idx0].set(cand0_op)
+    arg1 = arg1.at[idx0].set(cand0_a1)
+    arg2 = arg2.at[idx0].set(cand0_a2)
+
     return CandidateBuffer(enabled=enabled, opcode=opcode, arg1=arg1, arg2=arg2)
 
 def compact_candidates(candidates):
@@ -135,6 +162,22 @@ def compact_candidates(candidates):
         arg2=candidates.arg2[perm],
     )
     return compacted, count
+
+def intern_candidates(ledger, candidates):
+    compacted, count = compact_candidates(candidates)
+    count_int = int(count)
+    if count_int == 0:
+        return jnp.zeros((0,), dtype=jnp.int32), ledger, count
+    ops = compacted.opcode[:count_int]
+    a1 = compacted.arg1[:count_int]
+    a2 = compacted.arg2[:count_int]
+    ids, new_ledger = intern_nodes(ledger, ops, a1, a2)
+    return ids, new_ledger, count
+
+def cycle_candidates(ledger, frontier_ids):
+    candidates = emit_candidates(ledger, frontier_ids)
+    ids, new_ledger, _ = intern_candidates(ledger, candidates)
+    return new_ledger, ids
 
 @jit
 def op_rank(arena):
