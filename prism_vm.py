@@ -134,7 +134,8 @@ def emit_candidates(ledger, frontier_ids):
     is_add_zero = (f_ops == OP_ADD) & (op_a1 == OP_ZERO)
     is_mul_zero = (f_ops == OP_MUL) & (op_a1 == OP_ZERO)
     is_add_suc = (f_ops == OP_ADD) & (op_a1 == OP_SUC)
-    enable0 = is_add_zero | is_mul_zero | is_add_suc
+    is_mul_suc = (f_ops == OP_MUL) & (op_a1 == OP_SUC)
+    enable0 = is_add_zero | is_mul_zero | is_add_suc | is_mul_suc
 
     y_id = jnp.where(is_add_zero, f_a2, jnp.int32(ZERO_PTR))
     val_x = ledger.arg1[f_a1]
@@ -152,6 +153,10 @@ def emit_candidates(ledger, frontier_ids):
     cand0_op = jnp.where(is_add_suc, jnp.int32(OP_ADD), cand0_op)
     cand0_a1 = jnp.where(is_add_suc, val_x, cand0_a1)
     cand0_a2 = jnp.where(is_add_suc, val_y, cand0_a2)
+
+    cand0_op = jnp.where(is_mul_suc, jnp.int32(OP_MUL), cand0_op)
+    cand0_a1 = jnp.where(is_mul_suc, val_x, cand0_a1)
+    cand0_a2 = jnp.where(is_mul_suc, val_y, cand0_a2)
 
     cand0_op = jnp.where(enable0, cand0_op, jnp.int32(0))
     cand0_a1 = jnp.where(enable0, cand0_a1, jnp.int32(0))
@@ -207,27 +212,61 @@ def validate_stratum_no_within_refs(ledger, stratum):
     return bool(ok)
 
 def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
-    candidates = emit_candidates(ledger, frontier_ids)
-    start = ledger.count.astype(jnp.int32)
-    ids_compact, new_ledger, count = intern_candidates(ledger, candidates)
-    enabled = candidates.enabled.astype(jnp.int32)
-    perm = _candidate_perm(enabled)
-    inv_perm = _invert_perm(perm)
-    ids_full = ids_compact[inv_perm]
     num_frontier = frontier_ids.shape[0]
     if num_frontier == 0:
-        next_frontier = frontier_ids
-    else:
-        idx0 = jnp.arange(num_frontier, dtype=jnp.int32) * 2
-        slot0_ids = ids_full[idx0]
-        enable0 = enabled[idx0] != 0
-        next_frontier = jnp.where(enable0, slot0_ids, frontier_ids)
-    new_count = (new_ledger.count - start).astype(jnp.int32)
-    stratum = Stratum(start=start, count=new_count)
+        empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
+        return ledger, frontier_ids, (empty, empty)
+
+    f_ops = ledger.opcode[frontier_ids]
+    f_a1 = ledger.arg1[frontier_ids]
+    f_a2 = ledger.arg2[frontier_ids]
+    op_a1 = ledger.opcode[f_a1]
+    is_add_suc = (f_ops == OP_ADD) & (op_a1 == OP_SUC)
+    is_mul_suc = (f_ops == OP_MUL) & (op_a1 == OP_SUC)
+    val_y = f_a2
+
+    candidates = emit_candidates(ledger, frontier_ids)
+    start0 = ledger.count.astype(jnp.int32)
+    ids_compact, ledger0, _ = intern_candidates(ledger, candidates)
+    enabled0 = candidates.enabled.astype(jnp.int32)
+    perm0 = _candidate_perm(enabled0)
+    inv_perm0 = _invert_perm(perm0)
+    ids_full0 = ids_compact[inv_perm0]
+    idx0 = jnp.arange(num_frontier, dtype=jnp.int32) * 2
+    slot0_ids = ids_full0[idx0]
+
+    slot1_enabled = is_add_suc | is_mul_suc
+    slot1_ops = jnp.zeros_like(f_ops)
+    slot1_a1 = jnp.zeros_like(f_a1)
+    slot1_a2 = jnp.zeros_like(f_a2)
+    slot1_ops = jnp.where(is_add_suc, jnp.int32(OP_SUC), slot1_ops)
+    slot1_a1 = jnp.where(is_add_suc, slot0_ids, slot1_a1)
+    slot1_ops = jnp.where(is_mul_suc, jnp.int32(OP_ADD), slot1_ops)
+    slot1_a1 = jnp.where(is_mul_suc, val_y, slot1_a1)
+    slot1_a2 = jnp.where(is_mul_suc, slot0_ids, slot1_a2)
+
+    slot1_ops = jnp.where(slot1_enabled, slot1_ops, jnp.int32(0))
+    slot1_a1 = jnp.where(slot1_enabled, slot1_a1, jnp.int32(0))
+    slot1_a2 = jnp.where(slot1_enabled, slot1_a2, jnp.int32(0))
+    slot1_ids, ledger1 = intern_nodes(ledger0, slot1_ops, slot1_a1, slot1_a2)
+
+    enable0 = enabled0[idx0] != 0
+    next_frontier = jnp.where(enable0, slot0_ids, frontier_ids)
+    next_frontier = jnp.where(is_mul_suc, slot1_ids, next_frontier)
+
+    stratum0 = Stratum(
+        start=start0, count=(ledger0.count - start0).astype(jnp.int32)
+    )
+    start1 = ledger0.count.astype(jnp.int32)
+    stratum1 = Stratum(
+        start=start1, count=(ledger1.count - start1).astype(jnp.int32)
+    )
     if validate_stratum:
-        if not validate_stratum_no_within_refs(new_ledger, stratum):
+        if not validate_stratum_no_within_refs(ledger0, stratum0):
             raise ValueError("Stratum contains within-tier references")
-    return new_ledger, next_frontier, stratum
+        if not validate_stratum_no_within_refs(ledger1, stratum1):
+            raise ValueError("Stratum contains within-tier references")
+    return ledger1, next_frontier, (stratum0, stratum1)
 
 @jit
 def op_rank(arena):

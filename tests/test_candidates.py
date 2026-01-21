@@ -123,6 +123,37 @@ def test_candidate_emit_add_suc_values():
     assert int(candidates.arg2[0]) == int(y_id)
 
 
+def test_candidate_emit_mul_suc_values():
+    _require_candidate_api()
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    suc_x_id = suc_ids[0]
+    y_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    y_id = y_ids[0]
+    mul_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_MUL], dtype=jnp.int32),
+        jnp.array([suc_x_id], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    candidates = pv.emit_candidates(ledger, jnp.array([mul_ids[0]], dtype=jnp.int32))
+    assert int(candidates.enabled[0]) == 1
+    assert int(candidates.enabled[1]) == 0
+    assert int(candidates.opcode[0]) == pv.OP_MUL
+    assert int(candidates.arg1[0]) == pv.ZERO_PTR
+    assert int(candidates.arg2[0]) == int(y_id)
+
+
 def test_candidate_slot1_disabled_for_all_frontier_nodes():
     _require_candidate_api()
     ledger = pv.init_ledger()
