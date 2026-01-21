@@ -1,0 +1,1 @@
+# BSP rank basic: ADD should classify HOT, ZERO should classify COLD.
