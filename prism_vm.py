@@ -88,17 +88,26 @@ def op_sort_and_swizzle(arena):
     active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
     return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count)
 
-def op_sort_and_swizzle_blocked(arena, block_size):
+def _blocked_perm(arena, block_size, morton=None):
     size = int(arena.rank.shape[0])
     if block_size <= 0 or size % block_size != 0:
         raise ValueError("block_size must evenly divide arena size")
     num_blocks = size // block_size
-    ranks = arena.rank.reshape((num_blocks, block_size))
-    idx = jnp.arange(block_size, dtype=jnp.int32)
-    sort_key = ranks.astype(jnp.int32) * (block_size + 1) + idx
+    ranks = arena.rank.reshape((num_blocks, block_size)).astype(jnp.uint32)
+    idx = jnp.arange(block_size, dtype=jnp.uint32)
+    idx_u = idx & jnp.uint32(0xFFFF)
+    if morton is None:
+        morton_u = jnp.zeros_like(ranks, dtype=jnp.uint32)
+    else:
+        morton_u = morton.reshape((num_blocks, block_size)).astype(jnp.uint32) & jnp.uint32(0x3FFF)
+    sort_key = (ranks << 30) | (morton_u << 16) | idx_u
     perm_local = jnp.argsort(sort_key, axis=1)
-    base = (jnp.arange(num_blocks, dtype=jnp.int32) * block_size)[:, None]
-    perm = (base + perm_local).reshape((size,))
+    base = (jnp.arange(num_blocks, dtype=jnp.uint32) * block_size)[:, None]
+    perm = (base + perm_local).reshape((size,)).astype(jnp.int32)
+    return perm
+
+def op_sort_and_swizzle_blocked_with_perm(arena, block_size, morton=None):
+    perm = _blocked_perm(arena, block_size, morton=morton)
     inv_perm = jnp.argsort(perm)
     new_ops = arena.opcode[perm]
     new_arg1 = arena.arg1[perm]
@@ -107,7 +116,13 @@ def op_sort_and_swizzle_blocked(arena, block_size):
     swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
     swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
     active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
-    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count)
+    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count), inv_perm
+
+def op_sort_and_swizzle_blocked(arena, block_size, morton=None):
+    sorted_arena, _ = op_sort_and_swizzle_blocked_with_perm(
+        arena, block_size, morton=morton
+    )
+    return sorted_arena
 
 @jit
 def op_sort_and_swizzle_with_perm(arena):
@@ -181,6 +196,25 @@ def op_sort_and_swizzle_morton(arena, morton):
     return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count)
 
 @jit
+def op_sort_and_swizzle_morton_with_perm(arena, morton):
+    size = arena.rank.shape[0]
+    idx = jnp.arange(size, dtype=jnp.uint32)
+    rank_u = arena.rank.astype(jnp.uint32)
+    morton_u = morton.astype(jnp.uint32) & jnp.uint32(0x3FFF)
+    idx_u = idx & jnp.uint32(0xFFFF)
+    sort_key = (rank_u << 30) | (morton_u << 16) | idx_u
+    perm = jnp.argsort(sort_key)
+    inv_perm = jnp.argsort(perm)
+    new_ops = arena.opcode[perm]
+    new_arg1 = arena.arg1[perm]
+    new_arg2 = arena.arg2[perm]
+    new_rank = arena.rank[perm]
+    swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
+    swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
+    active_count = jnp.sum(new_rank != RANK_FREE).astype(jnp.int32)
+    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, active_count), inv_perm
+
+@jit
 def op_interact(arena):
     ops = arena.opcode
     a1 = arena.arg1
@@ -224,10 +258,20 @@ def op_interact(arena):
     new_count = arena.count + total_spawn
     return Arena(final_ops, final_a1, final_a2, arena.rank, new_count)
 
-def cycle(arena, root_ptr, do_sort=True):
+def cycle(arena, root_ptr, do_sort=True, use_morton=False, block_size=None, morton=None):
     arena = op_rank(arena)
     if do_sort:
-        arena, inv_perm = op_sort_and_swizzle_with_perm(arena)
+        morton_arr = None
+        if use_morton or morton is not None:
+            morton_arr = morton if morton is not None else op_morton(arena)
+        if block_size is not None:
+            arena, inv_perm = op_sort_and_swizzle_blocked_with_perm(
+                arena, block_size, morton=morton_arr
+            )
+        elif morton_arr is not None:
+            arena, inv_perm = op_sort_and_swizzle_morton_with_perm(arena, morton_arr)
+        else:
+            arena, inv_perm = op_sort_and_swizzle_with_perm(arena)
         root_arr = jnp.array(root_ptr, dtype=jnp.int32)
         root_arr = jnp.where(root_arr != 0, inv_perm[root_arr], 0)
         root_ptr = int(root_arr)
@@ -474,7 +518,7 @@ def run_program_lines(lines, vm=None):
         print(f"   └─ Result  : \033[92m{vm.decode(res_ptr)}\033[0m")
     return vm
 
-def run_program_lines_bsp(lines, vm=None, cycles=1, do_sort=True):
+def run_program_lines_bsp(lines, vm=None, cycles=1, do_sort=True, use_morton=False, block_size=None):
     if vm is None:
         vm = PrismVM_BSP()
     for inp in lines:
@@ -484,13 +528,19 @@ def run_program_lines_bsp(lines, vm=None, cycles=1, do_sort=True):
         tokens = re.findall(r"\(|\)|[a-z]+", inp)
         root_ptr = vm.parse(tokens)
         for _ in range(max(1, cycles)):
-            vm.arena, root_ptr = cycle(vm.arena, root_ptr, do_sort=do_sort)
+            vm.arena, root_ptr = cycle(
+                vm.arena,
+                root_ptr,
+                do_sort=do_sort,
+                use_morton=use_morton,
+                block_size=block_size,
+            )
         hot, warm, cold, free = _rank_counts(vm.arena)
         print(f"   ├─ BSP Cycle: HOT {hot} WARM {warm} COLD {cold} FREE {free}")
         print(f"   └─ Result  : \033[92m{vm.decode(root_ptr)}\033[0m")
     return vm
 
-def repl(mode="baseline"):
+def repl(mode="baseline", use_morton=False, block_size=None):
     if mode == "bsp":
         vm = PrismVM_BSP()
         print("\n🔮 Prism IR Shell (BSP Arena)")
@@ -506,7 +556,9 @@ def repl(mode="baseline"):
             if inp == "exit": break
             if not inp: continue
             if mode == "bsp":
-                run_program_lines_bsp([inp], vm)
+                run_program_lines_bsp(
+                    [inp], vm, use_morton=use_morton, block_size=block_size
+                )
             else:
                 run_program_lines([inp], vm)
         except Exception as e:
@@ -518,6 +570,8 @@ if __name__ == "__main__":
     mode = "baseline"
     cycles = 1
     do_sort = True
+    use_morton = False
+    block_size = None
     path = None
     i = 0
     while i < len(args):
@@ -542,6 +596,18 @@ if __name__ == "__main__":
             do_sort = False
             i += 1
             continue
+        if arg == "--morton":
+            use_morton = True
+            i += 1
+            continue
+        if arg == "--block-size" and i + 1 < len(args):
+            block_size = int(args[i + 1])
+            i += 2
+            continue
+        if arg.startswith("--block-size="):
+            block_size = int(arg.split("=", 1)[1])
+            i += 1
+            continue
         if path is None:
             path = arg
             i += 1
@@ -551,8 +617,14 @@ if __name__ == "__main__":
         with open(path) as f:
             lines = f.readlines()
         if mode == "bsp":
-            run_program_lines_bsp(lines, cycles=cycles, do_sort=do_sort)
+            run_program_lines_bsp(
+                lines,
+                cycles=cycles,
+                do_sort=do_sort,
+                use_morton=use_morton,
+                block_size=block_size,
+            )
         else:
             run_program_lines(lines)
     else:
-        repl(mode=mode)
+        repl(mode=mode, use_morton=use_morton, block_size=block_size)
