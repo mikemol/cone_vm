@@ -33,3 +33,14 @@ def test_swizzle_null_pointer_stays_zero():
     sorted_arena = pv.op_sort_and_swizzle(arena)
     assert int(sorted_arena.opcode[2]) == pv.OP_SUC
     assert int(sorted_arena.arg2[2]) == 0
+
+
+def test_sort_swizzle_root_remap():
+    assert hasattr(pv, "op_sort_and_swizzle_with_perm"), "op_sort_and_swizzle_with_perm missing"
+    arena = _arena_with_edges()
+    sorted_arena, inv_perm = pv.op_sort_and_swizzle_with_perm(arena)
+    root_old = jnp.array(3, dtype=jnp.int32)
+    root_new = jnp.where(root_old != 0, inv_perm[root_old], 0)
+    assert int(root_new) == 2
+    assert int(sorted_arena.opcode[root_new]) == pv.OP_SUC
+    assert int(sorted_arena.arg1[root_new]) == 1
