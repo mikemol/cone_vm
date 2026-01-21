@@ -46,3 +46,35 @@ def test_cycle_candidates_mul_zero():
     ledger, next_frontier = pv.cycle_candidates(ledger, frontier)
     assert int(next_frontier.shape[0]) == 1
     assert int(next_frontier[0]) == 1
+
+
+def test_cycle_candidates_add_suc():
+    _require_cycle_candidates()
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([1], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    suc_x_id = suc_ids[0]
+    y_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([1], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    y_id = y_ids[0]
+    add_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([suc_x_id], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    frontier = jnp.array([add_ids[0]], dtype=jnp.int32)
+    ledger, next_frontier = pv.cycle_candidates(ledger, frontier)
+    assert int(next_frontier.shape[0]) == 1
+    next_id = next_frontier[0]
+    assert int(ledger.opcode[next_id]) == pv.OP_ADD
+    assert int(ledger.arg1[next_id]) == 1
+    assert int(ledger.arg2[next_id]) == int(y_id)

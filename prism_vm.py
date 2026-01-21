@@ -128,12 +128,25 @@ def emit_candidates(ledger, frontier_ids):
 
     is_add_zero = (f_ops == OP_ADD) & (op_a1 == OP_ZERO)
     is_mul_zero = (f_ops == OP_MUL) & (op_a1 == OP_ZERO)
-    enable0 = is_add_zero | is_mul_zero
+    is_add_suc = (f_ops == OP_ADD) & (op_a1 == OP_SUC)
+    enable0 = is_add_zero | is_mul_zero | is_add_suc
 
     y_id = jnp.where(is_add_zero, f_a2, jnp.int32(1))
-    cand0_op = ledger.opcode[y_id]
-    cand0_a1 = ledger.arg1[y_id]
-    cand0_a2 = ledger.arg2[y_id]
+    val_x = ledger.arg1[f_a1]
+    val_y = f_a2
+
+    cand0_op = jnp.zeros_like(f_ops)
+    cand0_a1 = jnp.zeros_like(f_a1)
+    cand0_a2 = jnp.zeros_like(f_a2)
+
+    id_mask = is_add_zero | is_mul_zero
+    cand0_op = jnp.where(id_mask, ledger.opcode[y_id], cand0_op)
+    cand0_a1 = jnp.where(id_mask, ledger.arg1[y_id], cand0_a1)
+    cand0_a2 = jnp.where(id_mask, ledger.arg2[y_id], cand0_a2)
+
+    cand0_op = jnp.where(is_add_suc, jnp.int32(OP_ADD), cand0_op)
+    cand0_a1 = jnp.where(is_add_suc, val_x, cand0_a1)
+    cand0_a2 = jnp.where(is_add_suc, val_y, cand0_a2)
 
     cand0_op = jnp.where(enable0, cand0_op, jnp.int32(0))
     cand0_a1 = jnp.where(enable0, cand0_a1, jnp.int32(0))
