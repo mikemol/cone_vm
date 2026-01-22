@@ -1,22 +1,25 @@
 # Prism VM Evolution Implementation Plan
 
-This plan implements the features described in `in/in-4.md`, `in/in-5.md`,
-`in/in-6.md`, and `in/in-7.md` as a concrete evolution of the current
+This plan implements the features described in `in/in-4.md` through
+`in/in-7.md`, plus the CNF-2 and canonical interning semantics in
+`in/in-9.md` through `in/in-13.md`, as a concrete evolution of the current
 `prism_vm.py` implementation.
 
 ## Goals
-- Introduce a fluid arena with rank-based sorting and pointer swizzling.
-- Add a 2-bit rank scheduler with stable locality guarantees.
-- Implement a rank/sort/swizzle/interaction cycle.
-- Add Morton or 2:1 BSP locality as a secondary ordering key (staged).
+- Establish the Ledger + candidate pipeline as the canonical execution path.
 - Converge on CNF-2 symmetric rewrite semantics with a fixed-arity candidate
-  pipeline and explicit strata discipline.
+  pipeline (slot 1 disabled until continuation/strata support).
+- Enforce univalence: full-key equality for interning and no truncation aliasing.
+- Introduce self-hosted CD coordinates as interned CNF-2 objects and define
+  aggregation as coordinate-space normalization.
 - Preserve a stable, testable baseline while the new mode is built out.
+- Stage arena scheduling and 2:1 BSP locality as performance-only concerns.
 
 ## Non-Goals (Initial MVP)
 - Full hierarchical arena migration across levels (L1/L2/global).
 - Perfect allocator for all graph rewrite rules beyond ADD.
 - Full macro system or higher-order quotation semantics.
+- Persistent event-log storage or snapshotting for CQRS beyond in-memory.
 - Treating 2:1 locality as a semantic invariant before functional correctness
   is locked down.
 
@@ -29,12 +32,17 @@ This plan implements the features described in `in/in-4.md`, `in/in-5.md`,
 - `kernel_add` and a stub `kernel_mul`.
 
 ## Architecture Decision
-Add a **new execution mode** (`PrismVM_BSP`) while keeping the existing VM.
-This protects the current behavior and makes cross-validation possible.
+Ledger + candidate pipeline is the canonical execution path. Baseline
+`PrismVM` stays as an oracle. Arena scheduling remains a later optimization.
 
 ## Semantic Commitments (Staged)
 - CNF-2 symmetric rewrite semantics are the target for BSP. Every rewrite site
   emits exactly two candidate slots (enabled or disabled).
+- Keep candidate slot 1 disabled until continuation/strata support lands.
+- Univalence is enforced by full-key equality (hash as hint only) and
+  no truncation aliasing in key encoding.
+- CD coordinates are interned CNF-2 objects (`OP_COORD_*`), and coordinate
+  equality is pointer equality.
 - 2:1 BSP swizzle/locality is staged as a performance invariant:
   - M1-M3: rank-only sort (or no sort) is acceptable for correctness tests.
   - M4+: 2:1 swizzle is mandatory for the performance profile, but must not
@@ -47,6 +55,21 @@ For each step below:
 - Add **program fixtures** (in `tests/` or a dedicated `programs/`) mirroring the
   pytest coverage for black-box validation.
 - Commit tests first, then implement, then commit again.
+
+### 0) Canonical Interner + Univalence (Ledger-first)
+Objective: treat the Ledger as the canonical read model and enforce univalence.
+
+Tests (before implementation):
+- Pytest: `test_ledger_full_key_equality` (expected: hash collision does not merge distinct nodes).
+- Pytest: `test_key_width_no_alias` (null: distinct child ids never alias in key encoding).
+- Program: `tests/ledger_univalence.txt` (expected: deterministic canonical ids).
+- Program null: `tests/ledger_noop.txt` (expected: no changes).
+
+Tasks:
+- Ensure interning uses full-key equality; hash is a hint only.
+- Add a canonicalize-before-pack hook for any derived representations.
+- Guard against truncation aliasing (widen key encoding or assert limits).
+- Treat index arrays as rebuildable read models (event log optional).
 
 ### 1) Data Model: Arena vs Manifest
 Objective: introduce the fluid arena state and keep it isolated from the
@@ -61,7 +84,7 @@ Tests (before implementation):
 Tasks:
 - Add an `Arena` NamedTuple with:
   - `opcode`, `arg1`, `arg2`, `rank` arrays
-  - `count` (active node boundary)
+  - `count` (next-free pointer; do not overwrite with active count)
 - Add `init_arena()` that seeds `OP_ZERO` and reserves `OP_NULL = 0`.
 - Define ranks:
   - `RANK_HOT = 0`, `RANK_WARM = 1`, `RANK_COLD = 2`, `RANK_FREE = 3`
@@ -100,7 +123,7 @@ Tasks:
   - Compute `perm` (stable) and `inv_perm`.
   - Permute `opcode`, `arg1`, `arg2`, `rank`.
   - Swizzle pointers via `inv_perm`, preserving `0` as NULL.
-  - Update `count` to number of non-FREE nodes.
+  - Preserve `count` as next-free pointer; track active count separately if needed.
 - Use `jax.numpy.argsort` initially.
 - Later: replace with 4-bin partition (prefix sums) for speed.
 - Staging note: rank-only sort is sufficient for M1-M3 correctness. 2:1
@@ -160,12 +183,29 @@ Tasks:
 - Add a `CandidateBuffer` structure:
   - `enabled`, `opcode`, `arg1`, `arg2` arrays sized to `2 * |frontier|`.
 - Implement CNF-2 rewrite emission (always two slots; predicates control enable).
+- Keep slot 1 disabled until continuation/strata support is added.
 - Implement compaction (enabled mask + prefix sums).
 - Intern compacted candidates via `intern_nodes` (can be fused in M2).
 - Add a lightweight `Stratum` record (offset + count) for new ids, and validators
   to enforce no within-stratum dependencies.
 
-### 7) Morton / 2:1 BSP Locality
+### 7) Coordinate Semantics (Self-Hosted CD)
+Objective: add CD coordinates as interned CNF-2 objects and define parity/aggregation.
+
+Tests (before implementation):
+- Pytest: `test_coord_opcodes_exist` (expected: `OP_COORD_*` registered).
+- Pytest: `test_coord_pointer_equality` (expected: identical coordinates intern to same id).
+- Pytest: `test_coord_xor_parity_cancel` (expected: parity cancellation is idempotent).
+- Program: `tests/coord_basic.txt` (expected: canonical ids for coordinates).
+- Program null: `tests/coord_noop.txt` (expected: no rewrite for non-coord ops).
+
+Tasks:
+- Add `OP_COORD_ZERO`, `OP_COORD_ONE`, `OP_COORD_PAIR`.
+- Implement coordinate construction and XOR/parity rewrite rules in the BSP path.
+- Ensure coordinate normalization happens before key packing so interning enforces
+  pointer equality on canonical coordinate objects.
+
+### 8) Morton / 2:1 BSP Locality
 Objective: add the 2:1 BSP ordering as a secondary sort key.
 
 Tests (before implementation):
@@ -185,7 +225,7 @@ Tasks:
   - `sort_key = (rank << high_bits) | morton`.
 - Ensure stable ordering inside ranks when Morton keys collide.
 
-### 8) Hierarchical Arenas (Phase 2)
+### 9) Hierarchical Arenas (Phase 2)
 Objective: implement multi-level arenas to constrain shatter.
 
 Tests (before implementation):
@@ -200,7 +240,7 @@ Tasks:
 - Add metadata arrays for block offsets and free ranges.
 - This is a later milestone once fluid arena is correct.
 
-### 9) Parser, REPL, and Telemetry
+### 10) Parser, REPL, and Telemetry
 Objective: maintain usability and instrumentation.
 
 Tests (before implementation):
@@ -221,15 +261,17 @@ Tasks:
 
 ## Milestones
 - **M1: Correctness spine (eager canonicalization)**
-  - `Arena`, `init_arena`, `op_rank` compile and run.
-  - `cycle_intrinsic + intern_nodes` used as the BSP reference path.
-  - Tests: root remap, univalence/dedup.
+  - Ledger interning is the reference path (`cycle_intrinsic + intern_nodes`).
+  - Baseline `PrismVM` remains strict oracle.
+  - Tests: root remap, univalence/dedup, key-width guard.
 - **M2: CNF-2 surface (candidate buffer)**
   - Two-slot candidate emission + compaction (intern can be fused).
+  - Slot 1 remains disabled until continuation/strata support.
   - Tests: fixed arity, enabled-only compaction, baseline equivalence.
 - **M3: Strata discipline**
   - Explicit stratum boundary with validators (no within-tier refs).
-  - Baseline remains strict oracle.
+  - Introduce `OP_COORD_*` and parity/normalization rules.
+  - Canonicalize-before-pack for coordinate objects.
 - **M4: Performance semantics**
   - Mandatory 2:1 swizzle/morton ordering.
   - Denotation-invariance tests across swizzle modes.
@@ -241,6 +283,8 @@ Unit tests (ordered by dependency):
 - Root remap correctness after any permutation/sort.
 - Strata discipline: newly created nodes only reference prior strata.
 - Lossless univalence/dedup (interning returns canonical ids).
+- Key-width aliasing guard (full-key equality, no truncation merges).
+- Coordinate parity normalization (pointer equality for canonical coordinates).
 - CNF-2 fixed arity: two candidate slots per rewrite site.
 - 2:1 denotation invariance once swizzle is mandatory.
 
@@ -258,6 +302,7 @@ Performance checks:
 - **Pointer invalidation**: treat root pointer as part of state, remap every
   sort, and verify in tests.
 - **Capacity overflow**: add a guard that halts or triggers a sort/compaction.
+- **Key aliasing**: avoid truncation in key encoding or assert limits at intern.
 - **JIT recompilations**: keep shapes static (fixed MAX_NODES).
 
 ## Deliverables
