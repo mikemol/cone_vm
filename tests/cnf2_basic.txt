@@ -1,0 +1,4 @@
+(add zero (suc zero))
+(add (suc zero) (suc zero))
+(mul zero (suc zero))
+(mul (suc zero) (suc zero))
