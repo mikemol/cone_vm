@@ -13,15 +13,22 @@ OP_SUC  = 2
 OP_ADD  = 10
 OP_MUL  = 11
 OP_SORT = 99
+OP_COORD_ZERO = 20
+OP_COORD_ONE = 21
+OP_COORD_PAIR = 22
 ZERO_PTR = 1
 
 OP_NAMES = {
     0: "NULL", 1: "zero", 2: "suc",
-    10: "add", 11: "mul", 99: "sort"
+    10: "add", 11: "mul", 99: "sort",
+    20: "coord_zero", 21: "coord_one", 22: "coord_pair"
 }
 
 MAX_ROWS = 1024 * 32
 MAX_NODES = 1024 * 64
+MAX_KEY_NODES = 1 << 16
+if MAX_NODES > MAX_KEY_NODES:
+    raise ValueError("MAX_NODES exceeds 16-bit key packing")
 
 # --- Rank (2-bit Scheduler) ---
 RANK_HOT = 0
@@ -35,6 +42,7 @@ class Manifest(NamedTuple):
     arg1:   jnp.ndarray
     arg2:   jnp.ndarray
     active_count: jnp.ndarray
+    oom: jnp.ndarray
 
 class Arena(NamedTuple):
     opcode: jnp.ndarray
@@ -42,15 +50,20 @@ class Arena(NamedTuple):
     arg2:   jnp.ndarray
     rank:   jnp.ndarray
     count:  jnp.ndarray
+    oom: jnp.ndarray
 
 class Ledger(NamedTuple):
     opcode: jnp.ndarray
     arg1:   jnp.ndarray
     arg2:   jnp.ndarray
-    keys_hi_sorted: jnp.ndarray
-    keys_lo_sorted: jnp.ndarray
+    keys_b0_sorted: jnp.ndarray
+    keys_b1_sorted: jnp.ndarray
+    keys_b2_sorted: jnp.ndarray
+    keys_b3_sorted: jnp.ndarray
+    keys_b4_sorted: jnp.ndarray
     ids_sorted: jnp.ndarray
     count:  jnp.ndarray
+    oom: jnp.ndarray
 
 class CandidateBuffer(NamedTuple):
     enabled: jnp.ndarray
@@ -67,7 +80,8 @@ def init_manifest():
         opcode=jnp.zeros(MAX_ROWS, dtype=jnp.int32),
         arg1=jnp.zeros(MAX_ROWS, dtype=jnp.int32),
         arg2=jnp.zeros(MAX_ROWS, dtype=jnp.int32),
-        active_count=jnp.array(1, dtype=jnp.int32)
+        active_count=jnp.array(1, dtype=jnp.int32),
+        oom=jnp.array(False, dtype=jnp.bool_),
     )
 
 def init_arena():
@@ -77,6 +91,7 @@ def init_arena():
         arg2=jnp.zeros(MAX_NODES, dtype=jnp.int32),
         rank=jnp.full(MAX_NODES, RANK_FREE, dtype=jnp.int8),
         count=jnp.array(1, dtype=jnp.int32),
+        oom=jnp.array(False, dtype=jnp.bool_),
     )
     arena = arena._replace(
         opcode=arena.opcode.at[1].set(OP_ZERO),
@@ -87,7 +102,7 @@ def init_arena():
     return arena
 
 def init_ledger():
-    max_key = jnp.uint32(jnp.iinfo(jnp.uint32).max)
+    max_key = jnp.uint8(0xFF)
 
     opcode = jnp.zeros(MAX_NODES, dtype=jnp.int32)
     arg1 = jnp.zeros(MAX_NODES, dtype=jnp.int32)
@@ -95,24 +110,38 @@ def init_ledger():
 
     opcode = opcode.at[1].set(OP_ZERO)
 
-    keys_hi_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint32)
-    keys_lo_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint32)
+    keys_b0_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint8)
+    keys_b1_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint8)
+    keys_b2_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint8)
+    keys_b3_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint8)
+    keys_b4_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint8)
     ids_sorted = jnp.zeros(MAX_NODES, dtype=jnp.int32)
 
-    k0_hi, k0_lo = _pack_key(jnp.uint32(OP_NULL), jnp.uint32(0), jnp.uint32(0))
-    k1_hi, k1_lo = _pack_key(jnp.uint32(OP_ZERO), jnp.uint32(0), jnp.uint32(0))
-    keys_hi_sorted = keys_hi_sorted.at[0].set(k0_hi).at[1].set(k1_hi)
-    keys_lo_sorted = keys_lo_sorted.at[0].set(k0_lo).at[1].set(k1_lo)
+    k0_b0, k0_b1, k0_b2, k0_b3, k0_b4 = _pack_key(
+        jnp.uint8(OP_NULL), jnp.uint16(0), jnp.uint16(0)
+    )
+    k1_b0, k1_b1, k1_b2, k1_b3, k1_b4 = _pack_key(
+        jnp.uint8(OP_ZERO), jnp.uint16(0), jnp.uint16(0)
+    )
+    keys_b0_sorted = keys_b0_sorted.at[0].set(k0_b0).at[1].set(k1_b0)
+    keys_b1_sorted = keys_b1_sorted.at[0].set(k0_b1).at[1].set(k1_b1)
+    keys_b2_sorted = keys_b2_sorted.at[0].set(k0_b2).at[1].set(k1_b2)
+    keys_b3_sorted = keys_b3_sorted.at[0].set(k0_b3).at[1].set(k1_b3)
+    keys_b4_sorted = keys_b4_sorted.at[0].set(k0_b4).at[1].set(k1_b4)
     ids_sorted = ids_sorted.at[0].set(0).at[1].set(1)
 
     return Ledger(
         opcode=opcode,
         arg1=arg1,
         arg2=arg2,
-        keys_hi_sorted=keys_hi_sorted,
-        keys_lo_sorted=keys_lo_sorted,
+        keys_b0_sorted=keys_b0_sorted,
+        keys_b1_sorted=keys_b1_sorted,
+        keys_b2_sorted=keys_b2_sorted,
+        keys_b3_sorted=keys_b3_sorted,
+        keys_b4_sorted=keys_b4_sorted,
         ids_sorted=ids_sorted,
         count=jnp.array(2, dtype=jnp.int32),
+        oom=jnp.array(False, dtype=jnp.bool_),
     )
 
 def emit_candidates(ledger, frontier_ids):
@@ -130,16 +159,31 @@ def emit_candidates(ledger, frontier_ids):
     f_a1 = ledger.arg1[frontier_ids]
     f_a2 = ledger.arg2[frontier_ids]
     op_a1 = ledger.opcode[f_a1]
+    op_a2 = ledger.opcode[f_a2]
 
-    is_add_zero = (f_ops == OP_ADD) & (op_a1 == OP_ZERO)
-    is_mul_zero = (f_ops == OP_MUL) & (op_a1 == OP_ZERO)
-    is_add_suc = (f_ops == OP_ADD) & (op_a1 == OP_SUC)
-    is_mul_suc = (f_ops == OP_MUL) & (op_a1 == OP_SUC)
+    is_add = f_ops == OP_ADD
+    is_mul = f_ops == OP_MUL
+    is_zero_a1 = op_a1 == OP_ZERO
+    is_zero_a2 = op_a2 == OP_ZERO
+    is_suc_a1 = op_a1 == OP_SUC
+    is_suc_a2 = op_a2 == OP_SUC
+
+    is_add_zero = is_add & (is_zero_a1 | is_zero_a2)
+    is_mul_zero = is_mul & (is_zero_a1 | is_zero_a2)
+    is_add_suc = is_add & (is_suc_a1 | is_suc_a2) & (~is_add_zero)
+    is_mul_suc = is_mul & (is_suc_a1 | is_suc_a2) & (~is_mul_zero)
     enable0 = is_add_zero | is_mul_zero | is_add_suc | is_mul_suc
+    zero_on_a1 = is_zero_a1
+    zero_on_a2 = (~is_zero_a1) & is_zero_a2
+    zero_other = jnp.where(zero_on_a1, f_a2, f_a1)
+    y_id = jnp.where(is_add_zero, zero_other, jnp.int32(ZERO_PTR))
 
-    y_id = jnp.where(is_add_zero, f_a2, jnp.int32(ZERO_PTR))
-    val_x = ledger.arg1[f_a1]
-    val_y = f_a2
+    suc_on_a1 = is_suc_a1
+    suc_on_a2 = (~is_suc_a1) & is_suc_a2
+    suc_node = jnp.where(suc_on_a1, f_a1, f_a2)
+    other_node = jnp.where(suc_on_a1, f_a2, f_a1)
+    val_x = ledger.arg1[suc_node]
+    val_y = other_node
 
     cand0_op = jnp.zeros_like(f_ops)
     cand0_a1 = jnp.zeros_like(f_a1)
@@ -177,18 +221,37 @@ def _candidate_perm(enabled):
     sort_key = (1 - enabled) * (size + 1) + idx
     return jnp.argsort(sort_key).astype(jnp.int32)
 
+def _candidate_indices(enabled):
+    size = enabled.shape[0]
+    count = jnp.sum(enabled).astype(jnp.int32)
+    idx = jnp.nonzero(enabled, size=size, fill_value=0)[0].astype(jnp.int32)
+    valid = jnp.arange(size, dtype=jnp.int32) < count
+    return idx, valid, count
+
 def compact_candidates(candidates):
     enabled = candidates.enabled.astype(jnp.int32)
-    count = jnp.sum(enabled).astype(jnp.int32)
-    perm = _candidate_perm(enabled)
+    idx, valid, count = _candidate_indices(enabled)
+    safe_idx = jnp.where(valid, idx, 0)
 
     compacted = CandidateBuffer(
-        enabled=enabled[perm],
-        opcode=candidates.opcode[perm],
-        arg1=candidates.arg1[perm],
-        arg2=candidates.arg2[perm],
+        enabled=valid.astype(jnp.int32),
+        opcode=candidates.opcode[safe_idx],
+        arg1=candidates.arg1[safe_idx],
+        arg2=candidates.arg2[safe_idx],
     )
     return compacted, count
+
+def compact_candidates_with_index(candidates):
+    enabled = candidates.enabled.astype(jnp.int32)
+    idx, valid, count = _candidate_indices(enabled)
+    safe_idx = jnp.where(valid, idx, 0)
+    compacted = CandidateBuffer(
+        enabled=valid.astype(jnp.int32),
+        opcode=candidates.opcode[safe_idx],
+        arg1=candidates.arg1[safe_idx],
+        arg2=candidates.arg2[safe_idx],
+    )
+    return compacted, count, idx
 
 def intern_candidates(ledger, candidates):
     compacted, count = compact_candidates(candidates)
@@ -200,45 +263,79 @@ def intern_candidates(ledger, candidates):
     return ids, new_ledger, count
 
 
-def validate_stratum_no_within_refs(ledger, stratum):
-    start = int(stratum.start)
-    count = int(stratum.count)
-    if count <= 0:
-        return True
-    ids = jnp.arange(start, start + count, dtype=jnp.int32)
+@jit
+def validate_stratum_no_within_refs_jax(ledger, stratum):
+    start = stratum.start
+    count = jnp.maximum(stratum.count, 0)
+    ids = jnp.arange(ledger.arg1.shape[0], dtype=jnp.int32)
+    mask = (ids >= start) & (ids < start + count)
     a1 = ledger.arg1[ids]
     a2 = ledger.arg2[ids]
-    ok = jnp.all(a1 < start) & jnp.all(a2 < start)
-    return bool(ok)
+    ok_a1 = jnp.all(jnp.where(mask, a1 < start, True))
+    ok_a2 = jnp.all(jnp.where(mask, a2 < start, True))
+    return ok_a1 & ok_a2
+
+def validate_stratum_no_within_refs(ledger, stratum):
+    return bool(validate_stratum_no_within_refs_jax(ledger, stratum))
 
 def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     num_frontier = frontier_ids.shape[0]
     if num_frontier == 0:
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
-        return ledger, frontier_ids, (empty, empty)
+        return ledger, frontier_ids, (empty, empty, empty)
 
     f_ops = ledger.opcode[frontier_ids]
     f_a1 = ledger.arg1[frontier_ids]
-    f_a2 = ledger.arg2[frontier_ids]
-    op_a1 = ledger.opcode[f_a1]
-    is_add_suc = (f_ops == OP_ADD) & (op_a1 == OP_SUC)
-    is_mul_suc = (f_ops == OP_MUL) & (op_a1 == OP_SUC)
-    val_y = f_a2
+    child_ops = ledger.opcode[f_a1]
+    rewrite_child = (f_ops == OP_SUC) & (
+        (child_ops == OP_ADD) | (child_ops == OP_MUL)
+    )
+    rewrite_ids = jnp.where(rewrite_child, f_a1, frontier_ids)
 
-    candidates = emit_candidates(ledger, frontier_ids)
+    candidates = emit_candidates(ledger, rewrite_ids)
     start0 = ledger.count.astype(jnp.int32)
-    ids_compact, ledger0, _ = intern_candidates(ledger, candidates)
-    enabled0 = candidates.enabled.astype(jnp.int32)
-    perm0 = _candidate_perm(enabled0)
-    inv_perm0 = _invert_perm(perm0)
-    ids_full0 = ids_compact[inv_perm0]
+    compacted0, count0, comp_idx0 = compact_candidates_with_index(candidates)
+    enabled0 = compacted0.enabled.astype(jnp.int32)
+    ops0 = jnp.where(enabled0, compacted0.opcode, jnp.int32(0))
+    a1_0 = jnp.where(enabled0, compacted0.arg1, jnp.int32(0))
+    a2_0 = jnp.where(enabled0, compacted0.arg2, jnp.int32(0))
+    ids_compact, ledger0 = intern_nodes(ledger, ops0, a1_0, a2_0)
+    size0 = candidates.enabled.shape[0]
+    valid0 = jnp.arange(size0, dtype=jnp.int32) < count0
+    scatter_idx0 = jnp.where(valid0, comp_idx0, jnp.int32(-1))
+    scatter_ids0 = jnp.where(valid0, ids_compact, jnp.int32(0))
+    ids_full0 = jnp.zeros_like(candidates.opcode)
+    ids_full0 = ids_full0.at[scatter_idx0].set(scatter_ids0, mode="drop")
     idx0 = jnp.arange(num_frontier, dtype=jnp.int32) * 2
     slot0_ids = ids_full0[idx0]
 
+    r_ops = ledger.opcode[rewrite_ids]
+    r_a1 = ledger.arg1[rewrite_ids]
+    r_a2 = ledger.arg2[rewrite_ids]
+    op_a1 = ledger.opcode[r_a1]
+    op_a2 = ledger.opcode[r_a2]
+    is_add = r_ops == OP_ADD
+    is_mul = r_ops == OP_MUL
+    is_suc_a1 = op_a1 == OP_SUC
+    is_suc_a2 = op_a2 == OP_SUC
+    is_add_suc = is_add & (is_suc_a1 | is_suc_a2)
+    is_mul_suc = is_mul & (is_suc_a1 | is_suc_a2)
+    is_zero_a1 = op_a1 == OP_ZERO
+    is_zero_a2 = op_a2 == OP_ZERO
+    is_add_zero = is_add & (is_zero_a1 | is_zero_a2)
+    is_mul_zero = is_mul & (is_zero_a1 | is_zero_a2)
+    is_add_suc = is_add_suc & (~is_add_zero)
+    is_mul_suc = is_mul_suc & (~is_mul_zero)
+    suc_on_a1 = is_suc_a1
+    suc_on_a2 = (~is_suc_a1) & is_suc_a2
+    suc_node = jnp.where(suc_on_a1, r_a1, r_a2)
+    val_x = ledger.arg1[suc_node]
+    val_y = jnp.where(suc_on_a1, r_a2, r_a1)
+
     slot1_enabled = is_add_suc | is_mul_suc
-    slot1_ops = jnp.zeros_like(f_ops)
-    slot1_a1 = jnp.zeros_like(f_a1)
-    slot1_a2 = jnp.zeros_like(f_a2)
+    slot1_ops = jnp.zeros_like(r_ops)
+    slot1_a1 = jnp.zeros_like(r_a1)
+    slot1_a2 = jnp.zeros_like(r_a2)
     slot1_ops = jnp.where(is_add_suc, jnp.int32(OP_SUC), slot1_ops)
     slot1_a1 = jnp.where(is_add_suc, slot0_ids, slot1_a1)
     slot1_ops = jnp.where(is_mul_suc, jnp.int32(OP_ADD), slot1_ops)
@@ -249,10 +346,23 @@ def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     slot1_a1 = jnp.where(slot1_enabled, slot1_a1, jnp.int32(0))
     slot1_a2 = jnp.where(slot1_enabled, slot1_a2, jnp.int32(0))
     slot1_ids, ledger1 = intern_nodes(ledger0, slot1_ops, slot1_a1, slot1_a2)
+    zero_on_a1 = is_zero_a1
+    zero_on_a2 = (~is_zero_a1) & is_zero_a2
+    zero_other = jnp.where(zero_on_a1, r_a2, r_a1)
+    base_next = rewrite_ids
+    base_next = jnp.where(is_add_zero, zero_other, base_next)
+    base_next = jnp.where(is_mul_zero, jnp.int32(ZERO_PTR), base_next)
+    base_next = jnp.where(is_add_suc, slot1_ids, base_next)
+    base_next = jnp.where(is_mul_suc, slot1_ids, base_next)
 
-    enable0 = enabled0[idx0] != 0
-    next_frontier = jnp.where(enable0, slot0_ids, frontier_ids)
-    next_frontier = jnp.where(is_mul_suc, slot1_ids, next_frontier)
+    wrap_emit = rewrite_child & (base_next != rewrite_ids)
+    wrap_ops = jnp.where(wrap_emit, jnp.int32(OP_SUC), jnp.int32(0))
+    wrap_a1 = jnp.where(wrap_emit, base_next, jnp.int32(0))
+    wrap_a2 = jnp.zeros_like(wrap_a1)
+    wrap_ids, ledger2 = intern_nodes(ledger1, wrap_ops, wrap_a1, wrap_a2)
+
+    next_frontier = jnp.where(rewrite_child, frontier_ids, base_next)
+    next_frontier = jnp.where(wrap_emit, wrap_ids, next_frontier)
 
     stratum0 = Stratum(
         start=start0, count=(ledger0.count - start0).astype(jnp.int32)
@@ -261,12 +371,18 @@ def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     stratum1 = Stratum(
         start=start1, count=(ledger1.count - start1).astype(jnp.int32)
     )
+    start2 = ledger1.count.astype(jnp.int32)
+    stratum2 = Stratum(
+        start=start2, count=(ledger2.count - start2).astype(jnp.int32)
+    )
     if validate_stratum:
         if not validate_stratum_no_within_refs(ledger0, stratum0):
             raise ValueError("Stratum contains within-tier references")
         if not validate_stratum_no_within_refs(ledger1, stratum1):
             raise ValueError("Stratum contains within-tier references")
-    return ledger1, next_frontier, (stratum0, stratum1)
+        if not validate_stratum_no_within_refs(ledger2, stratum2):
+            raise ValueError("Stratum contains within-tier references")
+    return ledger2, next_frontier, (stratum0, stratum1, stratum2)
 
 @jit
 def op_rank(arena):
@@ -280,13 +396,31 @@ def _invert_perm(perm):
     inv = jnp.empty_like(perm)
     return inv.at[perm].set(jnp.arange(perm.shape[0], dtype=perm.dtype))
 
+def _canonicalize_commutative_host(op, a1, a2):
+    if op in (OP_ADD, OP_MUL) and a2 < a1:
+        return a2, a1
+    return a1, a2
+
+def _canonicalize_nodes(ops, a1, a2):
+    is_coord_leaf = (ops == OP_COORD_ZERO) | (ops == OP_COORD_ONE)
+    a1 = jnp.where(is_coord_leaf, jnp.int32(0), a1)
+    a2 = jnp.where(is_coord_leaf, jnp.int32(0), a2)
+    swap = (ops == OP_MUL) | (ops == OP_ADD)
+    swap = swap & (a2 < a1)
+    a1_swapped = jnp.where(swap, a2, a1)
+    a2_swapped = jnp.where(swap, a1, a2)
+    return ops, a1_swapped, a2_swapped
+
 def _pack_key(op, a1, a2):
-    op_u = op.astype(jnp.uint32)
-    a1_u = a1.astype(jnp.uint32) & jnp.uint32(0xFFFF)
-    a2_u = a2.astype(jnp.uint32) & jnp.uint32(0xFFFF)
-    key_hi = (op_u << 16) | a1_u
-    key_lo = a2_u
-    return key_hi, key_lo
+    # Byte layout: op, a1_hi, a1_lo, a2_hi, a2_lo for lexicographic sort.
+    op_u = op.astype(jnp.uint8)
+    a1_u = (a1.astype(jnp.uint32) & jnp.uint32(0xFFFF)).astype(jnp.uint16)
+    a2_u = (a2.astype(jnp.uint32) & jnp.uint32(0xFFFF)).astype(jnp.uint16)
+    a1_hi = (a1_u >> jnp.uint16(8)).astype(jnp.uint8)
+    a1_lo = (a1_u & jnp.uint16(0xFF)).astype(jnp.uint8)
+    a2_hi = (a2_u >> jnp.uint16(8)).astype(jnp.uint8)
+    a2_lo = (a2_u & jnp.uint16(0xFF)).astype(jnp.uint8)
+    return op_u, a1_hi, a1_lo, a2_hi, a2_lo
 
 @jit
 def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
@@ -301,23 +435,37 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
       final_ids: int32 array, shape [N], canonical ids for each proposal
       new_ledger: Ledger, updated
     """
-    max_key = jnp.iinfo(jnp.uint32).max
+    max_key = jnp.uint8(0xFF)
+    if proposed_ops.shape[0] == 0:
+        return jnp.zeros_like(proposed_ops), ledger
+    proposed_ops, proposed_a1, proposed_a2 = _canonicalize_nodes(
+        proposed_ops, proposed_a1, proposed_a2
+    )
 
-    P_hi, P_lo = _pack_key(proposed_ops, proposed_a1, proposed_a2)
-    perm = jnp.lexsort((P_lo, P_hi)).astype(jnp.int32)
+    P_b0, P_b1, P_b2, P_b3, P_b4 = _pack_key(
+        proposed_ops, proposed_a1, proposed_a2
+    )
+    perm = jnp.lexsort((P_b4, P_b3, P_b2, P_b1, P_b0)).astype(jnp.int32)
 
-    s_hi = P_hi[perm]
-    s_lo = P_lo[perm]
+    s_b0 = P_b0[perm]
+    s_b1 = P_b1[perm]
+    s_b2 = P_b2[perm]
+    s_b3 = P_b3[perm]
+    s_b4 = P_b4[perm]
     s_ops = proposed_ops[perm]
     s_a1 = proposed_a1[perm]
     s_a2 = proposed_a2[perm]
 
     is_diff = jnp.concatenate([
         jnp.array([True]),
-        (s_hi[1:] != s_hi[:-1]) | (s_lo[1:] != s_lo[:-1]),
+        (s_b0[1:] != s_b0[:-1])
+        | (s_b1[1:] != s_b1[:-1])
+        | (s_b2[1:] != s_b2[:-1])
+        | (s_b3[1:] != s_b3[:-1])
+        | (s_b4[1:] != s_b4[:-1]),
     ])
 
-    idx = jnp.arange(s_hi.shape[0], dtype=jnp.int32)
+    idx = jnp.arange(s_b0.shape[0], dtype=jnp.int32)
 
     def scan_fn(carry, x):
         is_leader, i = x
@@ -326,18 +474,54 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
 
     _, leader_idx = lax.scan(scan_fn, jnp.int32(0), (is_diff, idx))
 
-    L_hi = ledger.keys_hi_sorted
-    L_lo = ledger.keys_lo_sorted
+    L_b0 = ledger.keys_b0_sorted
+    L_b1 = ledger.keys_b1_sorted
+    L_b2 = ledger.keys_b2_sorted
+    L_b3 = ledger.keys_b3_sorted
+    L_b4 = ledger.keys_b4_sorted
     L_ids = ledger.ids_sorted
 
     count = ledger.count.astype(jnp.int32)
+    max_nodes = jnp.int32(MAX_NODES)
+    available = jnp.maximum(max_nodes - count, 0)
+    available = jnp.where(ledger.oom, jnp.int32(0), available)
+    idx_all = jnp.arange(L_b0.shape[0], dtype=jnp.int32)
+    valid_all = idx_all < count
+    op_counts = jnp.bincount(
+        L_b0.astype(jnp.int32),
+        weights=valid_all.astype(jnp.int32),
+        minlength=256,
+        length=256,
+    )
+    op_start = jnp.cumsum(op_counts) - op_counts
+    op_end = op_start + op_counts
 
-    def _lex_less(a_hi, a_lo, b_hi, b_lo):
-        return jnp.logical_or(a_hi < b_hi, jnp.logical_and(a_hi == b_hi, a_lo < b_lo))
+    def _lex_less(a0, a1, a2, a3, a4, b0, b1, b2, b3, b4):
+        return jnp.logical_or(
+            a0 < b0,
+            jnp.logical_and(
+                a0 == b0,
+                jnp.logical_or(
+                    a1 < b1,
+                    jnp.logical_and(
+                        a1 == b1,
+                        jnp.logical_or(
+                            a2 < b2,
+                            jnp.logical_and(
+                                a2 == b2,
+                                jnp.logical_or(
+                                    a3 < b3, jnp.logical_and(a3 == b3, a4 < b4)
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
 
-    def _search_one(t_hi, t_lo):
-        lo = jnp.int32(0)
-        hi = count
+    def _search_one(t_b0, t_b1, t_b2, t_b3, t_b4, start, end):
+        lo = start
+        hi = end
 
         def cond(state):
             lo_i, hi_i = state
@@ -346,9 +530,23 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
         def body(state):
             lo_i, hi_i = state
             mid = (lo_i + hi_i) // 2
-            mid_hi = L_hi[mid]
-            mid_lo = L_lo[mid]
-            go_right = _lex_less(mid_hi, mid_lo, t_hi, t_lo)
+            mid_b0 = L_b0[mid]
+            mid_b1 = L_b1[mid]
+            mid_b2 = L_b2[mid]
+            mid_b3 = L_b3[mid]
+            mid_b4 = L_b4[mid]
+            go_right = _lex_less(
+                mid_b0,
+                mid_b1,
+                mid_b2,
+                mid_b3,
+                mid_b4,
+                t_b0,
+                t_b1,
+                t_b2,
+                t_b3,
+                t_b4,
+            )
             lo_i = jnp.where(go_right, mid + 1, lo_i)
             hi_i = jnp.where(go_right, hi_i, mid)
             return (lo_i, hi_i)
@@ -356,24 +554,39 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
         lo, _ = lax.while_loop(cond, body, (lo, hi))
         return lo
 
-    insert_pos = jax.vmap(_search_one)(s_hi, s_lo)
+    op_idx = s_b0.astype(jnp.int32)
+    op_lo = op_start[op_idx]
+    op_hi = op_end[op_idx]
+    insert_pos = jax.vmap(_search_one)(s_b0, s_b1, s_b2, s_b3, s_b4, op_lo, op_hi)
     safe_pos = jnp.minimum(insert_pos, count - 1)
 
     found_match = (
         (insert_pos < count)
-        & (L_hi[safe_pos] == s_hi)
-        & (L_lo[safe_pos] == s_lo)
+        & (L_b0[safe_pos] == s_b0)
+        & (L_b1[safe_pos] == s_b1)
+        & (L_b2[safe_pos] == s_b2)
+        & (L_b3[safe_pos] == s_b3)
+        & (L_b4[safe_pos] == s_b4)
     )
     matched_ids = L_ids[safe_pos].astype(jnp.int32)
 
-    is_new = is_diff & (~found_match)
+    is_new = is_diff & (~found_match) & (~ledger.oom)
+    requested_new = jnp.sum(is_new.astype(jnp.int32))
+    overflow = requested_new > available
 
     spawn = is_new.astype(jnp.int32)
+    prefix = jnp.cumsum(spawn)
+    spawn = spawn * (prefix <= available).astype(jnp.int32)
+    is_new = spawn.astype(jnp.bool_)
     offsets = jnp.cumsum(spawn) - spawn
     num_new = jnp.sum(spawn).astype(jnp.int32)
 
     write_start = ledger.count.astype(jnp.int32)
-    new_ids_for_sorted = jnp.where(found_match, matched_ids, write_start + offsets)
+    new_ids_for_sorted = jnp.where(
+        found_match,
+        matched_ids,
+        jnp.where(is_new, write_start + offsets, jnp.int32(0)),
+    )
 
     leader_ids = jnp.where(is_diff, new_ids_for_sorted, jnp.int32(0))
     ids_sorted_order = leader_ids[leader_idx]
@@ -400,34 +613,175 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     )
 
     new_count = ledger.count + num_new
+    new_oom = ledger.oom | overflow
 
-    all_hi, all_lo = _pack_key(new_opcode, new_arg1, new_arg2)
-    valid_all = jnp.arange(all_hi.shape[0], dtype=jnp.int32) < new_count
-    pad_hi = jnp.full_like(all_hi, max_key)
-    pad_lo = jnp.full_like(all_lo, max_key)
-    sortable_hi = jnp.where(valid_all, all_hi, pad_hi)
-    sortable_lo = jnp.where(valid_all, all_lo, pad_lo)
+    new_pos = jnp.where(is_new, offsets, jnp.int32(-1))
+    valid_new = new_pos >= 0
+    safe_new = jnp.where(valid_new, new_pos, 0)
 
-    order = jnp.lexsort((sortable_lo, sortable_hi)).astype(jnp.int32)
-    new_keys_hi_sorted = sortable_hi[order]
-    new_keys_lo_sorted = sortable_lo[order]
-    new_ids_sorted = order
+    new_entry_b0_sorted = jnp.full_like(s_b0, max_key)
+    new_entry_b1_sorted = jnp.full_like(s_b1, max_key)
+    new_entry_b2_sorted = jnp.full_like(s_b2, max_key)
+    new_entry_b3_sorted = jnp.full_like(s_b3, max_key)
+    new_entry_b4_sorted = jnp.full_like(s_b4, max_key)
+    new_entry_ids_sorted = jnp.zeros_like(s_a1)
+
+    new_entry_b0_sorted = new_entry_b0_sorted.at[safe_new].set(
+        jnp.where(valid_new, s_b0, new_entry_b0_sorted[0]), mode="drop"
+    )
+    new_entry_b1_sorted = new_entry_b1_sorted.at[safe_new].set(
+        jnp.where(valid_new, s_b1, new_entry_b1_sorted[0]), mode="drop"
+    )
+    new_entry_b2_sorted = new_entry_b2_sorted.at[safe_new].set(
+        jnp.where(valid_new, s_b2, new_entry_b2_sorted[0]), mode="drop"
+    )
+    new_entry_b3_sorted = new_entry_b3_sorted.at[safe_new].set(
+        jnp.where(valid_new, s_b3, new_entry_b3_sorted[0]), mode="drop"
+    )
+    new_entry_b4_sorted = new_entry_b4_sorted.at[safe_new].set(
+        jnp.where(valid_new, s_b4, new_entry_b4_sorted[0]), mode="drop"
+    )
+    new_entry_ids_sorted = new_entry_ids_sorted.at[safe_new].set(
+        jnp.where(valid_new, new_ids_for_sorted, new_entry_ids_sorted[0]),
+        mode="drop",
+    )
+
+    def _merge_sorted_keys(
+        old_b0,
+        old_b1,
+        old_b2,
+        old_b3,
+        old_b4,
+        old_ids,
+        old_count,
+        new_b0,
+        new_b1,
+        new_b2,
+        new_b3,
+        new_b4,
+        new_ids,
+        new_items,
+    ):
+        out_b0 = jnp.full_like(old_b0, max_key)
+        out_b1 = jnp.full_like(old_b1, max_key)
+        out_b2 = jnp.full_like(old_b2, max_key)
+        out_b3 = jnp.full_like(old_b3, max_key)
+        out_b4 = jnp.full_like(old_b4, max_key)
+        out_ids = jnp.zeros_like(old_ids)
+        total = old_count + new_items
+
+        def body(k, state):
+            i, j, b0, b1, b2, b3, b4, ids = state
+            old_valid = i < old_count
+            new_valid = j < new_items
+            safe_i = jnp.where(old_valid, i, 0)
+            safe_j = jnp.where(new_valid, j, 0)
+
+            old0 = jnp.where(old_valid, old_b0[safe_i], max_key)
+            old1 = jnp.where(old_valid, old_b1[safe_i], max_key)
+            old2 = jnp.where(old_valid, old_b2[safe_i], max_key)
+            old3 = jnp.where(old_valid, old_b3[safe_i], max_key)
+            old4 = jnp.where(old_valid, old_b4[safe_i], max_key)
+
+            new0 = jnp.where(new_valid, new_b0[safe_j], max_key)
+            new1 = jnp.where(new_valid, new_b1[safe_j], max_key)
+            new2 = jnp.where(new_valid, new_b2[safe_j], max_key)
+            new3 = jnp.where(new_valid, new_b3[safe_j], max_key)
+            new4 = jnp.where(new_valid, new_b4[safe_j], max_key)
+
+            new_less = _lex_less(
+                new0,
+                new1,
+                new2,
+                new3,
+                new4,
+                old0,
+                old1,
+                old2,
+                old3,
+                old4,
+            )
+            take_new = jnp.where(old_valid & new_valid, new_less, new_valid)
+
+            picked0 = jnp.where(take_new, new0, old0)
+            picked1 = jnp.where(take_new, new1, old1)
+            picked2 = jnp.where(take_new, new2, old2)
+            picked3 = jnp.where(take_new, new3, old3)
+            picked4 = jnp.where(take_new, new4, old4)
+
+            old_id = jnp.where(old_valid, old_ids[safe_i], jnp.int32(0))
+            new_id = jnp.where(new_valid, new_ids[safe_j], jnp.int32(0))
+            picked_id = jnp.where(take_new, new_id, old_id)
+
+            b0 = b0.at[k].set(picked0)
+            b1 = b1.at[k].set(picked1)
+            b2 = b2.at[k].set(picked2)
+            b3 = b3.at[k].set(picked3)
+            b4 = b4.at[k].set(picked4)
+            ids = ids.at[k].set(picked_id)
+
+            i = jnp.where(take_new, i, i + 1)
+            j = jnp.where(take_new, j + 1, j)
+            return (i, j, b0, b1, b2, b3, b4, ids)
+
+        init_state = (
+            jnp.int32(0),
+            jnp.int32(0),
+            out_b0,
+            out_b1,
+            out_b2,
+            out_b3,
+            out_b4,
+            out_ids,
+        )
+        _, _, out_b0, out_b1, out_b2, out_b3, out_b4, out_ids = lax.fori_loop(
+            0, total, body, init_state
+        )
+        return out_b0, out_b1, out_b2, out_b3, out_b4, out_ids
+
+    (
+        new_keys_b0_sorted,
+        new_keys_b1_sorted,
+        new_keys_b2_sorted,
+        new_keys_b3_sorted,
+        new_keys_b4_sorted,
+        new_ids_sorted,
+    ) = _merge_sorted_keys(
+        L_b0,
+        L_b1,
+        L_b2,
+        L_b3,
+        L_b4,
+        L_ids,
+        count,
+        new_entry_b0_sorted,
+        new_entry_b1_sorted,
+        new_entry_b2_sorted,
+        new_entry_b3_sorted,
+        new_entry_b4_sorted,
+        new_entry_ids_sorted,
+        num_new,
+    )
 
     new_ledger = Ledger(
         opcode=new_opcode,
         arg1=new_arg1,
         arg2=new_arg2,
-        keys_hi_sorted=new_keys_hi_sorted,
-        keys_lo_sorted=new_keys_lo_sorted,
+        keys_b0_sorted=new_keys_b0_sorted,
+        keys_b1_sorted=new_keys_b1_sorted,
+        keys_b2_sorted=new_keys_b2_sorted,
+        keys_b3_sorted=new_keys_b3_sorted,
+        keys_b4_sorted=new_keys_b4_sorted,
         ids_sorted=new_ids_sorted,
         count=new_count,
+        oom=new_oom,
     )
     return final_ids, new_ledger
 
 def _active_prefix_count(arena):
     size = arena.rank.shape[0]
-    # Avoid host-syncing on arena.count; sort full size for consistent behavior.
-    return size
+    count = int(arena.count)
+    return size if count > size else count
 
 def _apply_perm_and_swizzle(arena, perm):
     inv_perm = _invert_perm(perm)
@@ -437,7 +791,10 @@ def _apply_perm_and_swizzle(arena, perm):
     new_rank = arena.rank[perm]
     swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
     swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
-    return Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, arena.count), inv_perm
+    return (
+        Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, arena.count, arena.oom),
+        inv_perm,
+    )
 
 @jit
 def _op_sort_and_swizzle_with_perm_full(arena):
@@ -735,11 +1092,12 @@ def op_interact(arena):
     ops = arena.opcode
     a1 = arena.arg1
     a2 = arena.arg2
+    cap = jnp.int32(ops.shape[0])
     is_hot = arena.rank == RANK_HOT
     is_add = ops == OP_ADD
     op_x = ops[a1]
     mask_zero = is_hot & is_add & (op_x == OP_ZERO)
-    mask_suc = is_hot & is_add & (op_x == OP_SUC)
+    mask_suc = is_hot & is_add & (op_x == OP_SUC) & (~arena.oom)
 
     # First: local rewrites that don't allocate.
     y_op = ops[a2]
@@ -750,18 +1108,22 @@ def op_interact(arena):
     new_a2 = jnp.where(mask_zero, y_a2, a2)
 
     # Second: allocation for suc-case.
+    available = jnp.maximum(cap - arena.count, 0)
     spawn = mask_suc.astype(jnp.int32)
+    prefix = jnp.cumsum(spawn)
+    spawn = spawn * (prefix <= available).astype(jnp.int32)
     offsets = jnp.cumsum(spawn) - spawn
     total_spawn = jnp.sum(spawn).astype(jnp.int32)
     base_free = arena.count
     new_add_idx = base_free + offsets
 
-    new_ops = jnp.where(mask_suc, OP_SUC, new_ops)
-    new_a1 = jnp.where(mask_suc, new_add_idx, new_a1)
-    new_a2 = jnp.where(mask_suc, 0, new_a2)
+    spawn_mask = spawn.astype(jnp.bool_)
+    new_ops = jnp.where(spawn_mask, OP_SUC, new_ops)
+    new_a1 = jnp.where(spawn_mask, new_add_idx, new_a1)
+    new_a2 = jnp.where(spawn_mask, 0, new_a2)
 
     # Scatter-create the spawned add nodes only where mask_suc is true.
-    idxs = jnp.where(mask_suc, new_add_idx, jnp.int32(-1))
+    idxs = jnp.where(spawn_mask, new_add_idx, jnp.int32(-1))
     grandchild_x = a1[a1]
     payload_op = jnp.full_like(idxs, OP_ADD)
     payload_a1 = grandchild_x
@@ -780,26 +1142,57 @@ def op_interact(arena):
         jnp.where(valid, payload_a2, new_a2[0]), mode="drop"
     )
 
-    return Arena(final_ops, final_a1, final_a2, arena.rank, arena.count + total_spawn)
+    overflow = jnp.sum(mask_suc.astype(jnp.int32)) > available
+    new_oom = arena.oom | overflow
+    return Arena(
+        final_ops, final_a1, final_a2, arena.rank, arena.count + total_spawn, new_oom
+    )
 
 @jit
 def cycle_intrinsic(ledger, frontier_ids):
-    f_ops = ledger.opcode[frontier_ids]
-    f_a1 = ledger.arg1[frontier_ids]
-    f_a2 = ledger.arg2[frontier_ids]
+    def _peel_one(ptr):
+        def cond(state):
+            curr, _ = state
+            return ledger.opcode[curr] == OP_SUC
 
-    op_a1 = ledger.opcode[f_a1]
-    is_add_suc = (f_ops == OP_ADD) & (op_a1 == OP_SUC)
-    is_mul_suc = (f_ops == OP_MUL) & (op_a1 == OP_SUC)
-    is_add_zero = (f_ops == OP_ADD) & (op_a1 == OP_ZERO)
-    is_mul_zero = (f_ops == OP_MUL) & (op_a1 == OP_ZERO)
+        def body(state):
+            curr, depth = state
+            return ledger.arg1[curr], depth + 1
 
-    val_x = ledger.arg1[f_a1]
-    val_y = f_a2
+        return lax.while_loop(cond, body, (ptr, jnp.int32(0)))
 
-    l1_ops = jnp.zeros_like(f_ops)
-    l1_a1 = jnp.zeros_like(f_a1)
-    l1_a2 = jnp.zeros_like(f_a2)
+    base_ids, depths = jax.vmap(_peel_one)(frontier_ids)
+
+    t_ops = ledger.opcode[base_ids]
+    t_a1 = ledger.arg1[base_ids]
+    t_a2 = ledger.arg2[base_ids]
+    op_a1 = ledger.opcode[t_a1]
+    op_a2 = ledger.opcode[t_a2]
+    is_add = t_ops == OP_ADD
+    is_mul = t_ops == OP_MUL
+    is_zero_a1 = op_a1 == OP_ZERO
+    is_zero_a2 = op_a2 == OP_ZERO
+    is_suc_a1 = op_a1 == OP_SUC
+    is_suc_a2 = op_a2 == OP_SUC
+    is_add_suc = is_add & (is_suc_a1 | is_suc_a2)
+    is_mul_suc = is_mul & (is_suc_a1 | is_suc_a2)
+    is_add_zero = is_add & (is_zero_a1 | is_zero_a2)
+    is_mul_zero = is_mul & (is_zero_a1 | is_zero_a2)
+    is_add_suc = is_add_suc & (~is_add_zero)
+    is_mul_suc = is_mul_suc & (~is_mul_zero)
+    zero_on_a1 = is_zero_a1
+    zero_on_a2 = (~is_zero_a1) & is_zero_a2
+    zero_other = jnp.where(zero_on_a1, t_a2, t_a1)
+
+    suc_on_a1 = is_suc_a1
+    suc_on_a2 = (~is_suc_a1) & is_suc_a2
+    suc_node = jnp.where(suc_on_a1, t_a1, t_a2)
+    val_x = ledger.arg1[suc_node]
+    val_y = jnp.where(suc_on_a1, t_a2, t_a1)
+
+    l1_ops = jnp.zeros_like(t_ops)
+    l1_a1 = jnp.zeros_like(t_a1)
+    l1_a2 = jnp.zeros_like(t_a2)
     l1_ops = jnp.where(is_add_suc, OP_ADD, l1_ops)
     l1_a1 = jnp.where(is_add_suc, val_x, l1_a1)
     l1_a2 = jnp.where(is_add_suc, val_y, l1_a2)
@@ -809,9 +1202,9 @@ def cycle_intrinsic(ledger, frontier_ids):
 
     l1_ids, ledger = intern_nodes(ledger, l1_ops, l1_a1, l1_a2)
 
-    l2_ops = jnp.zeros_like(f_ops)
-    l2_a1 = jnp.zeros_like(f_a1)
-    l2_a2 = jnp.zeros_like(f_a2)
+    l2_ops = jnp.zeros_like(t_ops)
+    l2_a1 = jnp.zeros_like(t_a1)
+    l2_a2 = jnp.zeros_like(t_a2)
     l2_ops = jnp.where(is_add_suc, OP_SUC, l2_ops)
     l2_a1 = jnp.where(is_add_suc, l1_ids, l2_a1)
     l2_ops = jnp.where(is_mul_suc, OP_ADD, l2_ops)
@@ -820,12 +1213,34 @@ def cycle_intrinsic(ledger, frontier_ids):
 
     l2_ids, ledger = intern_nodes(ledger, l2_ops, l2_a1, l2_a2)
 
-    next_frontier = frontier_ids
-    next_frontier = jnp.where(is_add_zero, f_a2, next_frontier)
-    next_frontier = jnp.where(is_mul_zero, jnp.int32(ZERO_PTR), next_frontier)
-    next_frontier = jnp.where(is_add_suc, l1_ids, next_frontier)
-    next_frontier = jnp.where(is_mul_suc, l2_ids, next_frontier)
-    return ledger, next_frontier
+    base_next = base_ids
+    base_next = jnp.where(is_add_zero, zero_other, base_next)
+    base_next = jnp.where(is_mul_zero, jnp.int32(ZERO_PTR), base_next)
+    base_next = jnp.where(is_add_suc, l2_ids, base_next)
+    base_next = jnp.where(is_mul_suc, l2_ids, base_next)
+    changed = base_next != base_ids
+    wrap_depth = jnp.where(changed, depths, jnp.int32(0))
+    wrap_child = jnp.where(changed, base_next, frontier_ids)
+
+    def wrap_cond(state):
+        depth, _, led = state
+        return jnp.any((depth > 0) & (~led.oom))
+
+    def wrap_body(state):
+        depth, child, led = state
+        to_wrap = (depth > 0) & (~led.oom)
+        ops = jnp.where(to_wrap, jnp.int32(OP_SUC), jnp.int32(0))
+        a1 = jnp.where(to_wrap, child, jnp.int32(0))
+        a2 = jnp.zeros_like(a1)
+        new_ids, led = intern_nodes(led, ops, a1, a2)
+        child = jnp.where(to_wrap, new_ids, child)
+        depth = depth - to_wrap.astype(jnp.int32)
+        return depth, child, led
+
+    _, wrap_child, ledger = lax.while_loop(
+        wrap_cond, wrap_body, (wrap_depth, wrap_child, ledger)
+    )
+    return ledger, wrap_child
 
 def cycle(
     arena,
@@ -873,63 +1288,121 @@ def cycle(
 # --- 3. JAX Kernels (Static) ---
 @jit
 def kernel_add(manifest, ptr):
-    ops, a1, a2, count = manifest.opcode, manifest.arg1, manifest.arg2, manifest.active_count
+    ops, a1, a2, count, oom = (
+        manifest.opcode,
+        manifest.arg1,
+        manifest.arg2,
+        manifest.active_count,
+        manifest.oom,
+    )
+    cap = ops.shape[0]
     init_x = a1[ptr]
     init_y = a2[ptr]
-    init_val = (init_x, init_y, True, ops, a1, count)
+    init_val = (init_x, init_y, True, ops, a1, count, oom)
 
     def cond(v): return v[2]
 
     def body(v):
-        curr_x, curr_y, active, b_ops, b_a1, b_count = v
+        curr_x, curr_y, active, b_ops, b_a1, b_count, b_oom = v
         op_x = b_ops[curr_x]
-        is_suc = (op_x == OP_SUC)
+        is_suc = (op_x == OP_SUC) & (~b_oom)
         next_x = jnp.where(is_suc, b_a1[curr_x], curr_x)
-        w_idx = b_count
-        next_ops = b_ops.at[w_idx].set(OP_SUC)
-        next_a1  = b_a1.at[w_idx].set(curr_y)
-        next_y = jnp.where(is_suc, w_idx, curr_y)
-        next_active = is_suc
-        next_count = jnp.where(is_suc, b_count + 1, b_count)
-        return (next_x, next_y, next_active, next_ops, next_a1, next_count)
 
-    _, final_y, _, f_ops, f_a1, f_count = lax.while_loop(cond, body, init_val)
-    return manifest._replace(opcode=f_ops, arg1=f_a1, active_count=f_count), final_y
+        def do_spawn(state):
+            ops, a1s, count, y_val, oom = state
+            ok = (count < cap) & (~oom)
+            w_idx = jnp.where(ok, count, 0)
+            ops = ops.at[w_idx].set(OP_SUC, mode="drop")
+            a1s = a1s.at[w_idx].set(y_val, mode="drop")
+            next_count = jnp.where(ok, count + 1, count)
+            next_y = jnp.where(ok, w_idx, y_val)
+            next_oom = oom | (~ok)
+            return ops, a1s, next_count, next_y, next_oom
+
+        def no_spawn(state):
+            ops, a1s, count, y_val, oom = state
+            return ops, a1s, count, y_val, oom
+
+        b_ops, b_a1, next_count, next_y, next_oom = lax.cond(
+            is_suc,
+            do_spawn,
+            no_spawn,
+            (b_ops, b_a1, b_count, curr_y, b_oom),
+        )
+        return (next_x, next_y, is_suc, b_ops, b_a1, next_count, next_oom)
+
+    _, final_y, _, f_ops, f_a1, f_count, f_oom = lax.while_loop(
+        cond, body, init_val
+    )
+    return (
+        manifest._replace(opcode=f_ops, arg1=f_a1, active_count=f_count, oom=f_oom),
+        final_y,
+    )
 
 # Kernel stub for MUL
 @jit
 def kernel_mul(manifest, ptr):
-    ops, a1, a2, count = manifest.opcode, manifest.arg1, manifest.arg2, manifest.active_count
+    ops, a1, a2, count, oom = (
+        manifest.opcode,
+        manifest.arg1,
+        manifest.arg2,
+        manifest.active_count,
+        manifest.oom,
+    )
+    cap = ops.shape[0]
     init_x = a1[ptr]
     y = a2[ptr]
     init_acc = jnp.array(ZERO_PTR, dtype=jnp.int32)
-    init_val = (init_x, init_acc, ops, a1, a2, count)
+    init_val = (init_x, init_acc, ops, a1, a2, count, oom)
 
     def cond(v):
-        curr_x, _, b_ops, _, _, _ = v
-        return b_ops[curr_x] == OP_SUC
+        curr_x, _, b_ops, _, _, _, b_oom = v
+        return (b_ops[curr_x] == OP_SUC) & (~b_oom)
 
     def body(v):
-        curr_x, acc, b_ops, b_a1, b_a2, b_count = v
+        curr_x, acc, b_ops, b_a1, b_a2, b_count, b_oom = v
         next_x = b_a1[curr_x]
-        add_idx = b_count
-        next_ops = b_ops.at[add_idx].set(OP_ADD)
-        next_a1 = b_a1.at[add_idx].set(y)
-        next_a2 = b_a2.at[add_idx].set(acc)
-        next_count = b_count + 1
-        add_manifest = Manifest(next_ops, next_a1, next_a2, next_count)
-        updated_manifest, next_acc = kernel_add(add_manifest, add_idx)
-        return (
-            next_x,
-            next_acc,
-            updated_manifest.opcode,
-            updated_manifest.arg1,
-            updated_manifest.arg2,
-            updated_manifest.active_count,
-        )
+        ok = (b_count < cap) & (~b_oom)
 
-    _, final_acc, f_ops, f_a1, f_a2, f_count = lax.while_loop(cond, body, init_val)
-    return manifest._replace(opcode=f_ops, arg1=f_a1, arg2=f_a2, active_count=f_count), final_acc
+        def do_add(state):
+            b_ops, b_a1, b_a2, b_count, b_oom, acc = state
+            add_idx = b_count
+            b_ops = b_ops.at[add_idx].set(OP_ADD, mode="drop")
+            b_a1 = b_a1.at[add_idx].set(y, mode="drop")
+            b_a2 = b_a2.at[add_idx].set(acc, mode="drop")
+            b_count = b_count + 1
+            add_manifest = Manifest(b_ops, b_a1, b_a2, b_count, b_oom)
+            updated_manifest, next_acc = kernel_add(add_manifest, add_idx)
+            return (
+                updated_manifest.opcode,
+                updated_manifest.arg1,
+                updated_manifest.arg2,
+                updated_manifest.active_count,
+                updated_manifest.oom,
+                next_acc,
+            )
+
+        def no_add(state):
+            b_ops, b_a1, b_a2, b_count, b_oom, acc = state
+            return b_ops, b_a1, b_a2, b_count, b_oom | (~ok), acc
+
+        b_ops, b_a1, b_a2, b_count, b_oom, next_acc = lax.cond(
+            ok,
+            do_add,
+            no_add,
+            (b_ops, b_a1, b_a2, b_count, b_oom, acc),
+        )
+        return (next_x, next_acc, b_ops, b_a1, b_a2, b_count, b_oom)
+
+    _, final_acc, f_ops, f_a1, f_a2, f_count, f_oom = lax.while_loop(
+        cond, body, init_val
+    )
+    return (
+        manifest._replace(
+            opcode=f_ops, arg1=f_a1, arg2=f_a2, active_count=f_count, oom=f_oom
+        ),
+        final_acc,
+    )
 
 def _dispatch_identity(args):
     manifest, ptr = args
@@ -950,10 +1423,19 @@ def optimize_ptr(manifest, ptr):
     a1 = a1s[ptr]
     a2 = a2s[ptr]
     op_a1 = ops[a1]
+    op_a2 = ops[a2]
     is_add = op == OP_ADD
+    is_mul = op == OP_MUL
     is_zero = op_a1 == OP_ZERO
-    optimized = jnp.logical_and(is_add, is_zero)
-    out_ptr = jnp.where(optimized, a2, ptr)
+    is_zero_a2 = op_a2 == OP_ZERO
+    add_zero_left = is_add & is_zero
+    add_zero_right = is_add & is_zero_a2
+    mul_zero_left = is_mul & is_zero
+    mul_zero_right = is_mul & is_zero_a2
+    optimized = add_zero_left | add_zero_right | mul_zero_left | mul_zero_right
+    out_ptr = jnp.where(add_zero_left, a2, ptr)
+    out_ptr = jnp.where(add_zero_right, a1, out_ptr)
+    out_ptr = jnp.where(mul_zero_left | mul_zero_right, jnp.int32(ZERO_PTR), out_ptr)
     return out_ptr, optimized
 
 @jit
@@ -974,24 +1456,43 @@ class PrismVM:
     def __init__(self):
         print("⚡ Prism IR: Initializing Host Context...")
         self.manifest = init_manifest()
+        self.active_count_host = int(self.manifest.active_count)
+        self.refresh_cache_on_eval = True
         # Trace Cache: (opcode, arg1, arg2) -> ptr
         self.trace_cache: Dict[Tuple[int, int, int], int] = {}
         # Initialize Universe (Seed with ZERO)
         self._cons_raw(OP_ZERO, 0, 0)
         self.trace_cache[(OP_ZERO, 0, 0)] = 1
+        self.cache_filled_to = self.active_count_host
 
         self.kernels = {OP_ADD: kernel_add, OP_MUL: kernel_mul}
 
     def _cons_raw(self, op, a1, a2):
         """Physical allocation (Device Write)"""
-        idx = int(self.manifest.active_count)
+        cap = int(self.manifest.opcode.shape[0])
+        if self.active_count_host >= cap:
+            self.manifest = self.manifest._replace(
+                oom=jnp.array(True, dtype=jnp.bool_)
+            )
+            raise ValueError("Manifest capacity exceeded")
+        idx = self.active_count_host
+        self.active_count_host += 1
         self.manifest = self.manifest._replace(
             opcode=self.manifest.opcode.at[idx].set(op),
             arg1=self.manifest.arg1.at[idx].set(a1),
             arg2=self.manifest.arg2.at[idx].set(a2),
-            active_count=jnp.array(idx + 1, dtype=jnp.int32)
+            active_count=jnp.array(self.active_count_host, dtype=jnp.int32)
         )
         return idx
+
+    def _refresh_trace_cache(self, start_idx, end_idx):
+        if end_idx <= start_idx:
+            return
+        ops = jax.device_get(self.manifest.opcode[start_idx:end_idx])
+        a1s = jax.device_get(self.manifest.arg1[start_idx:end_idx])
+        a2s = jax.device_get(self.manifest.arg2[start_idx:end_idx])
+        for offset, (op, a1, a2) in enumerate(zip(ops, a1s, a2s)):
+            self.trace_cache[(int(op), int(a1), int(a2))] = start_idx + offset
 
     def cons(self, op, a1=0, a2=0):
         """
@@ -999,6 +1500,7 @@ class PrismVM:
         1. Checks Cache (Deduplication).
         2. Allocates if new.
         """
+        a1, a2 = _canonicalize_commutative_host(op, a1, a2)
         signature = (op, a1, a2)
         if signature in self.trace_cache:
             return self.trace_cache[signature]
@@ -1025,9 +1527,16 @@ class PrismVM:
         2. Dispatch (Device)
         """
         ptr_arr = jnp.array(ptr, dtype=jnp.int32)
+        prev_count = self.active_count_host
         new_manifest, res_ptr, opt_applied = dispatch_kernel(self.manifest, ptr_arr)
         res_ptr.block_until_ready()
         self.manifest = new_manifest
+        self.active_count_host = int(self.manifest.active_count)
+        if self.refresh_cache_on_eval and self.active_count_host > prev_count:
+            self._refresh_trace_cache(prev_count, self.active_count_host)
+            self.cache_filled_to = self.active_count_host
+        if bool(self.manifest.oom):
+            raise RuntimeError("Manifest capacity exceeded during kernel execution")
         if bool(opt_applied):
             print("   [!] Static Analysis: Optimized (add zero x) -> x")
         return int(res_ptr)
@@ -1061,7 +1570,12 @@ class PrismVM_BSP_Legacy:
         self.arena = init_arena()
 
     def _alloc(self, op, a1=0, a2=0):
+        cap = int(self.arena.opcode.shape[0])
         idx = int(self.arena.count)
+        if idx >= cap:
+            self.arena = self.arena._replace(oom=jnp.array(True, dtype=jnp.bool_))
+            raise ValueError("Arena capacity exceeded")
+        a1, a2 = _canonicalize_commutative_host(op, a1, a2)
         self.arena = self.arena._replace(
             opcode=self.arena.opcode.at[idx].set(op),
             arg1=self.arena.arg1.at[idx].set(a1),
@@ -1097,12 +1611,15 @@ class PrismVM_BSP:
         self.ledger = init_ledger()
 
     def _intern(self, op, a1=0, a2=0):
+        a1, a2 = _canonicalize_commutative_host(op, a1, a2)
         ids, self.ledger = intern_nodes(
             self.ledger,
             jnp.array([op], dtype=jnp.int32),
             jnp.array([a1], dtype=jnp.int32),
             jnp.array([a2], dtype=jnp.int32),
         )
+        if bool(self.ledger.oom):
+            raise ValueError("Ledger capacity exceeded during interning")
         return int(ids[0])
 
     def parse(self, tokens):
@@ -1205,6 +1722,8 @@ def run_program_lines_bsp(
                 frontier = next_frontier
             else:
                 vm.ledger, frontier = cycle_intrinsic(vm.ledger, frontier)
+            if bool(vm.ledger.oom):
+                raise RuntimeError("Ledger capacity exceeded during cycle")
         root_ptr = frontier[0]
         root_ptr_int = int(root_ptr)
         print(f"   ├─ Ledger   : {int(vm.ledger.count)} nodes")

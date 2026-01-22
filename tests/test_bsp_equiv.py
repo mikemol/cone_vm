@@ -1,8 +1,6 @@
 import re
 
 import jax.numpy as jnp
-import pytest
-
 import prism_vm as pv
 
 
@@ -29,10 +27,6 @@ def _eval_bsp(expr, max_steps=64):
     raise AssertionError("BSP evaluation did not converge within max_steps")
 
 
-@pytest.mark.xfail(
-    reason="BSP ledger lacks continuation/strata semantics; add+suc not yet equivalent",
-    strict=False,
-)
 def test_bsp_matches_baseline_add():
     expr = "(add (suc zero) (suc zero))"
     assert _eval_bsp(expr) == _eval_baseline(expr)

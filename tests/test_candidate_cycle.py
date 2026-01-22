@@ -30,13 +30,38 @@ def test_cycle_candidates_add_zero():
     frontier = jnp.array([add_ids[0]], dtype=jnp.int32)
     start_count = int(ledger.count)
     ledger, next_frontier, strata = pv.cycle_candidates(ledger, frontier)
-    stratum0, stratum1 = strata
+    stratum0, stratum1, stratum2 = strata
     assert int(next_frontier.shape[0]) == 1
     assert int(next_frontier[0]) == int(y_id)
     assert int(stratum0.start) == start_count
     assert int(stratum0.count) == 0
     assert int(stratum1.start) == start_count + int(stratum0.count)
     assert int(stratum1.count) == 0
+    assert int(stratum2.start) == start_count + int(stratum0.count) + int(stratum1.count)
+    assert int(stratum2.count) == 0
+
+
+def test_cycle_candidates_add_zero_right():
+    _require_cycle_candidates()
+    ledger = pv.init_ledger()
+
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([1], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    y_id = suc_ids[0]
+    add_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+        jnp.array([1], dtype=jnp.int32),
+    )
+    frontier = jnp.array([add_ids[0]], dtype=jnp.int32)
+    ledger, next_frontier, _ = pv.cycle_candidates(ledger, frontier)
+    assert int(next_frontier.shape[0]) == 1
+    assert int(next_frontier[0]) == int(y_id)
 
 
 def test_cycle_candidates_mul_zero():
@@ -51,13 +76,15 @@ def test_cycle_candidates_mul_zero():
     frontier = jnp.array([mul_ids[0]], dtype=jnp.int32)
     start_count = int(ledger.count)
     ledger, next_frontier, strata = pv.cycle_candidates(ledger, frontier)
-    stratum0, stratum1 = strata
+    stratum0, stratum1, stratum2 = strata
     assert int(next_frontier.shape[0]) == 1
     assert int(next_frontier[0]) == pv.ZERO_PTR
     assert int(stratum0.start) == start_count
     assert int(stratum0.count) == 0
     assert int(stratum1.start) == start_count + int(stratum0.count)
     assert int(stratum1.count) == 0
+    assert int(stratum2.start) == start_count + int(stratum0.count) + int(stratum1.count)
+    assert int(stratum2.count) == 0
 
 
 def test_cycle_candidates_add_suc():
@@ -86,19 +113,18 @@ def test_cycle_candidates_add_suc():
     frontier = jnp.array([add_ids[0]], dtype=jnp.int32)
     start_count = int(ledger.count)
     ledger, next_frontier, strata = pv.cycle_candidates(ledger, frontier)
-    stratum0, stratum1 = strata
+    stratum0, stratum1, stratum2 = strata
     assert int(next_frontier.shape[0]) == 1
     next_id = next_frontier[0]
-    assert int(ledger.opcode[next_id]) == pv.OP_ADD
-    assert int(ledger.arg1[next_id]) == pv.ZERO_PTR
-    assert int(ledger.arg2[next_id]) == int(y_id)
+    assert int(next_id) == int(stratum1.start)
+    assert int(ledger.opcode[next_id]) == pv.OP_SUC
+    assert int(ledger.arg1[next_id]) == int(stratum0.start)
     assert int(stratum0.start) == start_count
     assert int(stratum0.count) == 1
     assert int(stratum1.start) == start_count + int(stratum0.count)
     assert int(stratum1.count) == 1
-    l2_id = int(stratum1.start)
-    assert int(ledger.opcode[l2_id]) == pv.OP_SUC
-    assert int(ledger.arg1[l2_id]) == int(next_id)
+    assert int(stratum2.start) == start_count + int(stratum0.count) + int(stratum1.count)
+    assert int(stratum2.count) == 0
 
 
 def test_cycle_candidates_mul_suc():
@@ -127,17 +153,21 @@ def test_cycle_candidates_mul_suc():
     frontier = jnp.array([mul_ids[0]], dtype=jnp.int32)
     start_count = int(ledger.count)
     ledger, next_frontier, strata = pv.cycle_candidates(ledger, frontier)
-    stratum0, stratum1 = strata
+    stratum0, stratum1, stratum2 = strata
     assert int(next_frontier.shape[0]) == 1
     next_id = int(next_frontier[0])
     assert next_id == int(stratum1.start)
     assert int(ledger.opcode[next_id]) == pv.OP_ADD
-    assert int(ledger.arg1[next_id]) == int(y_id)
-    assert int(ledger.arg2[next_id]) == int(stratum0.start)
+    arg1 = int(ledger.arg1[next_id])
+    arg2 = int(ledger.arg2[next_id])
+    assert {arg1, arg2} == {int(y_id), int(stratum0.start)}
+    assert arg1 <= arg2
     assert int(stratum0.start) == start_count
     assert int(stratum0.count) == 1
     assert int(stratum1.start) == start_count + int(stratum0.count)
     assert int(stratum1.count) == 1
+    assert int(stratum2.start) == start_count + int(stratum0.count) + int(stratum1.count)
+    assert int(stratum2.count) == 0
 
 
 def test_cycle_candidates_noop_on_suc():
@@ -152,13 +182,15 @@ def test_cycle_candidates_noop_on_suc():
     frontier = jnp.array([suc_ids[0]], dtype=jnp.int32)
     start_count = int(ledger.count)
     ledger, next_frontier, strata = pv.cycle_candidates(ledger, frontier)
-    stratum0, stratum1 = strata
+    stratum0, stratum1, stratum2 = strata
     assert int(next_frontier.shape[0]) == 1
     assert int(next_frontier[0]) == int(suc_ids[0])
     assert int(stratum0.start) == start_count
     assert int(stratum0.count) == 0
     assert int(stratum1.start) == start_count + int(stratum0.count)
     assert int(stratum1.count) == 0
+    assert int(stratum2.start) == start_count + int(stratum0.count) + int(stratum1.count)
+    assert int(stratum2.count) == 0
 
 
 def test_cycle_candidates_validate_stratum_random_frontier():
@@ -215,7 +247,8 @@ def test_cycle_candidates_validate_stratum_random_frontier():
         ledger, next_frontier, strata = pv.cycle_candidates(
             ledger, frontier, validate_stratum=True
         )
-        stratum0, stratum1 = strata
+        stratum0, stratum1, stratum2 = strata
         assert int(next_frontier.shape[0]) == int(frontier.shape[0])
         assert int(stratum0.start) <= int(ledger.count)
         assert int(stratum1.start) <= int(ledger.count)
+        assert int(stratum2.start) <= int(ledger.count)

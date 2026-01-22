@@ -1,0 +1,284 @@
+import re
+
+import jax.numpy as jnp
+import pytest
+
+import prism_vm as pv
+
+
+def _small_add_manifest(cap):
+    ops = jnp.zeros(cap, dtype=jnp.int32)
+    a1 = jnp.zeros(cap, dtype=jnp.int32)
+    a2 = jnp.zeros(cap, dtype=jnp.int32)
+    ops = ops.at[1].set(pv.OP_ZERO)
+    ops = ops.at[2].set(pv.OP_SUC)
+    a1 = a1.at[2].set(1)
+    ops = ops.at[3].set(pv.OP_ADD)
+    a1 = a1.at[3].set(2)
+    a2 = a2.at[3].set(1)
+    return pv.Manifest(
+        ops,
+        a1,
+        a2,
+        jnp.array(cap, dtype=jnp.int32),
+        jnp.array(False, dtype=jnp.bool_),
+    )
+
+
+def _small_mul_manifest(cap):
+    ops = jnp.zeros(cap, dtype=jnp.int32)
+    a1 = jnp.zeros(cap, dtype=jnp.int32)
+    a2 = jnp.zeros(cap, dtype=jnp.int32)
+    ops = ops.at[1].set(pv.OP_ZERO)
+    ops = ops.at[2].set(pv.OP_SUC)
+    a1 = a1.at[2].set(1)
+    ops = ops.at[3].set(pv.OP_MUL)
+    a1 = a1.at[3].set(2)
+    a2 = a2.at[3].set(1)
+    return pv.Manifest(
+        ops,
+        a1,
+        a2,
+        jnp.array(cap, dtype=jnp.int32),
+        jnp.array(False, dtype=jnp.bool_),
+    )
+
+
+def test_manifest_capacity_guard():
+    vm = pv.PrismVM()
+    cap = int(vm.manifest.opcode.shape[0])
+    vm.active_count_host = cap
+    with pytest.raises(ValueError):
+        vm._cons_raw(pv.OP_SUC, pv.ZERO_PTR, 0)
+    assert bool(vm.manifest.oom)
+
+
+def test_arena_capacity_guard():
+    vm = pv.PrismVM_BSP_Legacy()
+    cap = int(vm.arena.opcode.shape[0])
+    vm.arena = vm.arena._replace(count=jnp.array(cap, dtype=jnp.int32))
+    with pytest.raises(ValueError):
+        vm._alloc(pv.OP_SUC, pv.ZERO_PTR, 0)
+    assert bool(vm.arena.oom)
+
+
+def test_ledger_capacity_guard():
+    ledger = pv.init_ledger()
+    ledger = ledger._replace(count=jnp.array(pv.MAX_NODES, dtype=jnp.int32))
+    ids, new_ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    assert bool(new_ledger.oom)
+    assert int(new_ledger.count) == pv.MAX_NODES
+    assert int(ids[0]) == 0
+
+
+def test_kernel_add_oom():
+    cap = 4
+    manifest = _small_add_manifest(cap)
+    new_manifest, _ = pv.kernel_add(manifest, jnp.int32(3))
+    assert bool(new_manifest.oom)
+    assert int(new_manifest.active_count) == cap
+
+
+def test_kernel_mul_oom():
+    cap = 4
+    manifest = _small_mul_manifest(cap)
+    new_manifest, _ = pv.kernel_mul(manifest, jnp.int32(3))
+    assert bool(new_manifest.oom)
+    assert int(new_manifest.active_count) == cap
+
+
+def test_op_interact_oom():
+    cap = 4
+    ops = jnp.zeros(cap, dtype=jnp.int32)
+    a1 = jnp.zeros(cap, dtype=jnp.int32)
+    a2 = jnp.zeros(cap, dtype=jnp.int32)
+    rank = jnp.full(cap, pv.RANK_COLD, dtype=jnp.int8)
+    ops = ops.at[1].set(pv.OP_ZERO)
+    ops = ops.at[2].set(pv.OP_SUC)
+    a1 = a1.at[2].set(1)
+    ops = ops.at[3].set(pv.OP_ADD)
+    a1 = a1.at[3].set(2)
+    a2 = a2.at[3].set(1)
+    rank = rank.at[3].set(pv.RANK_HOT)
+    arena = pv.Arena(
+        ops,
+        a1,
+        a2,
+        rank,
+        jnp.array(cap, dtype=jnp.int32),
+        jnp.array(False, dtype=jnp.bool_),
+    )
+    new_arena = pv.op_interact(arena)
+    assert bool(new_arena.oom)
+    assert int(new_arena.count) == cap
+
+
+def test_validate_stratum_no_within_refs_jax_ok():
+    ledger = pv.init_ledger()
+    ledger = ledger._replace(
+        arg1=ledger.arg1.at[2].set(1),
+        arg2=ledger.arg2.at[2].set(0),
+        count=jnp.array(3, dtype=jnp.int32),
+    )
+    stratum = pv.Stratum(
+        start=jnp.array(2, dtype=jnp.int32),
+        count=jnp.array(1, dtype=jnp.int32),
+    )
+    assert bool(pv.validate_stratum_no_within_refs_jax(ledger, stratum))
+
+
+def test_validate_stratum_no_within_refs_jax_bad():
+    ledger = pv.init_ledger()
+    ledger = ledger._replace(
+        arg1=ledger.arg1.at[2].set(2),
+        arg2=ledger.arg2.at[2].set(0),
+        count=jnp.array(3, dtype=jnp.int32),
+    )
+    stratum = pv.Stratum(
+        start=jnp.array(2, dtype=jnp.int32),
+        count=jnp.array(1, dtype=jnp.int32),
+    )
+    assert not bool(pv.validate_stratum_no_within_refs_jax(ledger, stratum))
+
+
+def test_compact_candidates_preserves_order():
+    enabled = jnp.array([0, 1, 0, 1, 1, 0], dtype=jnp.int32)
+    opcode = jnp.arange(enabled.shape[0], dtype=jnp.int32)
+    candidates = pv.CandidateBuffer(
+        enabled=enabled,
+        opcode=opcode,
+        arg1=opcode + 10,
+        arg2=opcode + 20,
+    )
+    compacted, count, idx = pv.compact_candidates_with_index(candidates)
+    expected = jnp.array([1, 3, 4], dtype=jnp.int32)
+    count_int = int(count)
+    assert count_int == 3
+    assert bool(jnp.all(idx[:count_int] == expected))
+    assert bool(jnp.all(compacted.opcode[:count_int] == opcode[expected]))
+
+
+def test_intern_nodes_opcode_bucket():
+    ledger = pv.init_ledger()
+    ops = jnp.array([pv.OP_ADD, pv.OP_MUL], dtype=jnp.int32)
+    a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
+    a2 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
+    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    ids2, _ = pv.intern_nodes(ledger, ops, a1, a2)
+    assert int(ids[0]) != int(ids[1])
+    assert int(ids2[0]) == int(ids[0])
+    assert int(ids2[1]) == int(ids[1])
+
+
+def test_optimize_ptr_zero_rules():
+    vm = pv.PrismVM()
+    zero = vm.cons(pv.OP_ZERO, 0, 0)
+    one = vm.cons(pv.OP_SUC, zero, 0)
+
+    add_left = vm.cons(pv.OP_ADD, zero, one)
+    ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(add_left))
+    assert bool(optimized)
+    assert int(ptr) == one
+
+    add_right = vm.cons(pv.OP_ADD, one, zero)
+    ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(add_right))
+    assert bool(optimized)
+    assert int(ptr) == one
+
+    mul_left = vm.cons(pv.OP_MUL, zero, one)
+    ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(mul_left))
+    assert bool(optimized)
+    assert int(ptr) == pv.ZERO_PTR
+
+    mul_right = vm.cons(pv.OP_MUL, one, zero)
+    ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(mul_right))
+    assert bool(optimized)
+    assert int(ptr) == pv.ZERO_PTR
+
+
+def test_trace_cache_refresh_after_eval():
+    vm = pv.PrismVM()
+    tokens = re.findall(r"\(|\)|[a-z]+", "(add (suc zero) (suc zero))")
+    ptr = vm.parse(tokens)
+    pre_count = int(vm.manifest.active_count)
+    vm.eval(ptr)
+    post_count = int(vm.manifest.active_count)
+    assert post_count > pre_count
+    for idx in range(pre_count, post_count):
+        sig = (
+            int(vm.manifest.opcode[idx]),
+            int(vm.manifest.arg1[idx]),
+            int(vm.manifest.arg2[idx]),
+        )
+        assert vm.trace_cache.get(sig) == idx
+
+
+def test_mul_commutative_interning():
+    ledger = pv.init_ledger()
+    ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    suc_id = int(ids[0])
+    ids1, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_MUL], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([suc_id], dtype=jnp.int32),
+    )
+    ids2, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_MUL], dtype=jnp.int32),
+        jnp.array([suc_id], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+    )
+    assert int(ids1[0]) == int(ids2[0])
+
+
+def test_add_commutative_interning():
+    ledger = pv.init_ledger()
+    ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    suc_id = int(ids[0])
+    ids1, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([suc_id], dtype=jnp.int32),
+    )
+    ids2, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([suc_id], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+    )
+    assert int(ids1[0]) == int(ids2[0])
+
+
+def test_mul_commutative_baseline_cons():
+    vm = pv.PrismVM()
+    zero = pv.ZERO_PTR
+    one = vm.cons(pv.OP_SUC, zero, 0)
+    mul1 = vm.cons(pv.OP_MUL, zero, one)
+    mul2 = vm.cons(pv.OP_MUL, one, zero)
+    assert mul1 == mul2
+
+
+def test_add_commutative_baseline_cons():
+    vm = pv.PrismVM()
+    zero = pv.ZERO_PTR
+    one = vm.cons(pv.OP_SUC, zero, 0)
+    add1 = vm.cons(pv.OP_ADD, zero, one)
+    add2 = vm.cons(pv.OP_ADD, one, zero)
+    assert add1 == add2

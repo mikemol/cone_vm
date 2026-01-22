@@ -39,3 +39,13 @@ def test_bsp_candidates_matches_baseline_add_zero():
 def test_bsp_candidates_matches_baseline_mul_zero():
     expr = "(mul zero (suc zero))"
     assert _eval_bsp_candidates(expr) == _eval_baseline(expr)
+
+
+def test_bsp_candidates_matches_baseline_add_suc():
+    expr = "(add (suc zero) (suc zero))"
+    assert _eval_bsp_candidates(expr) == _eval_baseline(expr)
+
+
+def test_bsp_candidates_matches_baseline_mul_suc():
+    expr = "(mul (suc zero) (suc zero))"
+    assert _eval_bsp_candidates(expr) == _eval_baseline(expr)
