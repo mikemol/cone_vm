@@ -25,9 +25,10 @@ OP_NAMES = {
 }
 
 MAX_ROWS = 1024 * 32
-MAX_NODES = 1024 * 64
 MAX_KEY_NODES = 1 << 16
-if MAX_NODES > MAX_KEY_NODES:
+MAX_NODES = MAX_KEY_NODES - 1
+MAX_ID = MAX_NODES - 1
+if MAX_NODES >= MAX_KEY_NODES:
     raise ValueError("MAX_NODES exceeds 16-bit key packing")
 
 # --- Rank (2-bit Scheduler) ---
@@ -441,6 +442,14 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     proposed_ops, proposed_a1, proposed_a2 = _canonicalize_nodes(
         proposed_ops, proposed_a1, proposed_a2
     )
+    max_id = jnp.int32(MAX_ID)
+    bounds_over = (ledger.count > max_id) | jnp.any(proposed_a1 > max_id) | jnp.any(
+        proposed_a2 > max_id
+    )
+    base_oom = ledger.oom | bounds_over
+    proposed_ops = jnp.where(bounds_over, jnp.int32(0), proposed_ops)
+    proposed_a1 = jnp.where(bounds_over, jnp.int32(0), proposed_a1)
+    proposed_a2 = jnp.where(bounds_over, jnp.int32(0), proposed_a2)
 
     P_b0, P_b1, P_b2, P_b3, P_b4 = _pack_key(
         proposed_ops, proposed_a1, proposed_a2
@@ -484,7 +493,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     count = ledger.count.astype(jnp.int32)
     max_nodes = jnp.int32(MAX_NODES)
     available = jnp.maximum(max_nodes - count, 0)
-    available = jnp.where(ledger.oom, jnp.int32(0), available)
+    available = jnp.where(base_oom, jnp.int32(0), available)
     idx_all = jnp.arange(L_b0.shape[0], dtype=jnp.int32)
     valid_all = idx_all < count
     op_counts = jnp.bincount(
@@ -570,7 +579,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     )
     matched_ids = L_ids[safe_pos].astype(jnp.int32)
 
-    is_new = is_diff & (~found_match) & (~ledger.oom)
+    is_new = is_diff & (~found_match) & (~base_oom)
     requested_new = jnp.sum(is_new.astype(jnp.int32))
     overflow = requested_new > available
 
@@ -613,7 +622,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     )
 
     new_count = ledger.count + num_new
-    new_oom = ledger.oom | overflow
+    new_oom = base_oom | overflow
 
     new_pos = jnp.where(is_new, offsets, jnp.int32(-1))
     valid_new = new_pos >= 0
