@@ -1,4 +1,8 @@
+import pytest
+
 from tests import harness
+
+pytestmark = pytest.mark.m1
 
 
 def _peano_expr(n):

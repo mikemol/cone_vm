@@ -1,6 +1,9 @@
 import jax.numpy as jnp
+import pytest
 
 import prism_vm as pv
+
+pytestmark = pytest.mark.m3
 
 
 def test_stratum_no_within_refs_passes():

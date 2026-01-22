@@ -1,5 +1,9 @@
+import pytest
+
 import prism_vm as pv
 from tests import harness
+
+pytestmark = pytest.mark.m1
 
 
 def _eval(expr):

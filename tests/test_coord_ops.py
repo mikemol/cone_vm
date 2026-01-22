@@ -3,6 +3,8 @@ import pytest
 
 import prism_vm as pv
 
+pytestmark = pytest.mark.m3
+
 
 def test_coord_opcodes_exist():
     assert hasattr(pv, "OP_COORD_ZERO")

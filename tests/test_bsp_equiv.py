@@ -1,4 +1,8 @@
+import pytest
+
 from tests import harness
+
+pytestmark = pytest.mark.m1
 
 
 def test_bsp_matches_baseline_add():

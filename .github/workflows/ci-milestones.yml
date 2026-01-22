@@ -1,0 +1,84 @@
+name: milestone-tests-and-audit
+
+on:
+  push:
+    paths:
+      - ".github/workflows/**"
+      - "in/**"
+      - "tests/**"
+      - "scripts/**"
+      - "prism_vm.py"
+      - "IMPLEMENTATION_PLAN.md"
+      - "semantic_audit.md"
+      - "audit_in_versions.md"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Generate audit
+        run: |
+          mkdir -p artifacts
+          python scripts/audit_in_versions.py --output artifacts/audit_in_versions.md
+      - name: Upload audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit
+          path: artifacts/audit_in_versions.md
+
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        milestone: [m1, m2, m3, m4, m5]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest jax jaxlib
+      - name: Run pytest (milestone)
+        run: |
+          mkdir -p artifacts
+          set -euo pipefail
+          pytest -c pytest.${{ matrix.milestone }}.ini \
+            --junitxml artifacts/pytest-${{ matrix.milestone }}.xml \
+            2>&1 | tee artifacts/pytest-${{ matrix.milestone }}.txt
+      - name: Upload pytest artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-${{ matrix.milestone }}
+          path: artifacts/
+
+  collect-report:
+    runs-on: ubuntu-latest
+    needs: [audit, tests]
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: collected_report/raw
+          merge-multiple: true
+      - name: Assemble collected report
+        run: |
+          mkdir -p collected_report
+          cp -R collected_report/raw/* collected_report/ || true
+          find collected_report -type f | sort > collected_report/contents.txt
+          printf "Collected report for milestone audit and tests.\n" > collected_report/README.txt
+          printf "Contents:\n" >> collected_report/README.txt
+          sed 's|^|  - |' collected_report/contents.txt >> collected_report/README.txt
+      - name: Upload collected report
+        uses: actions/upload-artifact@v4
+        with:
+          name: collected-report
+          path: collected_report/

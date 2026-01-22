@@ -1,6 +1,9 @@
 import jax.numpy as jnp
+import pytest
 
 import prism_vm as pv
+
+pytestmark = pytest.mark.m4
 
 
 def test_interact_add_zero():

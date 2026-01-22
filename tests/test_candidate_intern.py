@@ -3,13 +3,11 @@ import pytest
 
 import prism_vm as pv
 
+pytestmark = pytest.mark.m2
+
 
 def _require_candidate_intern_api():
-    missing = []
-    if not hasattr(pv, "intern_candidates"):
-        missing.append("intern_candidates")
-    if missing:
-        pytest.xfail("Candidate interning not implemented: " + ", ".join(missing))
+    assert hasattr(pv, "intern_candidates")
 
 
 def test_intern_candidates_compacts_enabled():

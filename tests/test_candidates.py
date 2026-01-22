@@ -3,17 +3,13 @@ import pytest
 
 import prism_vm as pv
 
+pytestmark = pytest.mark.m2
+
 
 def _require_candidate_api():
-    missing = []
-    if not hasattr(pv, "CandidateBuffer"):
-        missing.append("CandidateBuffer")
-    if not hasattr(pv, "emit_candidates"):
-        missing.append("emit_candidates")
-    if not hasattr(pv, "compact_candidates"):
-        missing.append("compact_candidates")
-    if missing:
-        pytest.xfail("CNF-2 candidate pipeline not implemented: " + ", ".join(missing))
+    assert hasattr(pv, "CandidateBuffer")
+    assert hasattr(pv, "emit_candidates")
+    assert hasattr(pv, "compact_candidates")
 
 
 def test_candidate_emit_fixed_arity():

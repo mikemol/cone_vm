@@ -1,6 +1,9 @@
 import jax.numpy as jnp
+import pytest
 
 import prism_vm as pv
+
+pytestmark = pytest.mark.m5
 
 
 def test_block_local_sort():

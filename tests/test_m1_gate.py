@@ -1,7 +1,10 @@
 import jax.numpy as jnp
+import pytest
 
 import prism_vm as pv
 from tests import harness
+
+pytestmark = pytest.mark.m1
 
 
 def _ledger_corrupt_flag(ledger):

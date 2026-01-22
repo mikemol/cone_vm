@@ -4,6 +4,8 @@ import pytest
 
 from tests import harness
 
+pytestmark = pytest.mark.m2
+
 
 def _load_expressions():
     path = Path(__file__).with_name("cnf2_basic.txt")
