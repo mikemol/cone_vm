@@ -255,6 +255,13 @@ def compact_candidates_with_index(candidates):
     )
     return compacted, count, idx
 
+def _scatter_compacted_ids(comp_idx, ids_compact, count, size):
+    valid = jnp.arange(size, dtype=jnp.int32) < count
+    scatter_idx = jnp.where(valid, comp_idx, jnp.int32(size))
+    scatter_ids = jnp.where(valid, ids_compact, jnp.int32(0))
+    ids_full = jnp.zeros(size, dtype=ids_compact.dtype)
+    return ids_full.at[scatter_idx].set(scatter_ids, mode="drop")
+
 def intern_candidates(ledger, candidates):
     compacted, count = compact_candidates(candidates)
     enabled = compacted.enabled.astype(jnp.int32)
@@ -303,11 +310,7 @@ def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     a2_0 = jnp.where(enabled0, compacted0.arg2, jnp.int32(0))
     ids_compact, ledger0 = intern_nodes(ledger, ops0, a1_0, a2_0)
     size0 = candidates.enabled.shape[0]
-    valid0 = jnp.arange(size0, dtype=jnp.int32) < count0
-    scatter_idx0 = jnp.where(valid0, comp_idx0, jnp.int32(-1))
-    scatter_ids0 = jnp.where(valid0, ids_compact, jnp.int32(0))
-    ids_full0 = jnp.zeros_like(candidates.opcode)
-    ids_full0 = ids_full0.at[scatter_idx0].set(scatter_ids0, mode="drop")
+    ids_full0 = _scatter_compacted_ids(comp_idx0, ids_compact, count0, size0)
     idx0 = jnp.arange(num_frontier, dtype=jnp.int32) * 2
     slot0_ids = ids_full0[idx0]
 
@@ -677,6 +680,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     s_ops = proposed_ops[perm]
     s_a1 = proposed_a1[perm]
     s_a2 = proposed_a2[perm]
+    new_entry_len = s_b0.shape[0]
 
     is_diff = jnp.concatenate([
         jnp.array([True]),
@@ -822,7 +826,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
 
     write_idx = jnp.where(is_new, write_start + offsets, jnp.int32(-1))
     valid_w = write_idx >= 0
-    safe_w = jnp.where(valid_w, write_idx, 0)
+    safe_w = jnp.where(valid_w, write_idx, jnp.int32(new_opcode.shape[0]))
 
     new_opcode = new_opcode.at[safe_w].set(
         jnp.where(valid_w, s_ops, new_opcode[0]), mode="drop"
@@ -839,14 +843,14 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
 
     new_pos = jnp.where(is_new, offsets, jnp.int32(-1))
     valid_new = new_pos >= 0
-    safe_new = jnp.where(valid_new, new_pos, 0)
+    safe_new = jnp.where(valid_new, new_pos, jnp.int32(new_entry_len))
 
     new_entry_b0_sorted = jnp.full_like(s_b0, max_key)
     new_entry_b1_sorted = jnp.full_like(s_b1, max_key)
     new_entry_b2_sorted = jnp.full_like(s_b2, max_key)
     new_entry_b3_sorted = jnp.full_like(s_b3, max_key)
     new_entry_b4_sorted = jnp.full_like(s_b4, max_key)
-    new_entry_ids_sorted = jnp.zeros_like(s_a1)
+    new_entry_ids_sorted = jnp.zeros(new_entry_len, dtype=jnp.int32)
 
     new_entry_b0_sorted = new_entry_b0_sorted.at[safe_new].set(
         jnp.where(valid_new, s_b0, new_entry_b0_sorted[0]), mode="drop"
@@ -1359,7 +1363,7 @@ def op_interact(arena):
     payload_a2 = jnp.where(payload_swap, payload_a1_raw, payload_a2_raw)
 
     valid = idxs >= 0
-    idxs2 = jnp.where(valid, idxs, 0)
+    idxs2 = jnp.where(valid, idxs, cap)
 
     final_ops = new_ops.at[idxs2].set(
         jnp.where(valid, payload_op, new_ops[0]), mode="drop"
@@ -1540,7 +1544,7 @@ def kernel_add(manifest, ptr):
         def do_spawn(state):
             ops, a1s, count, y_val, oom = state
             ok = (count < cap) & (~oom)
-            w_idx = jnp.where(ok, count, 0)
+            w_idx = jnp.where(ok, count, cap)
             ops = ops.at[w_idx].set(OP_SUC, mode="drop")
             a1s = a1s.at[w_idx].set(y_val, mode="drop")
             next_count = jnp.where(ok, count + 1, count)

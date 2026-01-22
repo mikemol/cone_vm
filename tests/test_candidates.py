@@ -87,6 +87,16 @@ def test_candidate_emit_mul_zero_values():
     assert int(candidates.arg2[0]) == 0
 
 
+def test_scatter_compacted_ids_does_not_wrap():
+    size = 4
+    comp_idx = jnp.array([3, 0, 0, 0], dtype=jnp.int32)
+    ids_compact = jnp.array([7, 9, 9, 9], dtype=jnp.int32)
+    count = jnp.int32(1)
+    ids_full = pv._scatter_compacted_ids(comp_idx, ids_compact, count, size)
+    assert int(ids_full[3]) == 7
+    assert int(ids_full[0]) == 0
+
+
 def test_candidate_emit_add_suc_values():
     _require_candidate_api()
     ledger = pv.init_ledger()

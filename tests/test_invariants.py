@@ -110,6 +110,16 @@ def test_kernel_add_oom():
 
 
 @pytest.mark.m1
+def test_kernel_add_oom_preserves_null_slot():
+    cap = 4
+    manifest = _small_add_manifest(cap)
+    new_manifest, _ = pv.kernel_add(manifest, jnp.int32(3))
+    assert int(new_manifest.opcode[0]) == pv.OP_NULL
+    assert int(new_manifest.arg1[0]) == 0
+    assert int(new_manifest.arg2[0]) == 0
+
+
+@pytest.mark.m1
 def test_kernel_mul_oom():
     cap = 4
     manifest = _small_mul_manifest(cap)
