@@ -31,6 +31,36 @@ MAX_ID = MAX_NODES - 1
 if MAX_NODES >= MAX_KEY_NODES:
     raise ValueError("MAX_NODES exceeds 16-bit key packing")
 MAX_COORD_STEPS = 8
+_SCATTER_GUARD = os.environ.get("PRISM_SCATTER_GUARD", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+_HAS_DEBUG_CALLBACK = hasattr(jax, "debug") and hasattr(jax.debug, "callback")
+
+
+def _scatter_guard(indices, label):
+    if not _SCATTER_GUARD or not _HAS_DEBUG_CALLBACK:
+        return
+    if indices.size == 0:
+        return
+    bad = jnp.any(indices < 0)
+    min_idx = jnp.min(indices)
+    max_idx = jnp.max(indices)
+
+    def _raise(bad_val, min_val, max_val):
+        if bad_val:
+            raise RuntimeError(
+                f"scatter index negative in {label} (min={min_val}, max={max_val})"
+            )
+
+    jax.debug.callback(_raise, bad, min_idx, max_idx)
+
+
+def _scatter_drop(target, indices, values, label):
+    _scatter_guard(indices, label)
+    return target.at[indices].set(values, mode="drop")
 
 # --- Rank (2-bit Scheduler) ---
 RANK_HOT = 0
@@ -260,7 +290,9 @@ def _scatter_compacted_ids(comp_idx, ids_compact, count, size):
     scatter_idx = jnp.where(valid, comp_idx, jnp.int32(size))
     scatter_ids = jnp.where(valid, ids_compact, jnp.int32(0))
     ids_full = jnp.zeros(size, dtype=ids_compact.dtype)
-    return ids_full.at[scatter_idx].set(scatter_ids, mode="drop")
+    return _scatter_drop(
+        ids_full, scatter_idx, scatter_ids, "scatter_compacted_ids"
+    )
 
 def intern_candidates(ledger, candidates):
     compacted, count = compact_candidates(candidates)
@@ -828,14 +860,23 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     valid_w = write_idx >= 0
     safe_w = jnp.where(valid_w, write_idx, jnp.int32(new_opcode.shape[0]))
 
-    new_opcode = new_opcode.at[safe_w].set(
-        jnp.where(valid_w, s_ops, new_opcode[0]), mode="drop"
+    new_opcode = _scatter_drop(
+        new_opcode,
+        safe_w,
+        jnp.where(valid_w, s_ops, new_opcode[0]),
+        "intern_nodes.new_opcode",
     )
-    new_arg1 = new_arg1.at[safe_w].set(
-        jnp.where(valid_w, s_a1, new_arg1[0]), mode="drop"
+    new_arg1 = _scatter_drop(
+        new_arg1,
+        safe_w,
+        jnp.where(valid_w, s_a1, new_arg1[0]),
+        "intern_nodes.new_arg1",
     )
-    new_arg2 = new_arg2.at[safe_w].set(
-        jnp.where(valid_w, s_a2, new_arg2[0]), mode="drop"
+    new_arg2 = _scatter_drop(
+        new_arg2,
+        safe_w,
+        jnp.where(valid_w, s_a2, new_arg2[0]),
+        "intern_nodes.new_arg2",
     )
 
     new_count = ledger.count + num_new
@@ -852,24 +893,41 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     new_entry_b4_sorted = jnp.full_like(s_b4, max_key)
     new_entry_ids_sorted = jnp.zeros(new_entry_len, dtype=jnp.int32)
 
-    new_entry_b0_sorted = new_entry_b0_sorted.at[safe_new].set(
-        jnp.where(valid_new, s_b0, new_entry_b0_sorted[0]), mode="drop"
+    new_entry_b0_sorted = _scatter_drop(
+        new_entry_b0_sorted,
+        safe_new,
+        jnp.where(valid_new, s_b0, new_entry_b0_sorted[0]),
+        "intern_nodes.new_entry_b0",
     )
-    new_entry_b1_sorted = new_entry_b1_sorted.at[safe_new].set(
-        jnp.where(valid_new, s_b1, new_entry_b1_sorted[0]), mode="drop"
+    new_entry_b1_sorted = _scatter_drop(
+        new_entry_b1_sorted,
+        safe_new,
+        jnp.where(valid_new, s_b1, new_entry_b1_sorted[0]),
+        "intern_nodes.new_entry_b1",
     )
-    new_entry_b2_sorted = new_entry_b2_sorted.at[safe_new].set(
-        jnp.where(valid_new, s_b2, new_entry_b2_sorted[0]), mode="drop"
+    new_entry_b2_sorted = _scatter_drop(
+        new_entry_b2_sorted,
+        safe_new,
+        jnp.where(valid_new, s_b2, new_entry_b2_sorted[0]),
+        "intern_nodes.new_entry_b2",
     )
-    new_entry_b3_sorted = new_entry_b3_sorted.at[safe_new].set(
-        jnp.where(valid_new, s_b3, new_entry_b3_sorted[0]), mode="drop"
+    new_entry_b3_sorted = _scatter_drop(
+        new_entry_b3_sorted,
+        safe_new,
+        jnp.where(valid_new, s_b3, new_entry_b3_sorted[0]),
+        "intern_nodes.new_entry_b3",
     )
-    new_entry_b4_sorted = new_entry_b4_sorted.at[safe_new].set(
-        jnp.where(valid_new, s_b4, new_entry_b4_sorted[0]), mode="drop"
+    new_entry_b4_sorted = _scatter_drop(
+        new_entry_b4_sorted,
+        safe_new,
+        jnp.where(valid_new, s_b4, new_entry_b4_sorted[0]),
+        "intern_nodes.new_entry_b4",
     )
-    new_entry_ids_sorted = new_entry_ids_sorted.at[safe_new].set(
+    new_entry_ids_sorted = _scatter_drop(
+        new_entry_ids_sorted,
+        safe_new,
         jnp.where(valid_new, new_ids_for_sorted, new_entry_ids_sorted[0]),
-        mode="drop",
+        "intern_nodes.new_entry_ids",
     )
 
     def _merge_sorted_keys(
@@ -1365,14 +1423,23 @@ def op_interact(arena):
     valid = idxs >= 0
     idxs2 = jnp.where(valid, idxs, cap)
 
-    final_ops = new_ops.at[idxs2].set(
-        jnp.where(valid, payload_op, new_ops[0]), mode="drop"
+    final_ops = _scatter_drop(
+        new_ops,
+        idxs2,
+        jnp.where(valid, payload_op, new_ops[0]),
+        "op_interact.final_ops",
     )
-    final_a1 = new_a1.at[idxs2].set(
-        jnp.where(valid, payload_a1, new_a1[0]), mode="drop"
+    final_a1 = _scatter_drop(
+        new_a1,
+        idxs2,
+        jnp.where(valid, payload_a1, new_a1[0]),
+        "op_interact.final_a1",
     )
-    final_a2 = new_a2.at[idxs2].set(
-        jnp.where(valid, payload_a2, new_a2[0]), mode="drop"
+    final_a2 = _scatter_drop(
+        new_a2,
+        idxs2,
+        jnp.where(valid, payload_a2, new_a2[0]),
+        "op_interact.final_a2",
     )
 
     overflow = jnp.sum(mask_suc.astype(jnp.int32)) > available
@@ -1545,8 +1612,8 @@ def kernel_add(manifest, ptr):
             ops, a1s, count, y_val, oom = state
             ok = (count < cap) & (~oom)
             w_idx = jnp.where(ok, count, cap)
-            ops = ops.at[w_idx].set(OP_SUC, mode="drop")
-            a1s = a1s.at[w_idx].set(y_val, mode="drop")
+            ops = _scatter_drop(ops, w_idx, OP_SUC, "kernel_add.ops")
+            a1s = _scatter_drop(a1s, w_idx, y_val, "kernel_add.a1s")
             next_count = jnp.where(ok, count + 1, count)
             next_y = jnp.where(ok, w_idx, y_val)
             next_oom = oom | (~ok)
@@ -1600,14 +1667,14 @@ def kernel_mul(manifest, ptr):
         def do_add(state):
             b_ops, b_a1, b_a2, b_count, b_oom, acc = state
             add_idx = b_count
-            b_ops = b_ops.at[add_idx].set(OP_ADD, mode="drop")
+            b_ops = _scatter_drop(b_ops, add_idx, OP_ADD, "kernel_mul.b_ops")
             add_a1_raw = y
             add_a2_raw = acc
             add_swap = add_a2_raw < add_a1_raw
             add_a1 = jnp.where(add_swap, add_a2_raw, add_a1_raw)
             add_a2 = jnp.where(add_swap, add_a1_raw, add_a2_raw)
-            b_a1 = b_a1.at[add_idx].set(add_a1, mode="drop")
-            b_a2 = b_a2.at[add_idx].set(add_a2, mode="drop")
+            b_a1 = _scatter_drop(b_a1, add_idx, add_a1, "kernel_mul.b_a1")
+            b_a2 = _scatter_drop(b_a2, add_idx, add_a2, "kernel_mul.b_a2")
             b_count = b_count + 1
             add_manifest = Manifest(b_ops, b_a1, b_a2, b_count, b_oom)
             updated_manifest, next_acc = kernel_add(add_manifest, add_idx)
