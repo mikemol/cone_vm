@@ -54,3 +54,22 @@ def test_intern_candidates_dedup():
     assert int(count) == 2
     assert int(ids[0]) == int(ids[1])
     assert int(new_ledger.count) == 3
+
+
+def test_intern_candidates_sees_only_enabled():
+    _require_candidate_intern_api()
+    enabled = jnp.array([1, 0, 0], dtype=jnp.int32)
+    opcode = jnp.array([pv.OP_SUC, pv.OP_ADD, pv.OP_MUL], dtype=jnp.int32)
+    arg1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
+    arg2 = jnp.array([0, pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
+    candidates = pv.CandidateBuffer(
+        enabled=enabled,
+        opcode=opcode,
+        arg1=arg1,
+        arg2=arg2,
+    )
+    ledger = pv.init_ledger()
+    ids, new_ledger, count = pv.intern_candidates(ledger, candidates)
+    assert int(count) == 1
+    assert int(new_ledger.count) == 3
+    assert bool(jnp.all(ids[int(count):] == 0))
