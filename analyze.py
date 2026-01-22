@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from itertools import chain, combinations
 from pathlib import Path
 
-TOKEN_PATTERN = r"[A-Za-z_][A-Za-z0-9_]*"
+TOKEN_PATTERN = r"[^\W\d_][\w]*"
 DEFAULT_STOPWORDS = {
     "i",
     "me",

@@ -75,7 +75,7 @@ def test_manifest_capacity_guard():
     assert bool(vm.manifest.oom)
 
 
-@pytest.mark.m4
+@pytest.mark.m3
 def test_arena_capacity_guard():
     vm = pv.PrismVM_BSP_Legacy()
     cap = int(vm.arena.opcode.shape[0])
@@ -142,7 +142,7 @@ def test_kernel_mul_canonicalizes_add_args():
     assert found
 
 
-@pytest.mark.m4
+@pytest.mark.m3
 def test_op_interact_oom():
     cap = 4
     ops = jnp.zeros(cap, dtype=jnp.int32)
@@ -169,7 +169,7 @@ def test_op_interact_oom():
     assert int(new_arena.count) == cap
 
 
-@pytest.mark.m4
+@pytest.mark.m3
 def test_op_interact_canonicalizes_spawned_add():
     cap = 8
     ops = jnp.zeros(cap, dtype=jnp.int32)
@@ -200,7 +200,7 @@ def test_op_interact_canonicalizes_spawned_add():
     assert int(new_arena.arg2[add_idx]) == 4
 
 
-@pytest.mark.m3
+@pytest.mark.m2
 def test_validate_stratum_no_within_refs_jax_ok():
     ledger = pv.init_ledger()
     ledger = ledger._replace(
@@ -215,7 +215,7 @@ def test_validate_stratum_no_within_refs_jax_ok():
     assert bool(pv.validate_stratum_no_within_refs_jax(ledger, stratum))
 
 
-@pytest.mark.m3
+@pytest.mark.m2
 def test_validate_stratum_no_within_refs_jax_bad():
     ledger = pv.init_ledger()
     ledger = ledger._replace(
@@ -230,7 +230,7 @@ def test_validate_stratum_no_within_refs_jax_bad():
     assert not bool(pv.validate_stratum_no_within_refs_jax(ledger, stratum))
 
 
-@pytest.mark.m2
+@pytest.mark.m3
 def test_compact_candidates_preserves_order():
     enabled = jnp.array([0, 1, 0, 1, 1, 0], dtype=jnp.int32)
     opcode = jnp.arange(enabled.shape[0], dtype=jnp.int32)

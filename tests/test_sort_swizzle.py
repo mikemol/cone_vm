@@ -3,7 +3,7 @@ import pytest
 
 import prism_vm as pv
 
-pytestmark = pytest.mark.m4
+pytestmark = pytest.mark.m3
 
 
 def _arena_with_edges():

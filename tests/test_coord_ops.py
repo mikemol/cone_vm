@@ -3,7 +3,7 @@ import pytest
 
 import prism_vm as pv
 
-pytestmark = pytest.mark.m3
+pytestmark = pytest.mark.m4
 
 
 def test_coord_opcodes_exist():

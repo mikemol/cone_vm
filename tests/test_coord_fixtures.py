@@ -6,7 +6,7 @@ import pytest
 
 import prism_vm as pv
 
-pytestmark = pytest.mark.m3
+pytestmark = pytest.mark.m4
 
 
 TOKEN_RE = re.compile(r"[A-Za-z_]+|==|[(),]")

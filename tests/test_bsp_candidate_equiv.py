@@ -2,7 +2,7 @@ import pytest
 
 from tests import harness
 
-pytestmark = pytest.mark.m2
+pytestmark = pytest.mark.m3
 
 
 def test_bsp_candidates_matches_baseline_add_zero():

@@ -5,7 +5,7 @@ import pytest
 from tests import harness
 import prism_vm as pv
 
-pytestmark = pytest.mark.m4
+pytestmark = pytest.mark.m3
 
 
 def _rand_expr(rng, depth):

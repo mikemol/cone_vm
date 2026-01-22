@@ -9,7 +9,7 @@ def _require_cycle_candidates():
     assert hasattr(pv, "cycle_candidates")
 
 
-@pytest.mark.m2
+@pytest.mark.m3
 def test_cycle_candidates_add_zero():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
@@ -41,7 +41,7 @@ def test_cycle_candidates_add_zero():
     assert int(stratum2.count) == 0
 
 
-@pytest.mark.m2
+@pytest.mark.m3
 def test_cycle_candidates_add_zero_right():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
@@ -65,7 +65,7 @@ def test_cycle_candidates_add_zero_right():
     assert int(next_frontier[0]) == int(y_id)
 
 
-@pytest.mark.m2
+@pytest.mark.m3
 def test_cycle_candidates_mul_zero():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
@@ -89,7 +89,7 @@ def test_cycle_candidates_mul_zero():
     assert int(stratum2.count) == 0
 
 
-@pytest.mark.m2
+@pytest.mark.m3
 def test_cycle_candidates_add_suc():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
@@ -130,7 +130,7 @@ def test_cycle_candidates_add_suc():
     assert int(stratum2.count) == 0
 
 
-@pytest.mark.m2
+@pytest.mark.m3
 def test_cycle_candidates_add_suc_right():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
@@ -171,7 +171,7 @@ def test_cycle_candidates_add_suc_right():
     assert int(stratum2.count) == 0
 
 
-@pytest.mark.m2
+@pytest.mark.m3
 def test_cycle_candidates_mul_suc():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
@@ -215,7 +215,7 @@ def test_cycle_candidates_mul_suc():
     assert int(stratum2.count) == 0
 
 
-@pytest.mark.m2
+@pytest.mark.m3
 def test_cycle_candidates_mul_suc_right():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
@@ -259,7 +259,7 @@ def test_cycle_candidates_mul_suc_right():
     assert int(stratum2.count) == 0
 
 
-@pytest.mark.m2
+@pytest.mark.m3
 def test_cycle_candidates_noop_on_suc():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
@@ -283,7 +283,7 @@ def test_cycle_candidates_noop_on_suc():
     assert int(stratum2.count) == 0
 
 
-@pytest.mark.m3
+@pytest.mark.m2
 def test_cycle_candidates_validate_stratum_random_frontier():
     _require_cycle_candidates()
     ledger = pv.init_ledger()

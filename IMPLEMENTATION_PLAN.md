@@ -39,7 +39,9 @@ the current cross-version audit.
 ## Architecture Decision
 Ledger + candidate pipeline is the canonical execution path. Baseline
 `PrismVM` stays as an oracle. Arena scheduling is performance-only and must be
-denotation-invariant with respect to the Ledger CNF-2 engine; it begins at M4+.
+denotation-invariant with respect to the Ledger CNF-2 engine; minimal scheduler
+variants are required by m3 for invariance tests, while performance-grade
+locality begins at m4+.
 Ledger denotation is the spec; ID equality is engine-local until baseline
 migrates to the Ledger interner.
 
@@ -55,10 +57,12 @@ migrates to the Ledger interner.
   quotient map `q`; denotation is defined by projecting provisional nodes
   through `q` and must commute with scheduling (see `in/in-16.md`).
 - 2:1 BSP swizzle/locality is staged as a performance invariant:
-  - M1-M3: rank-only sort (or no sort) is acceptable for correctness tests.
-  - M4+: 2:1 swizzle is mandatory for the performance profile, but must not
+  - m1-m2: rank-only sort (or no sort) is acceptable for correctness tests.
+  - m3: denotation invariance must hold across unsorted/rank/morton/block
+    scheduler variants (even if slow).
+  - m4+: 2:1 swizzle is mandatory for the performance profile, but must not
     change denotation (same canonical ids/decoded normal forms).
-- Baseline `PrismVM` is a regression implementation through M3; comparisons are
+- Baseline `PrismVM` is a regression implementation through m3; comparisons are
   on decoded normal forms and termination behavior, not raw ids.
 
 ## Univalence Contract (Fixed-Width, No-Ambiguity Semantics)
@@ -88,7 +92,7 @@ K = encode(op)
 Where:
 
 - `rep(id)` = canonical representative of `id`
-  - equals `id` in M1–M3
+  - equals `id` in m1–m3
   - becomes `find(id)` if rewrite-union is introduced later
 - Commutative ops (`ADD`, later others):
   - sort `(rep(a1), rep(a2))` before encoding
@@ -96,9 +100,9 @@ Where:
 
 Two nodes are equal iff their full `K` byte sequences are identical.
 
-### Fixed-Width Encoding Mode (M1–M3)
+### Fixed-Width Encoding Mode (m1–m3)
 
-In M1–M3, `K` uses a fixed-width encoding:
+In m1–m3, `K` uses a fixed-width encoding:
 
 - `op` -> 1 byte
 - `rep(a1)` -> 16 bits
@@ -224,12 +228,12 @@ Define a shared denotation interface used for cross-engine comparisons:
   `q` up to canonical rewrite (see `in/in-16.md`).
 
 ## Locked Decisions
-- Read model backend (M1): keep the current ordered index (sorted lanes +
+- Read model backend (m1): keep the current ordered index (sorted lanes +
   binary search). Tests assert full-key equality and do not assume any specific
   index structure so trie or hash-bucket indexes can replace it later.
-- Univalence encoding (M1): hard-cap mode with 5-byte key; enforce
+- Univalence encoding (m1): hard-cap mode with 5-byte key; enforce
   `MAX_NODES = 65535`, `MAX_ID = 65534`, and checked packing for `a1/a2`.
-- Aggregation scope (M3): coordinate aggregation applies to `OP_ADD` only;
+- Aggregation scope (m4): coordinate aggregation applies to `OP_ADD` only;
   `OP_MUL` remains Peano-style until explicitly lifted.
 
 ## Workstreams and Tasks (Tests-First Policy)
@@ -239,8 +243,9 @@ For each step below:
   pytest coverage for black-box validation.
 - Commit tests first, then implement, then commit again.
 
-Sections **0-3** are Ledger-only (M1-M3). Arena scheduling starts at **4** and
-is performance-only (M4+).
+Sections **0-1** are Ledger-only (m1). Section **2** introduces evaluator
+strata plus the `q` boundary (m2). Sections **4-9** supply scheduler variants
+needed for m3 denotation invariance; performance-grade locality remains m4+.
 
 ### 0) Canonical Interner + Univalence (Ledger-first)
 Objective: treat the Ledger as the canonical read model and enforce univalence.
@@ -255,7 +260,7 @@ Tests (before implementation):
 Tasks:
 - Ensure interning uses full-key equality; hash is a hint only.
 - Add a canonicalize-before-pack hook for any derived representations.
-- Guard against truncation aliasing (M1 uses hard-cap mode).
+- Guard against truncation aliasing (m1 uses hard-cap mode).
 - Enforce `MAX_NODES = 65535`, define `MAX_ID = 65534`, reserve `0/1` for
   NULL/ZERO, and hard-trap on `count > MAX_ID` before any allocation or intern.
 - Implement a deterministic JAX trap:
@@ -285,17 +290,20 @@ Tasks:
   - `slot0` = local rewrite
   - `slot1` = continuation / wrapper / second-stage
 - Emission invariant: buffer shape is `2 * |frontier|` every cycle.
-- M2 invariant: `enabled[slot1] == 0` always; slot1 payloads are ignored.
+- m3 invariant: `enabled[slot1] == 0` always; slot1 payloads are ignored.
 - Implement compaction (enabled mask + prefix sums).
-- Intern compacted candidates via `intern_nodes` (can be fused in M2).
+- Intern compacted candidates via `intern_nodes` (can be fused in m3).
 - Optional debug: track origin site indices for strata violation tracing.
 
-### 2) Strata Discipline (Ledger-only)
-Objective: enforce explicit strata boundaries and prevent within-tier references.
+### 2) Strata Discipline + `q` Boundary (m2)
+Objective: enforce explicit strata boundaries, prevent within-tier references,
+and project provisional nodes through `q` at the stratum boundary.
 
 Tests (before implementation):
 - Pytest: `test_strata_no_within_tier_refs` (expected: new nodes only reference
   prior strata).
+- Pytest: `test_stratum_commit_projects_q` (expected: provisional nodes map to
+  canonical ids and swizzle is stable).
 - Program: `tests/strata_basic.txt` (expected: same normal form as baseline).
 - Program null: `tests/strata_noop.txt` (expected: no changes).
 
@@ -307,8 +315,11 @@ Tasks:
 - Add validators that enforce the selected rule, scanning only up to
   `ledger.count`.
 - Wire validators into `cycle_candidates` (guarded by a debug flag).
+- Add a `commit_stratum` boundary:
+  - Validate strata, project through `q`, intern, and swizzle provisional ids.
+  - Treat projection as the denotation boundary for evaluator emissions.
 
-### 3) Coordinate Semantics (Self-Hosted CD)
+### 3) Coordinate Semantics (Self-Hosted CD, m4)
 Objective: add CD coordinates as interned CNF-2 objects and define parity/aggregation.
 
 Tests (before implementation):
@@ -325,7 +336,7 @@ Tasks:
 - Representation invariant: coordinates are stored only as interned
   `OP_COORD_*` DAGs; no linear bitstrings/digit arrays are stored anywhere.
 - Implement coordinate construction and XOR/parity rewrite rules in the BSP path.
-- Aggregation scope (M3): coordinate lifting applies to `OP_ADD` only; `OP_MUL`
+- Aggregation scope (m4): coordinate lifting applies to `OP_ADD` only; `OP_MUL`
   remains Peano-style until explicitly lifted.
 - Normalization order:
   1. Build coordinate CNF-2 objects.
@@ -387,8 +398,8 @@ Tasks:
   - Preserve `count` as next-free pointer; track active count separately if needed.
 - Use `jax.numpy.argsort` initially.
 - Later: replace with 4-bin partition (prefix sums) for speed.
-- Staging note: rank-only sort is sufficient for M1-M3 correctness. 2:1
-  swizzle is optional until M4.
+- Staging note: rank-only sort is sufficient for m1-m2 correctness. 2:1
+  swizzle is optional until m4.
 
 ### 7) Interaction Kernel (Rewrite Rules)
 Objective: implement `op_interact` to handle ADD rewrites in the fluid model.
@@ -484,59 +495,57 @@ Tasks:
   - Per-cycle allocation delta.
 - Provide debug hooks to compare results with the baseline VM.
 
-## Milestones
-- **M1-M3 are Ledger-only.** Arena scheduling starts at M4+ and must be
-  denotation-invariant with respect to the Ledger CNF-2 engine.
-- **M1: Correctness spine (eager canonicalization)**
+## Milestones (Contract-Aligned)
+- **m1: Ledger CNF-2 core + deterministic keys**
   - Ledger interning is the reference path (`cycle_intrinsic + intern_nodes`).
-  - Baseline `PrismVM` remains strict oracle.
-  - Tests: root remap, univalence/dedup, key-width guard.
-  - Minimal E2E reductions:
-    - `(add zero (suc zero)) -> (suc zero)`
-    - `(add (suc zero) zero) -> (suc zero)`
-- **M2: CNF-2 surface (candidate buffer)**
-  - Two-slot candidate emission + compaction (intern can be fused).
-  - Slot 1 remains disabled until continuation/strata support.
-  - Tests: fixed arity, enabled-only compaction, baseline equivalence.
-- **M3: Strata discipline**
-  - M3a: explicit stratum boundary with validators (no within-tier refs).
-  - M3a: canonicalize-before-pack hook in place before coord usage.
-  - M3b: introduce `OP_COORD_*` and parity/normalization rules.
-- **M4: Performance spine (Arena scheduling)**
-  - Arena rank/sort/swizzle/morton ordering as an optimization layer.
-  - Mandatory 2:1 swizzle/morton ordering.
-  - Denotation-invariance tests across swizzle modes (normal forms, not ids).
-- **M5: Hierarchical arenas (optional)**
-  - Local block sort and merge.
+  - Full-key equality and hard-cap univalence are enforced.
+  - Milestone-gated tests are part of the deliverable (see `in/in-15.md`).
+- **m2: Strata boundary + total `q` projection**
+  - Evaluator emits strata; no within-tier references.
+  - `commit_stratum`: validate → project `q` → intern → swizzle ids.
+- **m3: Canonical rewrites + denotation invariance harness**
+  - Canonical rewrites live in Ledger space (rewrite+intern).
+  - Denotation invariance across unsorted, rank, and morton/block schedulers.
+- **m4: Coordinates as interned objects + aggregation**
+  - `OP_COORD_*` objects and idempotent parity normalization.
+  - Coordinate aggregation applies to `OP_ADD` only.
+- **m5: Full homomorphic collapse (production contract)**
+  - Evaluator is write-model, Ledger is read-model.
+  - Scheduling affects performance only; meaning is measured after `q`.
+- **m6: Hierarchical arenas (optional)**
+  - Local block sort and merge once the contract is stable.
 
 ## Acceptance Gates
-- **M1 gate:** univalence + no aliasing + baseline equivalence on small suite.
-- **M2 gate:** CNF-2 fixed-arity emission + compaction correctness + baseline equivalence.
-- **M3 gate:** strata validator passes on randomized small programs + coord idempotence.
-- **M4 gate:** arena/morton on/off does not change denotation on randomized suite.
+- **m1 gate:** univalence + no aliasing + baseline equivalence on small suite.
+- **m2 gate:** strata validator passes + `q` projection total on emitted strata.
+- **m3 gate:** denotation invariance across unsorted/rank/morton/block schedulers.
+- **m4 gate:** coordinate normalization idempotence + parity cancellation.
+- **m5 gate:** full-suite denotation invariance + univalence stress tests.
 
-## Invariant Checklist (M1–M4)
-M1:
+## Invariant Checklist (m1–m5)
+m1:
 - Key-byte univalence holds under hard-cap mode (`MAX_ID` checks + corrupt trap).
 - Deterministic interning for identical inputs within a single engine.
 - Baseline vs ledger equivalence on small add-zero suite.
-M2:
+m2:
 - CNF-2 emission is fixed-arity (2 slots per site) with slot1 disabled.
 - Compaction never interns disabled payloads.
+- Stratum boundary enforces no within-tier refs; `q` projection is total.
+m3:
 - Denotation matches ledger intrinsic on the shared suite.
-M3:
-- Strata validator enforces no within-tier refs (strict mode).
+- Denotation invariance across unsorted/rank/morton/block schedulers.
+m4:
 - Coordinate normalization is idempotent and confluent on small inputs.
 - Coordinate lifting limited to `OP_ADD`.
-M4:
-- Arena scheduling (rank/sort/morton on/off) preserves denotation.
+m5:
+- Arena scheduling (rank/sort/morton on/off) preserves denotation end-to-end.
 
-## Next Commit Checklist (M1 landing)
+## Next Commit Checklist (m1 landing)
 1. Add `tests/harness.py` with shared parse/run/normalize helpers.
 2. Add tests `test_univalence_no_alias_guard`, `test_add_zero_equivalence_baseline_vs_ledger` (both operand orders), and `test_intern_deterministic_ids_single_engine`.
 3. Implement key-width fix and hard-trap on `count > 65534`.
 4. Ensure `cycle_intrinsic` reduces the add-zero cases.
-5. Only then introduce CNF-2 pipeline tests (M2).
+5. Only then introduce CNF-2 pipeline tests (m3).
 
 ## Testing Plan
 ### Milestone Test Selection
@@ -545,7 +554,7 @@ M4:
 - VS Code: edit `.vscode/pytest.env` to set `PRISM_MILESTONE=m2`, then refresh
   the Testing panel; gating reads the env (or `.pytest-milestone`) in
   `conftest.py` and uses `pytest.ini`.
-- Gating: tests are marked `m1`..`m5`; the milestone gate skips any test with
+- Gating: tests are marked `m1`..`m6`; the milestone gate skips any test with
   a higher marker than the selected milestone.
 - See `in/in-15.md` for the milestone-gated testing workflow and VS Code
   integration details.
@@ -568,7 +577,7 @@ Integration tests:
   - Baseline `PrismVM`
   - Ledger `cycle_intrinsic`
   - Ledger CNF-2 pipeline
-  - (M4+) Arena-scheduled pipeline
+  - (m4+) Arena-scheduled pipeline
   - Assert decoded normal forms match.
   - Optionally assert canonical ids match within each engine.
 
@@ -583,7 +592,7 @@ Performance checks:
 - **Capacity overflow**: add a guard that halts or triggers a sort/compaction.
 - **Key aliasing**: avoid truncation in key encoding or assert limits at intern.
 - **Interner rebuild cost**: avoid full-table merges per tiny batch; use staging
-  buffers and periodic read-model rebuilds after M3.
+  buffers and periodic read-model rebuilds after m3.
 - **JIT recompilations**: keep shapes static (fixed MAX_NODES).
 
 ## Deliverables
@@ -597,7 +606,7 @@ branchless interaction-combinator engine based on a NodeTypes/Ports/FreeStack
 layout and rule-table rewrites.
 
 Prereqs:
-- Complete M1 through M5 (BSP cycle verified and stable).
+- Complete m1 through m5 (BSP cycle verified and stable).
 - Decide whether this is a separate backend or a full replacement.
 - Settle port encoding (3 ports vs 4-slot encoding) and invariants.
 

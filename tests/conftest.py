@@ -12,7 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-MILESTONE_MARKERS = {"m1", "m2", "m3", "m4", "m5"}
+MILESTONE_MARKERS = {"m1", "m2", "m3", "m4", "m5", "m6"}
 
 
 def _parse_milestone(value):
@@ -59,7 +59,7 @@ def pytest_addoption(parser):
         "--milestone",
         action="store",
         default=_milestone_default(),
-        help="run tests up to a milestone (m1-m5)",
+        help="run tests up to a milestone (m1-m6)",
     )
 
 

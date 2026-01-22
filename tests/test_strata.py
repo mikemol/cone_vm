@@ -3,7 +3,7 @@ import pytest
 
 import prism_vm as pv
 
-pytestmark = pytest.mark.m3
+pytestmark = pytest.mark.m2
 
 
 def test_stratum_no_within_refs_passes():

@@ -1,4 +1,4 @@
-Manual semantic analysis based on `in/in-*.md`, `prism_vm.py`, and `IMPLEMENTATION_PLAN.md`.
+Manual semantic analysis based on `in/in-*.md`, `in/glossary.md`, `prism_vm.py`, and `IMPLEMENTATION_PLAN.md`.
 
 ## Definitions
 - Intersection: shared semantic commitments (what both documents must be true about).
@@ -100,3 +100,9 @@ Manual semantic analysis based on `in/in-*.md`, `prism_vm.py`, and `IMPLEMENTATI
 - Prior `in/in-15.md`: Intersection: milestone gating and invariants-first workflow remain; SymDiff: in-16 shifts from test tooling to semantic unification (homomorphism + quotient map) and formalizes evaluator/canonicalizer roles; Wedge: milestone gates now need to validate the homomorphic projection, not just feature presence.
 - vs `prism_vm.py`: Intersection: Ledger interning, CNF-2 nodes, coordinate opcodes, strata validators, scheduler invariance tests, and arena/ledger split; SymDiff: code lacks an explicit `q` projection from Manifest/Arena nodes into Ledger IDs and does not enforce evaluator->canonical projection as a first-class contract; Wedge: introduce a projection boundary (stratum commit) that maps provisional nodes to canonical IDs and use it to define denotation for arena/manifest paths.
 - vs `IMPLEMENTATION_PLAN.md`: Intersection: semantic spine vs performance spine, univalence contract, CNF-2 bounded emission, strata discipline, denotation invariance; SymDiff: plan treats ledger as canonical engine but does not explicitly define the quotient map or homomorphism laws; Wedge: add an explicit `q` projection spec (or "stratum commit" step) tying evaluator outputs to ledger interned identity so schedule invariance has a formal anchor.
+
+## in/glossary.md
+- Core semantics: glossary defines commutation constraints for overloaded terms (BSP, CD, canonicalization, collapse, normalize, aggregate, scheduler, identity) and mandates explicit axes plus `q`-based projection rules.
+- Prior: none (glossary).
+- vs `prism_vm.py`: Intersection: scheduler invariance tests and coordinate opcodes exist; SymDiff: code has no explicit `q` projection boundary or glossary-aligned axis tags; Wedge: add commutation-focused tests (schedule invariance after `q`, coord normalization before interning) or doc hooks so terminology stays operational.
+- vs `IMPLEMENTATION_PLAN.md`: Intersection: plan includes `q` projection, scheduler invariance, and coordinate normalization; SymDiff: plan does not yet cite the glossary or require commutation tests; Wedge: reference the glossary in plan/test obligations and treat commutation as a named acceptance requirement.
