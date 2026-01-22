@@ -2,7 +2,7 @@
 
 This plan implements the features described in `in/in-4.md` through
 `in/in-7.md`, plus the CNF-2 and canonical interning semantics in
-`in/in-9.md` through `in/in-13.md`, as a concrete evolution of the current
+`in/in-9.md` through `in/in-14.md`, as a concrete evolution of the current
 `prism_vm.py` implementation.
 
 ## Goals
@@ -33,7 +33,10 @@ This plan implements the features described in `in/in-4.md` through
 
 ## Architecture Decision
 Ledger + candidate pipeline is the canonical execution path. Baseline
-`PrismVM` stays as an oracle. Arena scheduling remains a later optimization.
+`PrismVM` stays as an oracle. Arena scheduling is performance-only and must be
+denotation-invariant with respect to the Ledger CNF-2 engine; it begins at M4+.
+Ledger denotation is the spec; ID equality is engine-local until baseline
+migrates to the Ledger interner.
 
 ## Semantic Commitments (Staged)
 - CNF-2 symmetric rewrite semantics are the target for BSP. Every rewrite site
@@ -47,7 +50,176 @@ Ledger + candidate pipeline is the canonical execution path. Baseline
   - M1-M3: rank-only sort (or no sort) is acceptable for correctness tests.
   - M4+: 2:1 swizzle is mandatory for the performance profile, but must not
     change denotation (same canonical ids/decoded normal forms).
-- Baseline `PrismVM` remains the oracle for functional results through M3.
+- Baseline `PrismVM` is a regression implementation through M3; comparisons are
+  on decoded normal forms and termination behavior, not raw ids.
+
+## Univalence Contract (Fixed-Width, No-Ambiguity Semantics)
+
+### Definition
+
+Univalence = no ambiguity of identity. A proposed node maps to exactly one
+canonical node iff its full encoded key bytes are identical. Hashing, sorting,
+or indexing strategies may accelerate lookup, but equality is decided only by
+full key-byte equality.
+
+Univalence does not require the absence of hash collisions; it requires that
+collisions never introduce ambiguity. Full-key comparison (or structurally
+collision-free indexing) is mandatory.
+
+### Canonical Key
+
+For every interned node, define a canonical key `K` after canonicalization:
+
+```
+K = encode(op)
+  || encode(rep(a1))
+  || encode(rep(a2))
+  || encode(extra(op))
+```
+
+Where:
+
+- `rep(id)` = canonical representative of `id`
+  - equals `id` in M1–M3
+  - becomes `find(id)` if rewrite-union is introduced later
+- Commutative ops (`ADD`, later others):
+  - sort `(rep(a1), rep(a2))` before encoding
+- `extra(op)` is empty unless explicitly defined (e.g. future flags)
+
+Two nodes are equal iff their full `K` byte sequences are identical.
+
+### Fixed-Width Encoding Mode (M1–M3)
+
+In M1–M3, `K` uses a fixed-width encoding:
+
+- `op` -> 1 byte
+- `rep(a1)` -> 16 bits
+- `rep(a2)` -> 16 bits
+- total: 5 bytes
+
+This encoding is injective only over a bounded id domain.
+
+Therefore, the id bound is a semantic invariant, not a memory limit.
+
+### Representational Cap (Hard Semantic Invariant)
+
+Define:
+
+- `MAX_NODES = 65535`
+- `MAX_ID = 65534`
+- `id = 0` reserved for `NULL`
+- `id = 1` reserved for `ZERO`
+
+Invariant:
+
+All reachable ids used in key encoding must satisfy `id <= MAX_ID`.
+
+Violating this invariant would cause key aliasing and destroy univalence.
+
+Therefore:
+
+- Exceeding `MAX_ID` is CORRUPT, not OOM.
+- Continuing execution past this point is semantically undefined and forbidden.
+
+### Deterministic Corruption Handling (JAX-Safe)
+
+To maintain determinism and avoid undefined behavior in JIT-compiled code:
+
+Device-side (checked packing / interning):
+
+- If any of the following occur:
+  - `count > MAX_ID`
+  - `a1 > MAX_ID`
+  - `a2 > MAX_ID`
+- Then:
+  - set a persistent `corrupt = True` flag in the Ledger/interner state
+  - clamp offending values to a safe sentinel (e.g. `0`) to keep execution defined
+  - continue execution without crashing or branching on host state
+
+Host-side:
+
+- After `block_until_ready()`:
+  - if `corrupt == True`, raise a hard runtime error:
+
+```
+RuntimeError("CORRUPT: key encoding alias risk (id width exceeded)")
+```
+
+This guarantees:
+
+- no silent ambiguity
+- deterministic failure
+- identical behavior across CPU/GPU backends
+
+### Indexing Rule
+
+- Hashes, buckets, sorted lanes, or Morton orderings are acceleration only.
+- Equality is decided only by full key-byte comparison.
+- Any index backend must be rebuildable from the canonical event stream and must
+  preserve full-key equality semantics.
+
+### Relationship to COORD Primitives
+
+The fixed-width id cap is intentional and semantic.
+
+Growth beyond this bound is expected to occur via structure, not scalar ids:
+
+- COORD primitives (`OP_COORD_*`) represent arbitrarily large coordinate spaces
+  as interned CNF-2 DAGs
+- Coordinate equality is pointer equality
+- Coordinate normalization happens before parent nodes are packed and interned
+
+Thus:
+
+- semantic expressiveness can grow without widening id fields
+- the id bound remains a correctness invariant, not a scalability bottleneck
+
+### Future Extension: Variable-Length Key Encoding (Explicit Milestone)
+
+Variable-length key encoding is not permitted implicitly.
+
+A future milestone may introduce:
+
+- a new `KeyCodecVarLen`
+- varint or structural encoding of child ids
+- a radix/trie index backend
+
+This is a semantic upgrade, not an optimization, and must:
+
+- preserve the Univalence Contract
+- preserve determinism
+- pass the same univalence and injectivity test suite
+
+Until that milestone is explicitly landed, fixed-width hard-cap mode is the law.
+
+### Summary (Non-Negotiables)
+
+- Univalence means no ambiguity, not “no hash collisions”
+- Fixed-width keys are acceptable only with a semantic id cap
+- Exceeding the cap is CORRUPT, not OOM
+- COORD enables structural growth without widening ids
+- Var-length encoding, if added, is a deliberate semantic transition
+
+## Denotation Contract
+Define a shared denotation interface used for cross-engine comparisons:
+
+- `denote(ptr, store) -> normal_form_ptr` and `pretty(ptr) -> string/tuple`.
+- Soundness: `pretty(denote_engine(expr)) == pretty(denote_ledger(expr))`.
+- Idempotence: `denote(denote(x)) == denote(x)`.
+- ID equivalence is engine-local until baseline migrates to the Ledger interner.
+- Termination: within the same step budget, either both converge or both do not;
+  non-termination or timeout is treated as a mismatch.
+- Univalence alignment: any engine-level compare or normalization must preserve
+  the Univalence Contract (full key-byte equality, corrupt trap on overflow).
+
+## Locked Decisions
+- Read model backend (M1): keep the current ordered index (sorted lanes +
+  binary search). Tests assert full-key equality and do not assume any specific
+  index structure so trie or hash-bucket indexes can replace it later.
+- Univalence encoding (M1): hard-cap mode with 5-byte key; enforce
+  `MAX_NODES = 65535`, `MAX_ID = 65534`, and checked packing for `a1/a2`.
+- Aggregation scope (M3): coordinate aggregation applies to `OP_ADD` only;
+  `OP_MUL` remains Peano-style until explicitly lifted.
 
 ## Workstreams and Tasks (Tests-First Policy)
 For each step below:
@@ -56,22 +228,100 @@ For each step below:
   pytest coverage for black-box validation.
 - Commit tests first, then implement, then commit again.
 
+Sections **0-3** are Ledger-only (M1-M3). Arena scheduling starts at **4** and
+is performance-only (M4+).
+
 ### 0) Canonical Interner + Univalence (Ledger-first)
 Objective: treat the Ledger as the canonical read model and enforce univalence.
 
 Tests (before implementation):
 - Pytest: `test_ledger_full_key_equality` (expected: hash collision does not merge distinct nodes).
 - Pytest: `test_key_width_no_alias` (null: distinct child ids never alias in key encoding).
+- Pytest: `test_intern_corrupt_flag_trips` (expected: corrupt flag is set and host raises).
 - Program: `tests/ledger_univalence.txt` (expected: deterministic canonical ids).
 - Program null: `tests/ledger_noop.txt` (expected: no changes).
 
 Tasks:
 - Ensure interning uses full-key equality; hash is a hint only.
 - Add a canonicalize-before-pack hook for any derived representations.
-- Guard against truncation aliasing (widen key encoding or assert limits).
+- Guard against truncation aliasing (M1 uses hard-cap mode).
+- Enforce `MAX_NODES = 65535`, define `MAX_ID = 65534`, reserve `0/1` for
+  NULL/ZERO, and hard-trap on `count > MAX_ID` before any allocation or intern.
+- Implement a deterministic JAX trap:
+  - Maintain a `corrupt` flag (or `oom`) in the interner state.
+  - In checked packing, set `corrupt` on bounds violations (`a1/a2 > MAX_ID`)
+    and clamp unsafe values to sentinel zeros to keep computation defined.
+  - Host must raise if `corrupt` is true after `block_until_ready()`.
 - Treat index arrays as rebuildable read models (event log optional).
+- Add a reference interner contract test suite that validates injectivity and
+  full-key equality across interner backends.
 
-### 1) Data Model: Arena vs Manifest
+### 1) CNF-2 Candidate Pipeline (Rewrite -> Compact -> Intern)
+Objective: enforce fixed-arity rewrite semantics and explicit strata discipline.
+
+Tests (before implementation):
+- Pytest: `test_cnf2_fixed_arity` (expected: exactly 2 candidate slots per site).
+- Pytest: `test_candidate_compaction_enabled_only` (null: disabled slots dropped).
+- Pytest: `test_candidate_intern_sees_only_enabled` (expected: disabled slots
+  are never interned).
+- Program: `tests/cnf2_basic.txt` (expected: same normal form as baseline).
+
+Tasks:
+- Add a `CandidateBuffer` structure:
+  - `enabled`, `opcode`, `arg1`, `arg2` arrays sized to `2 * |frontier|`.
+- Implement CNF-2 rewrite emission (always two slots; predicates control enable).
+- Slot semantics:
+  - `slot0` = local rewrite
+  - `slot1` = continuation / wrapper / second-stage
+- Emission invariant: buffer shape is `2 * |frontier|` every cycle.
+- M2 invariant: `enabled[slot1] == 0` always; slot1 payloads are ignored.
+- Implement compaction (enabled mask + prefix sums).
+- Intern compacted candidates via `intern_nodes` (can be fused in M2).
+- Optional debug: track origin site indices for strata violation tracing.
+
+### 2) Strata Discipline (Ledger-only)
+Objective: enforce explicit strata boundaries and prevent within-tier references.
+
+Tests (before implementation):
+- Pytest: `test_strata_no_within_tier_refs` (expected: new nodes only reference
+  prior strata).
+- Program: `tests/strata_basic.txt` (expected: same normal form as baseline).
+- Program null: `tests/strata_noop.txt` (expected: no changes).
+
+Tasks:
+- Add a lightweight `Stratum` record (offset + count) for new ids.
+- Strict strata (default): nodes in `Si` may only reference ids `< start(Si)`.
+- Future mode: allow within-stratum references only if they are to earlier ids
+  in the same stratum (topological order), gated by explicit opt-in.
+- Add validators that enforce the selected rule, scanning only up to
+  `ledger.count`.
+- Wire validators into `cycle_candidates` (guarded by a debug flag).
+
+### 3) Coordinate Semantics (Self-Hosted CD)
+Objective: add CD coordinates as interned CNF-2 objects and define parity/aggregation.
+
+Tests (before implementation):
+- Pytest: `test_coord_opcodes_exist` (expected: `OP_COORD_*` registered).
+- Pytest: `test_coord_pointer_equality` (expected: identical coordinates intern to same id).
+- Pytest: `test_coord_xor_parity_cancel` (expected: parity cancellation is idempotent).
+- Pytest: `test_coord_norm_idempotent` (expected: canonicalization is stable).
+- Pytest: `test_coord_norm_confluent_small` (expected: small expressions converge).
+- Program: `tests/coord_basic.txt` (expected: canonical ids for coordinates).
+- Program null: `tests/coord_noop.txt` (expected: no rewrite for non-coord ops).
+
+Tasks:
+- Add `OP_COORD_ZERO`, `OP_COORD_ONE`, `OP_COORD_PAIR`.
+- Representation invariant: coordinates are stored only as interned
+  `OP_COORD_*` DAGs; no linear bitstrings/digit arrays are stored anywhere.
+- Implement coordinate construction and XOR/parity rewrite rules in the BSP path.
+- Aggregation scope (M3): coordinate lifting applies to `OP_ADD` only; `OP_MUL`
+  remains Peano-style until explicitly lifted.
+- Normalization order:
+  1. Build coordinate CNF-2 objects.
+  2. Normalize parity/XOR to a canonical coordinate object.
+  3. Only then pack keys and intern any coordinate-carrying node.
+
+### 4) Data Model: Arena vs Manifest
 Objective: introduce the fluid arena state and keep it isolated from the
 existing `Manifest` for now.
 
@@ -92,7 +342,7 @@ Tasks:
   - `OP_SORT = 99` (optional explicit primitive)
   - keep existing `OP_ZERO`, `OP_SUC`, `OP_ADD`, `OP_MUL`.
 
-### 2) Rank Classification (2-bit Scheduler)
+### 5) Rank Classification (2-bit Scheduler)
 Objective: implement `op_rank` to classify nodes into HOT/WARM/COLD/FREE.
 
 Tests (before implementation):
@@ -108,7 +358,7 @@ Tasks:
   - Data (`OP_ZERO`, `OP_SUC`) -> COLD
 - Keep rules simple at first; refine once `op_interact` exists.
 
-### 3) Sort + Swizzle
+### 6) Sort + Swizzle
 Objective: implement the `Rank -> Sort -> Swizzle` pipeline.
 
 Tests (before implementation):
@@ -129,7 +379,7 @@ Tasks:
 - Staging note: rank-only sort is sufficient for M1-M3 correctness. 2:1
   swizzle is optional until M4.
 
-### 4) Interaction Kernel (Rewrite Rules)
+### 7) Interaction Kernel (Rewrite Rules)
 Objective: implement `op_interact` to handle ADD rewrites in the fluid model.
 
 Tests (before implementation):
@@ -150,7 +400,7 @@ Tasks:
 - Add bounds checks:
   - Prevent `count + total_spawn` from exceeding capacity.
 
-### 5) Control Loop and Root Tracking
+### 8) Control Loop and Root Tracking
 Objective: orchestrate the cycle and keep pointers valid across sorts.
 
 Tests (before implementation):
@@ -169,43 +419,7 @@ Tasks:
   - Optionally store root in a dedicated arena field.
 - Add a `run_cycles(n)` helper for benchmarking and tests.
 
-### 6) CNF-2 Candidate Pipeline (Rewrite -> Compact -> Intern)
-Objective: enforce fixed-arity rewrite semantics and explicit strata discipline.
-
-Tests (before implementation):
-- Pytest: `test_cnf2_fixed_arity` (expected: exactly 2 candidate slots per site).
-- Pytest: `test_candidate_compaction_enabled_only` (null: disabled slots dropped).
-- Pytest: `test_strata_no_within_tier_refs` (expected: new nodes only reference
-  prior strata).
-- Program: `tests/cnf2_basic.txt` (expected: same normal form as baseline).
-
-Tasks:
-- Add a `CandidateBuffer` structure:
-  - `enabled`, `opcode`, `arg1`, `arg2` arrays sized to `2 * |frontier|`.
-- Implement CNF-2 rewrite emission (always two slots; predicates control enable).
-- Keep slot 1 disabled until continuation/strata support is added.
-- Implement compaction (enabled mask + prefix sums).
-- Intern compacted candidates via `intern_nodes` (can be fused in M2).
-- Add a lightweight `Stratum` record (offset + count) for new ids, and validators
-  to enforce no within-stratum dependencies.
-
-### 7) Coordinate Semantics (Self-Hosted CD)
-Objective: add CD coordinates as interned CNF-2 objects and define parity/aggregation.
-
-Tests (before implementation):
-- Pytest: `test_coord_opcodes_exist` (expected: `OP_COORD_*` registered).
-- Pytest: `test_coord_pointer_equality` (expected: identical coordinates intern to same id).
-- Pytest: `test_coord_xor_parity_cancel` (expected: parity cancellation is idempotent).
-- Program: `tests/coord_basic.txt` (expected: canonical ids for coordinates).
-- Program null: `tests/coord_noop.txt` (expected: no rewrite for non-coord ops).
-
-Tasks:
-- Add `OP_COORD_ZERO`, `OP_COORD_ONE`, `OP_COORD_PAIR`.
-- Implement coordinate construction and XOR/parity rewrite rules in the BSP path.
-- Ensure coordinate normalization happens before key packing so interning enforces
-  pointer equality on canonical coordinate objects.
-
-### 8) Morton / 2:1 BSP Locality
+### 9) Morton / 2:1 BSP Locality
 Objective: add the 2:1 BSP ordering as a secondary sort key.
 
 Tests (before implementation):
@@ -213,8 +427,8 @@ Tests (before implementation):
 - Pytest null: `test_morton_disabled_matches_rank_sort` (null: rank-only same).
 - Program: `tests/morton_order.txt` (expected: consistent ordering).
 - Program null: `tests/morton_rank_only.txt` (expected: identical to rank-only).
- - Pytest: `test_morton_denotation_invariant` (expected: same decoded result with
-   and without 2:1 swizzle).
+- Pytest: `test_morton_denotation_invariant` (expected: same decoded result with
+  and without 2:1 swizzle).
 
 Tasks:
 - Add `swizzle_2to1_dev(x, y)` (device) and `swizzle_2to1_host(...)` (host).
@@ -225,7 +439,7 @@ Tasks:
   - `sort_key = (rank << high_bits) | morton`.
 - Ensure stable ordering inside ranks when Morton keys collide.
 
-### 9) Hierarchical Arenas (Phase 2)
+### 10) Hierarchical Arenas (Phase 2)
 Objective: implement multi-level arenas to constrain shatter.
 
 Tests (before implementation):
@@ -240,7 +454,7 @@ Tasks:
 - Add metadata arrays for block offsets and free ranges.
 - This is a later milestone once fluid arena is correct.
 
-### 10) Parser, REPL, and Telemetry
+### 11) Parser, REPL, and Telemetry
 Objective: maintain usability and instrumentation.
 
 Tests (before implementation):
@@ -260,23 +474,58 @@ Tasks:
 - Provide debug hooks to compare results with the baseline VM.
 
 ## Milestones
+- **M1-M3 are Ledger-only.** Arena scheduling starts at M4+ and must be
+  denotation-invariant with respect to the Ledger CNF-2 engine.
 - **M1: Correctness spine (eager canonicalization)**
   - Ledger interning is the reference path (`cycle_intrinsic + intern_nodes`).
   - Baseline `PrismVM` remains strict oracle.
   - Tests: root remap, univalence/dedup, key-width guard.
+  - Minimal E2E reductions:
+    - `(add zero (suc zero)) -> (suc zero)`
+    - `(add (suc zero) zero) -> (suc zero)`
 - **M2: CNF-2 surface (candidate buffer)**
   - Two-slot candidate emission + compaction (intern can be fused).
   - Slot 1 remains disabled until continuation/strata support.
   - Tests: fixed arity, enabled-only compaction, baseline equivalence.
 - **M3: Strata discipline**
-  - Explicit stratum boundary with validators (no within-tier refs).
-  - Introduce `OP_COORD_*` and parity/normalization rules.
-  - Canonicalize-before-pack for coordinate objects.
-- **M4: Performance semantics**
+  - M3a: explicit stratum boundary with validators (no within-tier refs).
+  - M3a: canonicalize-before-pack hook in place before coord usage.
+  - M3b: introduce `OP_COORD_*` and parity/normalization rules.
+- **M4: Performance spine (Arena scheduling)**
+  - Arena rank/sort/swizzle/morton ordering as an optimization layer.
   - Mandatory 2:1 swizzle/morton ordering.
-  - Denotation-invariance tests across swizzle modes.
+  - Denotation-invariance tests across swizzle modes (normal forms, not ids).
 - **M5: Hierarchical arenas (optional)**
   - Local block sort and merge.
+
+## Acceptance Gates
+- **M1 gate:** univalence + no aliasing + baseline equivalence on small suite.
+- **M2 gate:** CNF-2 fixed-arity emission + compaction correctness + baseline equivalence.
+- **M3 gate:** strata validator passes on randomized small programs + coord idempotence.
+- **M4 gate:** arena/morton on/off does not change denotation on randomized suite.
+
+## Invariant Checklist (M1–M4)
+M1:
+- Key-byte univalence holds under hard-cap mode (`MAX_ID` checks + corrupt trap).
+- Deterministic interning for identical inputs within a single engine.
+- Baseline vs ledger equivalence on small add-zero suite.
+M2:
+- CNF-2 emission is fixed-arity (2 slots per site) with slot1 disabled.
+- Compaction never interns disabled payloads.
+- Denotation matches ledger intrinsic on the shared suite.
+M3:
+- Strata validator enforces no within-tier refs (strict mode).
+- Coordinate normalization is idempotent and confluent on small inputs.
+- Coordinate lifting limited to `OP_ADD`.
+M4:
+- Arena scheduling (rank/sort/morton on/off) preserves denotation.
+
+## Next Commit Checklist (M1 landing)
+1. Add `tests/harness.py` with shared parse/run/normalize helpers.
+2. Add tests `test_univalence_no_alias_guard`, `test_add_zero_equivalence_baseline_vs_ledger` (both operand orders), and `test_intern_deterministic_ids_single_engine`.
+3. Implement key-width fix and hard-trap on `count > 65534`.
+4. Ensure `cycle_intrinsic` reduces the add-zero cases.
+5. Only then introduce CNF-2 pipeline tests (M2).
 
 ## Testing Plan
 Unit tests (ordered by dependency):
@@ -292,6 +541,15 @@ Integration tests:
 - Compare baseline `PrismVM` eval vs `PrismVM_BSP` after N cycles for:
   - `(add (suc zero) (suc zero))`
   - `(add zero (suc (suc zero)))`
+- Shared semantics harness (`tests/harness.py`) to parse/run/normalize across
+  engines and compare decoded normal forms.
+- Cross-engine equivalence harness (shared suite):
+  - Baseline `PrismVM`
+  - Ledger `cycle_intrinsic`
+  - Ledger CNF-2 pipeline
+  - (M4+) Arena-scheduled pipeline
+  - Assert decoded normal forms match.
+  - Optionally assert canonical ids match within each engine.
 
 Performance checks:
 - Cycle time (rank/sort/swizzle/interact).
@@ -303,6 +561,8 @@ Performance checks:
   sort, and verify in tests.
 - **Capacity overflow**: add a guard that halts or triggers a sort/compaction.
 - **Key aliasing**: avoid truncation in key encoding or assert limits at intern.
+- **Interner rebuild cost**: avoid full-table merges per tiny batch; use staging
+  buffers and periodic read-model rebuilds after M3.
 - **JIT recompilations**: keep shapes static (fixed MAX_NODES).
 
 ## Deliverables
