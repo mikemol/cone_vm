@@ -31,7 +31,15 @@ MAX_ID = MAX_NODES - 1
 if MAX_NODES >= MAX_KEY_NODES:
     raise ValueError("MAX_NODES exceeds 16-bit key packing")
 MAX_COORD_STEPS = 8
-_SCATTER_GUARD = os.environ.get("PRISM_SCATTER_GUARD", "").strip().lower() in (
+_TEST_GUARDS = os.environ.get("PRISM_TEST_GUARDS", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
+_SCATTER_GUARD = _TEST_GUARDS or os.environ.get(
+    "PRISM_SCATTER_GUARD", ""
+).strip().lower() in (
     "1",
     "true",
     "yes",
@@ -61,6 +69,57 @@ def _scatter_guard(indices, label):
 def _scatter_drop(target, indices, values, label):
     _scatter_guard(indices, label)
     return target.at[indices].set(values, mode="drop")
+
+
+def _guards_enabled():
+    return _TEST_GUARDS and _HAS_DEBUG_CALLBACK
+
+
+def _guard_max(value, max_value, label):
+    if not _guards_enabled():
+        return
+    bad = value > max_value
+
+    def _raise(bad_val, val, max_val):
+        if bad_val:
+            raise RuntimeError(
+                f"guard failed: {label} {int(val)} > {int(max_val)}"
+            )
+
+    jax.debug.callback(_raise, bad, value, max_value)
+
+
+def _guard_slot0_perm(perm, inv_perm, label):
+    if not _guards_enabled():
+        return
+    p0 = perm[0]
+    i0 = inv_perm[0]
+    ok = (p0 == 0) & (i0 == 0)
+
+    def _raise(ok_val, p0_val, i0_val):
+        if not ok_val:
+            raise RuntimeError(
+                f"guard failed: {label} perm[0]={int(p0_val)} inv_perm[0]={int(i0_val)}"
+            )
+
+    jax.debug.callback(_raise, ok, p0, i0)
+
+
+def _guard_null_row(opcode, arg1, arg2, label):
+    if not _guards_enabled():
+        return
+    op0 = opcode[0]
+    a10 = arg1[0]
+    a20 = arg2[0]
+    ok = (op0 == OP_NULL) & (a10 == 0) & (a20 == 0)
+
+    def _raise(ok_val, op0_val, a10_val, a20_val):
+        if not ok_val:
+            raise RuntimeError(
+                f"guard failed: {label} op0={int(op0_val)} a1={int(a10_val)} a2={int(a20_val)}"
+            )
+
+    jax.debug.callback(_raise, ok, op0, a10, a20)
 
 # --- Rank (2-bit Scheduler) ---
 RANK_HOT = 0
@@ -885,6 +944,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     new_count = ledger.count + num_new
     new_oom = base_oom | overflow
     new_corrupt = base_corrupt
+    _guard_max(new_count, max_nodes, "ledger.count")
 
     new_pos = jnp.where(is_new, offsets, jnp.int32(-1))
     valid_new = new_pos >= 0
@@ -1080,6 +1140,8 @@ def _apply_perm_and_swizzle(arena, perm):
     new_rank = arena.rank[perm]
     swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
     swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
+    _guard_slot0_perm(perm, inv_perm, "swizzle.perm")
+    _guard_null_row(new_ops, swizzled_arg1, swizzled_arg2, "swizzle.row0")
     return (
         Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, arena.count, arena.oom),
         inv_perm,
@@ -1139,6 +1201,8 @@ def _blocked_perm(arena, block_size, morton=None, active_count=None):
         morton_u = jnp.zeros_like(ranks, dtype=jnp.uint32)
     else:
         morton_u = morton.reshape((num_blocks, block_size)).astype(jnp.uint32) & jnp.uint32(0x3FFF)
+    ranks = ranks.at[0, 0].set(jnp.uint32(0))
+    morton_u = morton_u.at[0, 0].set(jnp.uint32(0))
 
     if active_blocks <= 0:
         return jnp.arange(size, dtype=jnp.int32)
@@ -1449,8 +1513,10 @@ def op_interact(arena):
 
     overflow = jnp.sum(mask_suc.astype(jnp.int32)) > available
     new_oom = arena.oom | overflow
+    new_count = arena.count + total_spawn
+    _guard_max(new_count, cap, "arena.count")
     return Arena(
-        final_ops, final_a1, final_a2, arena.rank, arena.count + total_spawn, new_oom
+        final_ops, final_a1, final_a2, arena.rank, new_count, new_oom
     )
 
 @jit

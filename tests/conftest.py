@@ -6,6 +6,7 @@ import pytest
 
 # Enable strict scatter guard in tests unless explicitly overridden.
 os.environ.setdefault("PRISM_SCATTER_GUARD", "1")
+os.environ.setdefault("PRISM_TEST_GUARDS", "1")
 
 # Ensure repo root is importable when pytest uses importlib mode.
 ROOT = os.path.dirname(os.path.dirname(__file__))

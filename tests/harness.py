@@ -32,6 +32,11 @@ def _run_intrinsic(ledger, frontier, max_steps):
     last = None
     for _ in range(max_steps):
         ledger, frontier = pv.cycle_intrinsic(ledger, frontier)
+        ledger.count.block_until_ready()
+        if hasattr(ledger, "corrupt") and bool(ledger.corrupt):
+            raise RuntimeError(
+                "CORRUPT: key encoding alias risk (id width exceeded)"
+            )
         curr = int(frontier[0])
         if curr == last:
             return ledger, frontier
@@ -45,6 +50,11 @@ def _run_candidates(ledger, frontier, max_steps, validate_stratum=False):
         ledger, next_frontier, _ = pv.cycle_candidates(
             ledger, frontier, validate_stratum=validate_stratum
         )
+        ledger.count.block_until_ready()
+        if hasattr(ledger, "corrupt") and bool(ledger.corrupt):
+            raise RuntimeError(
+                "CORRUPT: key encoding alias risk (id width exceeded)"
+            )
         if int(next_frontier.shape[0]) == 0:
             return ledger, frontier
         curr = int(next_frontier[0])
