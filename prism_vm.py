@@ -412,6 +412,90 @@ def _canonicalize_nodes(ops, a1, a2):
     a2_swapped = jnp.where(swap, a1, a2)
     return ops, a1_swapped, a2_swapped
 
+
+def _coord_leaf_id(ledger, op):
+    ids, ledger = intern_nodes(
+        ledger,
+        jnp.array([op], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    return int(ids[0]), ledger
+
+
+def _coord_promote_leaf(ledger, leaf_id):
+    zero_id, ledger = _coord_leaf_id(ledger, OP_COORD_ZERO)
+    ids, ledger = intern_nodes(
+        ledger,
+        jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
+        jnp.array([leaf_id], dtype=jnp.int32),
+        jnp.array([zero_id], dtype=jnp.int32),
+    )
+    return int(ids[0]), ledger
+
+
+def coord_norm(ledger, coord_id):
+    coord_id = int(coord_id)
+    op = int(ledger.opcode[coord_id])
+    if op in (OP_COORD_ZERO, OP_COORD_ONE):
+        return coord_id, ledger
+    if op != OP_COORD_PAIR:
+        return coord_id, ledger
+    left = int(ledger.arg1[coord_id])
+    right = int(ledger.arg2[coord_id])
+    left_norm, ledger = coord_norm(ledger, left)
+    right_norm, ledger = coord_norm(ledger, right)
+    ids, ledger = intern_nodes(
+        ledger,
+        jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
+        jnp.array([left_norm], dtype=jnp.int32),
+        jnp.array([right_norm], dtype=jnp.int32),
+    )
+    return int(ids[0]), ledger
+
+
+def coord_xor(ledger, left_id, right_id):
+    left_id = int(left_id)
+    right_id = int(right_id)
+    if left_id == right_id:
+        return _coord_leaf_id(ledger, OP_COORD_ZERO)
+
+    left_op = int(ledger.opcode[left_id])
+    right_op = int(ledger.opcode[right_id])
+
+    if left_op == OP_COORD_ZERO:
+        return right_id, ledger
+    if right_op == OP_COORD_ZERO:
+        return left_id, ledger
+
+    if left_op in (OP_COORD_ZERO, OP_COORD_ONE) and right_op in (
+        OP_COORD_ZERO,
+        OP_COORD_ONE,
+    ):
+        if left_op == right_op:
+            return _coord_leaf_id(ledger, OP_COORD_ZERO)
+        return _coord_leaf_id(ledger, OP_COORD_ONE)
+
+    if left_op != OP_COORD_PAIR:
+        left_id, ledger = _coord_promote_leaf(ledger, left_id)
+    if right_op != OP_COORD_PAIR:
+        right_id, ledger = _coord_promote_leaf(ledger, right_id)
+
+    left_a1 = int(ledger.arg1[left_id])
+    left_a2 = int(ledger.arg2[left_id])
+    right_a1 = int(ledger.arg1[right_id])
+    right_a2 = int(ledger.arg2[right_id])
+
+    new_left, ledger = coord_xor(ledger, left_a1, right_a1)
+    new_right, ledger = coord_xor(ledger, left_a2, right_a2)
+    ids, ledger = intern_nodes(
+        ledger,
+        jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
+        jnp.array([new_left], dtype=jnp.int32),
+        jnp.array([new_right], dtype=jnp.int32),
+    )
+    return int(ids[0]), ledger
+
 def _pack_key(op, a1, a2):
     # Byte layout: op, a1_hi, a1_lo, a2_hi, a2_lo for lexicographic sort.
     op_u = op.astype(jnp.uint8)
