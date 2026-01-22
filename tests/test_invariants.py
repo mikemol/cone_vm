@@ -44,6 +44,27 @@ def _small_mul_manifest(cap):
     )
 
 
+def _mul_manifest_commutative(cap):
+    ops = jnp.zeros(cap, dtype=jnp.int32)
+    a1 = jnp.zeros(cap, dtype=jnp.int32)
+    a2 = jnp.zeros(cap, dtype=jnp.int32)
+    ops = ops.at[1].set(pv.OP_ZERO)
+    ops = ops.at[2].set(pv.OP_SUC)
+    a1 = a1.at[2].set(1)
+    ops = ops.at[3].set(pv.OP_SUC)
+    a1 = a1.at[3].set(2)
+    ops = ops.at[4].set(pv.OP_MUL)
+    a1 = a1.at[4].set(2)
+    a2 = a2.at[4].set(3)
+    return pv.Manifest(
+        ops,
+        a1,
+        a2,
+        jnp.array(5, dtype=jnp.int32),
+        jnp.array(False, dtype=jnp.bool_),
+    )
+
+
 def test_manifest_capacity_guard():
     vm = pv.PrismVM()
     cap = int(vm.manifest.opcode.shape[0])
@@ -92,6 +113,19 @@ def test_kernel_mul_oom():
     assert int(new_manifest.active_count) == cap
 
 
+def test_kernel_mul_canonicalizes_add_args():
+    manifest = _mul_manifest_commutative(8)
+    pre_count = int(manifest.active_count)
+    new_manifest, _ = pv.kernel_mul(manifest, jnp.int32(4))
+    found = False
+    for idx in range(pre_count, int(new_manifest.active_count)):
+        if int(new_manifest.opcode[idx]) != pv.OP_ADD:
+            continue
+        found = True
+        assert int(new_manifest.arg1[idx]) <= int(new_manifest.arg2[idx])
+    assert found
+
+
 def test_op_interact_oom():
     cap = 4
     ops = jnp.zeros(cap, dtype=jnp.int32)
@@ -116,6 +150,36 @@ def test_op_interact_oom():
     new_arena = pv.op_interact(arena)
     assert bool(new_arena.oom)
     assert int(new_arena.count) == cap
+
+
+def test_op_interact_canonicalizes_spawned_add():
+    cap = 8
+    ops = jnp.zeros(cap, dtype=jnp.int32)
+    a1 = jnp.zeros(cap, dtype=jnp.int32)
+    a2 = jnp.zeros(cap, dtype=jnp.int32)
+    rank = jnp.full(cap, pv.RANK_COLD, dtype=jnp.int8)
+    ops = ops.at[1].set(pv.OP_ZERO)
+    ops = ops.at[4].set(pv.OP_SUC)
+    a1 = a1.at[4].set(1)
+    ops = ops.at[2].set(pv.OP_SUC)
+    a1 = a1.at[2].set(4)
+    ops = ops.at[3].set(pv.OP_ADD)
+    a1 = a1.at[3].set(2)
+    a2 = a2.at[3].set(1)
+    rank = rank.at[3].set(pv.RANK_HOT)
+    arena = pv.Arena(
+        ops,
+        a1,
+        a2,
+        rank,
+        jnp.array(5, dtype=jnp.int32),
+        jnp.array(False, dtype=jnp.bool_),
+    )
+    new_arena = pv.op_interact(arena)
+    add_idx = int(arena.count)
+    assert int(new_arena.opcode[add_idx]) == pv.OP_ADD
+    assert int(new_arena.arg1[add_idx]) == 1
+    assert int(new_arena.arg2[add_idx]) == 4
 
 
 def test_validate_stratum_no_within_refs_jax_ok():
@@ -210,12 +274,36 @@ def test_trace_cache_refresh_after_eval():
     post_count = int(vm.manifest.active_count)
     assert post_count > pre_count
     for idx in range(pre_count, post_count):
-        sig = (
-            int(vm.manifest.opcode[idx]),
-            int(vm.manifest.arg1[idx]),
-            int(vm.manifest.arg2[idx]),
-        )
-        assert vm.trace_cache.get(sig) == idx
+        op = int(vm.manifest.opcode[idx])
+        a1 = vm._canonical_ptr(int(vm.manifest.arg1[idx]))
+        a2 = vm._canonical_ptr(int(vm.manifest.arg2[idx]))
+        a1, a2 = pv._canonicalize_commutative_host(op, a1, a2)
+        sig = (op, a1, a2)
+        assert vm.trace_cache.get(sig) == vm._canonical_ptr(idx)
+
+
+def test_baseline_eval_commutative_nodes_are_canonicalized():
+    vm = pv.PrismVM()
+    tokens = re.findall(r"\(|\)|[a-z]+", "(mul (suc (suc zero)) (suc zero))")
+    ptr = vm.parse(tokens)
+    pre_count = int(vm.manifest.active_count)
+    vm.eval(ptr)
+    post_count = int(vm.manifest.active_count)
+    assert post_count > pre_count
+    found = False
+    for idx in range(pre_count, post_count):
+        op = int(vm.manifest.opcode[idx])
+        if op not in (pv.OP_ADD, pv.OP_MUL):
+            continue
+        found = True
+        before = int(vm.manifest.active_count)
+        a1 = int(vm.manifest.arg1[idx])
+        a2 = int(vm.manifest.arg2[idx])
+        ptr_rev = vm.cons(op, a2, a1)
+        after = int(vm.manifest.active_count)
+        assert after == before
+        assert ptr_rev == vm._canonical_ptr(idx)
+    assert found
 
 
 def test_mul_commutative_interning():

@@ -1126,8 +1126,11 @@ def op_interact(arena):
     idxs = jnp.where(spawn_mask, new_add_idx, jnp.int32(-1))
     grandchild_x = a1[a1]
     payload_op = jnp.full_like(idxs, OP_ADD)
-    payload_a1 = grandchild_x
-    payload_a2 = a2
+    payload_a1_raw = grandchild_x
+    payload_a2_raw = a2
+    payload_swap = payload_a2_raw < payload_a1_raw
+    payload_a1 = jnp.where(payload_swap, payload_a2_raw, payload_a1_raw)
+    payload_a2 = jnp.where(payload_swap, payload_a1_raw, payload_a2_raw)
 
     valid = idxs >= 0
     idxs2 = jnp.where(valid, idxs, 0)
@@ -1368,8 +1371,13 @@ def kernel_mul(manifest, ptr):
             b_ops, b_a1, b_a2, b_count, b_oom, acc = state
             add_idx = b_count
             b_ops = b_ops.at[add_idx].set(OP_ADD, mode="drop")
-            b_a1 = b_a1.at[add_idx].set(y, mode="drop")
-            b_a2 = b_a2.at[add_idx].set(acc, mode="drop")
+            add_a1_raw = y
+            add_a2_raw = acc
+            add_swap = add_a2_raw < add_a1_raw
+            add_a1 = jnp.where(add_swap, add_a2_raw, add_a1_raw)
+            add_a2 = jnp.where(add_swap, add_a1_raw, add_a2_raw)
+            b_a1 = b_a1.at[add_idx].set(add_a1, mode="drop")
+            b_a2 = b_a2.at[add_idx].set(add_a2, mode="drop")
             b_count = b_count + 1
             add_manifest = Manifest(b_ops, b_a1, b_a2, b_count, b_oom)
             updated_manifest, next_acc = kernel_add(add_manifest, add_idx)
@@ -1460,9 +1468,11 @@ class PrismVM:
         self.refresh_cache_on_eval = True
         # Trace Cache: (opcode, arg1, arg2) -> ptr
         self.trace_cache: Dict[Tuple[int, int, int], int] = {}
+        self.canonical_ptrs: Dict[int, int] = {0: 0}
         # Initialize Universe (Seed with ZERO)
         self._cons_raw(OP_ZERO, 0, 0)
         self.trace_cache[(OP_ZERO, 0, 0)] = 1
+        self.canonical_ptrs[1] = 1
         self.cache_filled_to = self.active_count_host
 
         self.kernels = {OP_ADD: kernel_add, OP_MUL: kernel_mul}
@@ -1492,7 +1502,20 @@ class PrismVM:
         a1s = jax.device_get(self.manifest.arg1[start_idx:end_idx])
         a2s = jax.device_get(self.manifest.arg2[start_idx:end_idx])
         for offset, (op, a1, a2) in enumerate(zip(ops, a1s, a2s)):
-            self.trace_cache[(int(op), int(a1), int(a2))] = start_idx + offset
+            ptr = start_idx + offset
+            op_i = int(op)
+            a1_i = self._canonical_ptr(int(a1))
+            a2_i = self._canonical_ptr(int(a2))
+            a1_i, a2_i = _canonicalize_commutative_host(op_i, a1_i, a2_i)
+            signature = (op_i, a1_i, a2_i)
+            canonical = self.trace_cache.get(signature, ptr)
+            self.trace_cache[signature] = canonical
+            self.canonical_ptrs[ptr] = canonical
+            if canonical == ptr:
+                self.canonical_ptrs[canonical] = canonical
+
+    def _canonical_ptr(self, ptr):
+        return self.canonical_ptrs.get(ptr, ptr)
 
     def cons(self, op, a1=0, a2=0):
         """
@@ -1500,12 +1523,15 @@ class PrismVM:
         1. Checks Cache (Deduplication).
         2. Allocates if new.
         """
+        a1 = self._canonical_ptr(a1)
+        a2 = self._canonical_ptr(a2)
         a1, a2 = _canonicalize_commutative_host(op, a1, a2)
         signature = (op, a1, a2)
         if signature in self.trace_cache:
             return self.trace_cache[signature]
         ptr = self._cons_raw(op, a1, a2)
         self.trace_cache[signature] = ptr
+        self.canonical_ptrs[ptr] = ptr
         return ptr
 
     # --- STATIC ANALYSIS ENGINE ---
@@ -1514,11 +1540,12 @@ class PrismVM:
         Examines the IR at `ptr` BEFORE execution.
         Performs trivial reductions (Constant Folding / Identity Elimination).
         """
+        ptr = self._canonical_ptr(ptr)
         ptr_arr = jnp.array(ptr, dtype=jnp.int32)
         opt_ptr, opt_applied = optimize_ptr(self.manifest, ptr_arr)
         if bool(opt_applied):
             print("   [!] Static Analysis: Optimized (add zero x) -> x")
-        return int(opt_ptr)
+        return int(self._canonical_ptr(int(opt_ptr)))
 
     def eval(self, ptr):
         """
@@ -1526,6 +1553,7 @@ class PrismVM:
         1. Static Analysis (Host)
         2. Dispatch (Device)
         """
+        ptr = self._canonical_ptr(ptr)
         ptr_arr = jnp.array(ptr, dtype=jnp.int32)
         prev_count = self.active_count_host
         new_manifest, res_ptr, opt_applied = dispatch_kernel(self.manifest, ptr_arr)
@@ -1539,7 +1567,7 @@ class PrismVM:
             raise RuntimeError("Manifest capacity exceeded during kernel execution")
         if bool(opt_applied):
             print("   [!] Static Analysis: Optimized (add zero x) -> x")
-        return int(res_ptr)
+        return int(self._canonical_ptr(int(res_ptr)))
 
     # --- PARSING & DISPLAY ---
     def parse(self, tokens):
