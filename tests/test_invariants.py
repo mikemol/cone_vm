@@ -88,16 +88,17 @@ def test_arena_capacity_guard():
 @pytest.mark.m1
 def test_ledger_capacity_guard():
     ledger = pv.init_ledger()
-    ledger = ledger._replace(count=jnp.array(pv.MAX_NODES, dtype=jnp.int32))
+    ledger = ledger._replace(count=jnp.array(pv.MAX_ID, dtype=jnp.int32))
     ids, new_ledger = pv.intern_nodes(
         ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
+        jnp.array([pv.OP_SUC, pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0, pv.ZERO_PTR], dtype=jnp.int32),
     )
     assert bool(new_ledger.oom)
+    assert not bool(new_ledger.corrupt)
     assert int(new_ledger.count) == pv.MAX_NODES
-    assert int(ids[0]) == 0
+    assert int(ids[0]) != 0 or int(ids[1]) != 0
 
 
 @pytest.mark.m1

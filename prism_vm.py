@@ -96,6 +96,7 @@ class Ledger(NamedTuple):
     ids_sorted: jnp.ndarray
     count:  jnp.ndarray
     oom: jnp.ndarray
+    corrupt: jnp.ndarray
 
 class CandidateBuffer(NamedTuple):
     enabled: jnp.ndarray
@@ -174,6 +175,7 @@ def init_ledger():
         ids_sorted=ids_sorted,
         count=jnp.array(2, dtype=jnp.int32),
         oom=jnp.array(False, dtype=jnp.bool_),
+        corrupt=jnp.array(False, dtype=jnp.bool_),
     )
 
 def emit_candidates(ledger, frontier_ids):
@@ -686,13 +688,14 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
         proposed_ops, proposed_a1, proposed_a2
     )
     max_id = jnp.int32(MAX_ID)
-    bounds_over = (ledger.count > max_id) | jnp.any(proposed_a1 > max_id) | jnp.any(
+    bounds_corrupt = (ledger.count > max_id) | jnp.any(proposed_a1 > max_id) | jnp.any(
         proposed_a2 > max_id
     )
-    base_oom = ledger.oom | bounds_over
-    proposed_ops = jnp.where(bounds_over, jnp.int32(0), proposed_ops)
-    proposed_a1 = jnp.where(bounds_over, jnp.int32(0), proposed_a1)
-    proposed_a2 = jnp.where(bounds_over, jnp.int32(0), proposed_a2)
+    base_corrupt = ledger.corrupt | bounds_corrupt
+    base_oom = ledger.oom
+    proposed_ops = jnp.where(base_corrupt, jnp.int32(0), proposed_ops)
+    proposed_a1 = jnp.where(base_corrupt, jnp.int32(0), proposed_a1)
+    proposed_a2 = jnp.where(base_corrupt, jnp.int32(0), proposed_a2)
     is_coord_pair = proposed_ops == OP_COORD_PAIR
     norm_a1 = jax.vmap(lambda cid: _coord_norm_id_jax(ledger, cid))(proposed_a1)
     norm_a2 = jax.vmap(lambda cid: _coord_norm_id_jax(ledger, cid))(proposed_a2)
@@ -742,7 +745,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     count = ledger.count.astype(jnp.int32)
     max_nodes = jnp.int32(MAX_NODES)
     available = jnp.maximum(max_nodes - count, 0)
-    available = jnp.where(base_oom, jnp.int32(0), available)
+    available = jnp.where(base_oom | base_corrupt, jnp.int32(0), available)
     idx_all = jnp.arange(L_b0.shape[0], dtype=jnp.int32)
     valid_all = idx_all < count
     op_counts = jnp.bincount(
@@ -828,7 +831,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     )
     matched_ids = L_ids[safe_pos].astype(jnp.int32)
 
-    is_new = is_diff & (~found_match) & (~base_oom)
+    is_new = is_diff & (~found_match) & (~(base_oom | base_corrupt))
     requested_new = jnp.sum(is_new.astype(jnp.int32))
     overflow = requested_new > available
 
@@ -881,6 +884,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
 
     new_count = ledger.count + num_new
     new_oom = base_oom | overflow
+    new_corrupt = base_corrupt
 
     new_pos = jnp.where(is_new, offsets, jnp.int32(-1))
     valid_new = new_pos >= 0
@@ -1059,6 +1063,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
         ids_sorted=new_ids_sorted,
         count=new_count,
         oom=new_oom,
+        corrupt=new_corrupt,
     )
     return final_ids, new_ledger
 
@@ -1948,6 +1953,9 @@ class PrismVM_BSP:
             jnp.array([a1], dtype=jnp.int32),
             jnp.array([a2], dtype=jnp.int32),
         )
+        self.ledger.count.block_until_ready()
+        if bool(self.ledger.corrupt):
+            raise RuntimeError("CORRUPT: key encoding alias risk (id width exceeded)")
         if bool(self.ledger.oom):
             raise ValueError("Ledger capacity exceeded during interning")
         return int(ids[0])
@@ -2035,6 +2043,8 @@ def run_program_lines_bsp(
 ):
     if vm is None:
         vm = PrismVM_BSP()
+    if bsp_mode != "intrinsic":
+        raise ValueError("bsp_mode='cnf2' disabled until m2")
     for inp in lines:
         inp = inp.strip()
         if not inp or inp.startswith("#"):
@@ -2043,15 +2053,12 @@ def run_program_lines_bsp(
         root_ptr = vm.parse(tokens)
         frontier = jnp.array([root_ptr], dtype=jnp.int32)
         for _ in range(max(1, cycles)):
-            if bsp_mode == "cnf2":
-                vm.ledger, next_frontier, _ = cycle_candidates(
-                    vm.ledger, frontier, validate_stratum=validate_stratum
+            vm.ledger, frontier = cycle_intrinsic(vm.ledger, frontier)
+            vm.ledger.count.block_until_ready()
+            if bool(vm.ledger.corrupt):
+                raise RuntimeError(
+                    "CORRUPT: key encoding alias risk (id width exceeded)"
                 )
-                if int(next_frontier.shape[0]) == 0:
-                    next_frontier = frontier
-                frontier = next_frontier
-            else:
-                vm.ledger, frontier = cycle_intrinsic(vm.ledger, frontier)
             if bool(vm.ledger.oom):
                 raise RuntimeError("Ledger capacity exceeded during cycle")
         root_ptr = frontier[0]

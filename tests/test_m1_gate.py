@@ -50,6 +50,7 @@ def test_intern_corrupt_flag_trips():
         jnp.array([0], dtype=jnp.int32),
     )
     assert _ledger_corrupt_flag(new_ledger)
+    assert not bool(new_ledger.oom)
     assert int(ids[0]) == 0
 
 
