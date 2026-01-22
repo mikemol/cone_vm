@@ -1,0 +1,5 @@
+# Non-coordinate opcodes should be no-ops under coord normalization.
+add
+mul
+suc
+zero

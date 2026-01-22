@@ -1,0 +1,5 @@
+# Coord normalization fixtures.
+zero == xor(one, one)
+one == xor(one, zero)
+pair(zero, one) == pair(xor(zero, zero), xor(one, zero))
+pair(pair(zero, one), zero) == pair(pair(zero, one), xor(zero, zero))

@@ -4,6 +4,37 @@ import pytest
 import prism_vm as pv
 
 
+def test_coord_opcodes_exist():
+    assert hasattr(pv, "OP_COORD_ZERO")
+    assert hasattr(pv, "OP_COORD_ONE")
+    assert hasattr(pv, "OP_COORD_PAIR")
+    assert pv.OP_NAMES[pv.OP_COORD_ZERO] == "coord_zero"
+    assert pv.OP_NAMES[pv.OP_COORD_ONE] == "coord_one"
+    assert pv.OP_NAMES[pv.OP_COORD_PAIR] == "coord_pair"
+
+
+def test_coord_pointer_equality():
+    ledger = pv.init_ledger()
+    ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_COORD_ZERO, pv.OP_COORD_ZERO], dtype=jnp.int32),
+        jnp.array([0, 0], dtype=jnp.int32),
+        jnp.array([0, 0], dtype=jnp.int32),
+    )
+    assert int(ids[0]) == int(ids[1])
+
+
+def test_coord_xor_parity_cancel():
+    _require_coord_xor()
+    ledger = pv.init_ledger()
+    one_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ONE)
+    zero_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ZERO)
+    xor_id, ledger = pv.coord_xor(ledger, one_id, one_id)
+    assert int(xor_id) == int(zero_id)
+    xor_id, ledger = pv.coord_xor(ledger, zero_id, one_id)
+    assert int(xor_id) == int(one_id)
+
+
 def test_coord_leaf_canonicalization():
     ledger = pv.init_ledger()
     ids, ledger = pv.intern_nodes(
@@ -47,13 +78,11 @@ def _coord_leaf(ledger, op):
 
 
 def _require_coord_norm():
-    if not hasattr(pv, "coord_norm"):
-        pytest.xfail("coord_norm not implemented")
+    assert hasattr(pv, "coord_norm"), "coord_norm not implemented"
 
 
 def _require_coord_xor():
-    if not hasattr(pv, "coord_xor"):
-        pytest.xfail("coord_xor not implemented")
+    assert hasattr(pv, "coord_xor"), "coord_xor not implemented"
 
 
 def test_coord_norm_idempotent():
