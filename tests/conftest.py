@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -7,6 +8,8 @@ import pytest
 ROOT = os.path.dirname(os.path.dirname(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+
+MILESTONE_MARKERS = {"m1", "m2", "m3", "m4", "m5"}
 
 
 def _parse_milestone(value):
@@ -20,11 +23,39 @@ def _parse_milestone(value):
     return int(value)
 
 
+def _read_milestone_file(path):
+    try:
+        lines = Path(path).read_text().splitlines()
+    except FileNotFoundError:
+        return ""
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, value = line.split("=", 1)
+            if key.strip() == "PRISM_MILESTONE":
+                return value.strip()
+        else:
+            return line
+    return ""
+
+
+def _milestone_default():
+    value = os.environ.get("PRISM_MILESTONE", "").strip()
+    if value:
+        return value
+    value = _read_milestone_file(os.path.join(ROOT, ".pytest-milestone"))
+    if value:
+        return value
+    return _read_milestone_file(os.path.join(ROOT, ".vscode", "pytest.env"))
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--milestone",
         action="store",
-        default=os.environ.get("PRISM_MILESTONE", ""),
+        default=_milestone_default(),
         help="run tests up to a milestone (m1-m5)",
     )
 
@@ -33,16 +64,15 @@ def pytest_collection_modifyitems(config, items):
     milestone = _parse_milestone(config.getoption("--milestone"))
     if milestone is None:
         return
+    deselected = []
     for item in items:
-        markers = [
-            m.name
-            for m in item.iter_markers()
-            if m.name in {"m1", "m2", "m3", "m4", "m5"}
-        ]
+        markers = [m.name for m in item.iter_markers() if m.name in MILESTONE_MARKERS]
         if not markers:
             continue
         required = max(int(m[1:]) for m in markers)
         if milestone < required:
-            item.add_marker(
-                pytest.mark.skip(reason=f"requires m{required} (running m{milestone})")
-            )
+            deselected.append(item)
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        for item in deselected:
+            items.remove(item)

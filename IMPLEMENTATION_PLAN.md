@@ -532,7 +532,8 @@ M4:
 - CLI: use per-milestone configs (e.g., `pytest -c pytest.m2.ini`) or set
   `PRISM_MILESTONE=m2` to activate the milestone gate in `conftest.py`.
 - VS Code: edit `.vscode/pytest.env` to set `PRISM_MILESTONE=m2`, then refresh
-  the Testing panel; settings use `pytest.${env:PRISM_MILESTONE}.ini`.
+  the Testing panel; gating reads the env (or `.pytest-milestone`) in
+  `conftest.py` and uses `pytest.ini`.
 - Gating: tests are marked `m1`..`m5`; the milestone gate skips any test with
   a higher marker than the selected milestone.
 - See `in/in-15.md` for the milestone-gated testing workflow and VS Code
