@@ -48,3 +48,24 @@ def test_intern_corrupt_flag_trips():
     )
     assert _ledger_corrupt_flag(new_ledger)
     assert int(ids[0]) == 0
+
+
+def test_ledger_full_key_equality():
+    ledger = pv.init_ledger()
+    ops = jnp.array([pv.OP_ADD, pv.OP_ADD], dtype=jnp.int32)
+    a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
+    a2 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR + 1], dtype=jnp.int32)
+    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    assert int(ids[0]) != int(ids[1])
+    assert int(ledger.count) == 4
+
+
+def test_key_width_no_alias():
+    assert pv.MAX_ID >= 0x101
+    ledger = pv.init_ledger()
+    ops = jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32)
+    a1 = jnp.array([1, 1 + 256], dtype=jnp.int32)
+    a2 = jnp.array([0, 0], dtype=jnp.int32)
+    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    assert int(ids[0]) != int(ids[1])
+    assert int(ledger.count) == 4
