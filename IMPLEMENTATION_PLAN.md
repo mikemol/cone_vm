@@ -2,8 +2,9 @@
 
 This plan implements the features described in `in/in-4.md` through
 `in/in-7.md`, plus the CNF-2 and canonical interning semantics in
-`in/in-9.md` through `in/in-14.md`, as a concrete evolution of the current
-`prism_vm.py` implementation.
+`in/in-9.md` through `in/in-14.md`, the milestone-gated testing workflow in
+`in/in-15.md`, and the homomorphic collapse contract in `in/in-16.md`, as a
+concrete evolution of the current `prism_vm.py` implementation.
 
 Each `in/in-*.md` note now includes a short NOTE header indicating whether it
 has been refined, consolidated, or obsoleted. See `audit_in_versions.md` for
@@ -50,6 +51,9 @@ migrates to the Ledger interner.
   no truncation aliasing in key encoding.
 - CD coordinates are interned CNF-2 objects (`OP_COORD_*`), and coordinate
   equality is pointer equality.
+- Evaluator (Manifest/Arena) and Canonicalizer (Ledger) are linked by a total
+  quotient map `q`; denotation is defined by projecting provisional nodes
+  through `q` and must commute with scheduling (see `in/in-16.md`).
 - 2:1 BSP swizzle/locality is staged as a performance invariant:
   - M1-M3: rank-only sort (or no sort) is acceptable for correctness tests.
   - M4+: 2:1 swizzle is mandatory for the performance profile, but must not
@@ -215,6 +219,9 @@ Define a shared denotation interface used for cross-engine comparisons:
   non-termination or timeout is treated as a mismatch.
 - Univalence alignment: any engine-level compare or normalization must preserve
   the Univalence Contract (full key-byte equality, corrupt trap on overflow).
+- Homomorphic projection: define `q(provisional_node) -> canonical_id` and
+  compare denotations only after projection; evaluator steps must commute with
+  `q` up to canonical rewrite (see `in/in-16.md`).
 
 ## Locked Decisions
 - Read model backend (M1): keep the current ordered index (sorted lanes +
