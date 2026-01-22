@@ -1023,6 +1023,7 @@ def _op_sort_and_swizzle_with_perm_full(arena):
     size = arena.rank.shape[0]
     idx = jnp.arange(size, dtype=jnp.int32)
     sort_key = arena.rank.astype(jnp.int32) * (size + 1) + idx
+    sort_key = sort_key.at[0].set(jnp.int32(-1))
     perm = jnp.argsort(sort_key)
     return _apply_perm_and_swizzle(arena, perm)
 
@@ -1033,6 +1034,7 @@ def _op_sort_and_swizzle_with_perm_prefix(arena, active_count):
         return _apply_perm_and_swizzle(arena, perm)
     idx = jnp.arange(active_count, dtype=jnp.int32)
     sort_key = arena.rank[:active_count].astype(jnp.int32) * (active_count + 1) + idx
+    sort_key = sort_key.at[0].set(jnp.int32(-1))
     perm_active = jnp.argsort(sort_key)
     tail = jnp.arange(active_count, size, dtype=jnp.int32)
     perm = jnp.concatenate([perm_active, tail], axis=0)
@@ -1280,6 +1282,7 @@ def _op_sort_and_swizzle_morton_with_perm_full(arena, morton):
     morton_u = morton.astype(jnp.uint32) & jnp.uint32(0x3FFF)
     idx_u = idx & jnp.uint32(0xFFFF)
     sort_key = (rank_u << 30) | (morton_u << 16) | idx_u
+    sort_key = sort_key.at[0].set(jnp.uint32(0))
     perm = jnp.argsort(sort_key).astype(jnp.int32)
     return _apply_perm_and_swizzle(arena, perm)
 
@@ -1293,6 +1296,7 @@ def _op_sort_and_swizzle_morton_with_perm_prefix(arena, morton, active_count):
     morton_u = morton[:active_count].astype(jnp.uint32) & jnp.uint32(0x3FFF)
     idx_u = idx & jnp.uint32(0xFFFF)
     sort_key = (rank_u << 30) | (morton_u << 16) | idx_u
+    sort_key = sort_key.at[0].set(jnp.uint32(0))
     perm_active = jnp.argsort(sort_key).astype(jnp.int32)
     tail = jnp.arange(active_count, size, dtype=jnp.int32)
     perm = jnp.concatenate([perm_active, tail], axis=0)
@@ -1849,11 +1853,16 @@ class PrismVM_BSP_Legacy:
             return val
         raise ValueError(f"Unknown: {token}")
 
-    def decode(self, ptr):
+    def decode(self, ptr, show_ids=False):
         op = int(self.arena.opcode[ptr])
-        if op == OP_ZERO: return "zero"
-        if op == OP_SUC:  return f"(suc {self.decode(int(self.arena.arg1[ptr]))})"
-        return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
+        if op == OP_ZERO:
+            return "zero"
+        if op == OP_SUC:
+            return f"(suc {self.decode(int(self.arena.arg1[ptr]), show_ids=show_ids)})"
+        name = OP_NAMES.get(op, "?")
+        if show_ids:
+            return f"<{name}:{ptr}>"
+        return f"<{name}>"
 
 class PrismVM_BSP:
     def __init__(self):

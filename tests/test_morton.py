@@ -16,9 +16,13 @@ def test_morton_key_stable():
     )
     morton = jnp.zeros_like(arena.rank, dtype=jnp.uint32)
     morton = morton.at[2].set(5).at[3].set(1)
-    sorted_arena = pv.op_sort_and_swizzle_morton(arena, morton)
-    assert int(sorted_arena.opcode[0]) == pv.OP_SUC
-    assert int(sorted_arena.opcode[1]) == pv.OP_ADD
+    sorted_arena, inv_perm = pv.op_sort_and_swizzle_morton_with_perm(arena, morton)
+    add_new = int(inv_perm[2])
+    suc_new = int(inv_perm[3])
+    assert int(sorted_arena.opcode[0]) == pv.OP_NULL
+    assert int(sorted_arena.opcode[add_new]) == pv.OP_ADD
+    assert int(sorted_arena.opcode[suc_new]) == pv.OP_SUC
+    assert suc_new < add_new
 
 
 def test_morton_disabled_matches_rank_sort():

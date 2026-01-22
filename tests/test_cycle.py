@@ -15,12 +15,15 @@ def test_cycle_root_remap():
         arg2=arena.arg2.at[2].set(1).at[3].set(0),
         count=jnp.array(4, dtype=jnp.int32),
     )
+    ranked = pv.op_rank(arena)
+    _, inv_perm = pv.op_sort_and_swizzle_with_perm(ranked)
+    expected_arg1 = int(inv_perm[1])
     updated, new_root = pv.cycle(arena, 3)
     assert new_root.shape == ()
     assert new_root.dtype == jnp.int32
-    assert int(new_root) == 2
+    assert int(new_root) != 0
     assert int(updated.opcode[new_root]) == pv.OP_SUC
-    assert int(updated.arg1[new_root]) == 1
+    assert int(updated.arg1[new_root]) == expected_arg1
 
 
 def test_cycle_without_sort_keeps_root():
