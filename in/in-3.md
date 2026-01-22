@@ -1,3 +1,5 @@
+NOTE: OBSOLETED by in-1.md/in-2.md. This is a discarded prototype retained for history.
+
 Import jax
 import jax.numpy as jnp
 from jax import jit, lax

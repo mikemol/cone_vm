@@ -1,5 +1,7 @@
 # The Hierarchical Fluid Memory: Mitigating Shatter via Morton-Ordered BSP Arenas
 
+NOTE: REFINED by in-14.md to treat the arena/BSP path as performance-only; the ledger + CNF-2 pipeline is the semantic spine.
+
 ## 1. Introduction: Spatial Locality in Fluid Architectures
 
 The previous analysis established the "Rank and Pack" paradigm, where memory is fluid and `OP_SORT` acts as the universal scheduler. However, a purely rank-based sort introduces a critical pathology known as the **Shatter Effect**. When the graph is sorted strictly by execution status (Active vs. Waiting), topologically adjacent nodes—such as a parent function and its child argument—may be pulled apart into distant memory regions if one is active and the other is not. This destroys cache locality, saturates memory bandwidth with random access (gather/scatter), and degrades the performance of the pointer swizzling pass.

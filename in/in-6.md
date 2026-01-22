@@ -1,5 +1,7 @@
 # Evaluation of the 2:1 Alternating BSP Architecture in JAX
 
+NOTE: REFINED by in-14.md to treat BSP/morton as a performance-only path; ledger/CNF-2 is the semantic spine.
+
 This analysis evaluates the architectural shift to a **2:1 Alternating Binary Space Partitioning (BSP)** memory layout within a JAX-based interaction net evaluator. This design addresses the "Shatter Effect"—the entropic scattering of graph nodes during parallel reduction—by enforcing a rigorous geometric constraint on memory allocation.
 
 ### Executive Summary

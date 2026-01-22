@@ -1,3 +1,5 @@
+NOTE: REFINED by in-14.md. The arena loop is performance-only; pointer 0 remains a reserved NULL sentinel.
+
 This is a radical redesign of the `PrismVM`. We move from a static heap to a **Fluid Arena**.
 
 In this architecture:

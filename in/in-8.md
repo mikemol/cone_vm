@@ -1,5 +1,7 @@
 # **Implementing Branchless Interaction Combinator Rewrite Rules on GPUs: A Tensor-Theoretic Approach to Optimal Graph Reduction**
 
+NOTE: DEFERRED. This is a future roadmap track (see IMPLEMENTATION_PLAN.md "Roadmap Extension: in-8 Pivot").
+
 ## **1\. Executive Summary**
 
 The evaluation of functional programs on massively parallel hardware represents one of the most significant open challenges in modern computer science. While the von Neumann architecture has served sequentially executed imperative code for decades, the physical limits of frequency scaling and the rise of General-Purpose Graphics Processing Units (GPGPUs) demand a fundamental rethinking of computational models. The Interaction Combinator system, introduced by Yves Lafont 1, offers a theoretically sound and inherently parallel graph-rewriting framework that avoids the global synchronization bottlenecks of traditional execution models. Unlike the $\\lambda$-calculus, which requires complex garbage collection and non-local reductions, interaction nets operate through local, constant-time rewrite rules that are strongly confluent.3
