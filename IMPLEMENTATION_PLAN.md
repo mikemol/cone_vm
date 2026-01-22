@@ -5,6 +5,10 @@ This plan implements the features described in `in/in-4.md` through
 `in/in-9.md` through `in/in-14.md`, as a concrete evolution of the current
 `prism_vm.py` implementation.
 
+Each `in/in-*.md` note now includes a short NOTE header indicating whether it
+has been refined, consolidated, or obsoleted. See `audit_in_versions.md` for
+the current cross-version audit.
+
 ## Goals
 - Establish the Ledger + candidate pipeline as the canonical execution path.
 - Converge on CNF-2 symmetric rewrite semantics with a fixed-arity candidate
