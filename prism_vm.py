@@ -30,6 +30,7 @@ MAX_NODES = MAX_KEY_NODES - 1
 MAX_ID = MAX_NODES - 1
 if MAX_NODES >= MAX_KEY_NODES:
     raise ValueError("MAX_NODES exceeds 16-bit key packing")
+MAX_COORD_STEPS = 8
 
 # --- Rank (2-bit Scheduler) ---
 RANK_HOT = 0
@@ -413,6 +414,54 @@ def _canonicalize_nodes(ops, a1, a2):
     return ops, a1_swapped, a2_swapped
 
 
+def _coord_norm_id_jax(ledger, coord_id):
+    leaf_zero_id, leaf_zero_found = _lookup_node_id(
+        ledger,
+        jnp.int32(OP_COORD_ZERO),
+        jnp.int32(0),
+        jnp.int32(0),
+    )
+    leaf_one_id, leaf_one_found = _lookup_node_id(
+        ledger,
+        jnp.int32(OP_COORD_ONE),
+        jnp.int32(0),
+        jnp.int32(0),
+    )
+
+    def body(_, cid):
+        op = ledger.opcode[cid]
+        is_zero = op == OP_COORD_ZERO
+        is_one = op == OP_COORD_ONE
+        is_pair = op == OP_COORD_PAIR
+        cid = jnp.where(is_zero & leaf_zero_found, leaf_zero_id, cid)
+        cid = jnp.where(is_one & leaf_one_found, leaf_one_id, cid)
+
+        left = ledger.arg1[cid]
+        right = ledger.arg2[cid]
+        left_op = ledger.opcode[left]
+        right_op = ledger.opcode[right]
+        left = jnp.where(
+            (left_op == OP_COORD_ZERO) & leaf_zero_found, leaf_zero_id, left
+        )
+        left = jnp.where(
+            (left_op == OP_COORD_ONE) & leaf_one_found, leaf_one_id, left
+        )
+        right = jnp.where(
+            (right_op == OP_COORD_ZERO) & leaf_zero_found, leaf_zero_id, right
+        )
+        right = jnp.where(
+            (right_op == OP_COORD_ONE) & leaf_one_found, leaf_one_id, right
+        )
+
+        pair_id, pair_found = _lookup_node_id(
+            ledger, jnp.int32(OP_COORD_PAIR), left, right
+        )
+        cid = jnp.where(is_pair & pair_found, pair_id, cid)
+        return cid
+
+    return lax.fori_loop(0, MAX_COORD_STEPS, body, coord_id)
+
+
 def _coord_leaf_id(ledger, op):
     ids, ledger = intern_nodes(
         ledger,
@@ -507,6 +556,81 @@ def _pack_key(op, a1, a2):
     a2_lo = (a2_u & jnp.uint16(0xFF)).astype(jnp.uint8)
     return op_u, a1_hi, a1_lo, a2_hi, a2_lo
 
+
+def _lookup_node_id(ledger, op, a1, a2):
+    k0, k1, k2, k3, k4 = _pack_key(op, a1, a2)
+    L_b0 = ledger.keys_b0_sorted
+    L_b1 = ledger.keys_b1_sorted
+    L_b2 = ledger.keys_b2_sorted
+    L_b3 = ledger.keys_b3_sorted
+    L_b4 = ledger.keys_b4_sorted
+    L_ids = ledger.ids_sorted
+    count = ledger.count.astype(jnp.int32)
+
+    def _lex_less(a0, a1, a2, a3, a4, b0, b1, b2, b3, b4):
+        return jnp.logical_or(
+            a0 < b0,
+            jnp.logical_and(
+                a0 == b0,
+                jnp.logical_or(
+                    a1 < b1,
+                    jnp.logical_and(
+                        a1 == b1,
+                        jnp.logical_or(
+                            a2 < b2,
+                            jnp.logical_and(
+                                a2 == b2,
+                                jnp.logical_or(
+                                    a3 < b3, jnp.logical_and(a3 == b3, a4 < b4)
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    def _do_search(_):
+        lo = jnp.int32(0)
+        hi = count
+
+        def cond(state):
+            lo_i, hi_i = state
+            return lo_i < hi_i
+
+        def body(state):
+            lo_i, hi_i = state
+            mid = (lo_i + hi_i) // 2
+            mid_b0 = L_b0[mid]
+            mid_b1 = L_b1[mid]
+            mid_b2 = L_b2[mid]
+            mid_b3 = L_b3[mid]
+            mid_b4 = L_b4[mid]
+            go_right = _lex_less(mid_b0, mid_b1, mid_b2, mid_b3, mid_b4, k0, k1, k2, k3, k4)
+            lo_i = jnp.where(go_right, mid + 1, lo_i)
+            hi_i = jnp.where(go_right, hi_i, mid)
+            return (lo_i, hi_i)
+
+        pos, _ = lax.while_loop(cond, body, (lo, hi))
+        safe_pos = jnp.minimum(pos, count - 1)
+        found = (
+            (pos < count)
+            & (L_b0[safe_pos] == k0)
+            & (L_b1[safe_pos] == k1)
+            & (L_b2[safe_pos] == k2)
+            & (L_b3[safe_pos] == k3)
+            & (L_b4[safe_pos] == k4)
+        )
+        out_id = jnp.where(found, L_ids[safe_pos], jnp.int32(0))
+        return out_id, found
+
+    return lax.cond(
+        count > 0,
+        _do_search,
+        lambda _: (jnp.int32(0), jnp.bool_(False)),
+        operand=None,
+    )
+
 @jit
 def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     """
@@ -534,6 +658,11 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     proposed_ops = jnp.where(bounds_over, jnp.int32(0), proposed_ops)
     proposed_a1 = jnp.where(bounds_over, jnp.int32(0), proposed_a1)
     proposed_a2 = jnp.where(bounds_over, jnp.int32(0), proposed_a2)
+    is_coord_pair = proposed_ops == OP_COORD_PAIR
+    norm_a1 = jax.vmap(lambda cid: _coord_norm_id_jax(ledger, cid))(proposed_a1)
+    norm_a2 = jax.vmap(lambda cid: _coord_norm_id_jax(ledger, cid))(proposed_a2)
+    proposed_a1 = jnp.where(is_coord_pair, norm_a1, proposed_a1)
+    proposed_a2 = jnp.where(is_coord_pair, norm_a2, proposed_a2)
 
     P_b0, P_b1, P_b2, P_b3, P_b4 = _pack_key(
         proposed_ops, proposed_a1, proposed_a2
