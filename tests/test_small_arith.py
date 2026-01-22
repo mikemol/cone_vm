@@ -1,7 +1,4 @@
-import re
-
-import jax.numpy as jnp
-import prism_vm as pv
+from tests import harness
 
 
 def _peano_expr(n):
@@ -16,26 +13,11 @@ def _count_suc(expr):
 
 
 def _eval_baseline(expr):
-    vm = pv.PrismVM()
-    tokens = re.findall(r"\(|\)|[a-z]+", expr)
-    ptr = vm.parse(tokens)
-    res_ptr = vm.eval(ptr)
-    return vm.decode(res_ptr)
+    return harness.pretty_baseline(expr)
 
 
 def _eval_bsp(expr, max_steps=128):
-    vm = pv.PrismVM_BSP()
-    tokens = re.findall(r"\(|\)|[a-z]+", expr)
-    root_ptr = vm.parse(tokens)
-    frontier = jnp.array([root_ptr], dtype=jnp.int32)
-    last = None
-    for _ in range(max_steps):
-        vm.ledger, frontier = pv.cycle_intrinsic(vm.ledger, frontier)
-        curr = int(frontier[0])
-        if curr == last:
-            return vm.decode(curr)
-        last = curr
-    raise AssertionError("BSP evaluation did not converge within max_steps")
+    return harness.pretty_bsp_intrinsic(expr, max_steps=max_steps)
 
 
 def test_small_add_mul_baseline_vs_bsp():

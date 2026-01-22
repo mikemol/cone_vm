@@ -1,14 +1,9 @@
-import re
-
 import prism_vm as pv
+from tests import harness
 
 
 def _eval(expr):
-    vm = pv.PrismVM()
-    tokens = re.findall(r"\(|\)|[a-z]+", expr)
-    ptr = vm.parse(tokens)
-    res_ptr = vm.eval(ptr)
-    return vm, res_ptr
+    return harness.denote_baseline(expr)
 
 
 def _count_suc(vm, ptr):
