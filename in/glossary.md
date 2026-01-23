@@ -1,62 +1,70 @@
-Perfect — this is the right framing: **we want commutation and convergence**, but we must make them **explicit, scoped, and testable**, not accidental. Below is a **drop-in expansion** for the glossary plus an **audit of other risky terms**, each annotated with:
-
-* **Axes** (what dimensions are being crossed)
-* **Desired commutation** (what *should* commute)
-* **Failure mode** (what drift looks like)
-* **Normative rule** (how to keep it safe)
-
-You can paste this directly after the glossary you already have.
-
----
-
 # Commuting Acronyms & Polysemous Terms (Normative)
 
-> **Principle:**
-> Polysemy is permitted *only* when meanings lie on orthogonal axes **and** their interaction is explicitly declared to commute.
->
-> **Goal:** not to avoid ambiguity, but to **engineer convergence**.
+## 0. Rule of Polysemy
+
+Polysemy is permitted only when:
+
+1. the meanings lie on orthogonal axes, and
+2. the interaction is declared to commute, and
+3. there is a test obligation for the commutation.
+
+If any of (1-3) are absent, the reuse is invalid.
+
+Goal: engineer convergence, not avoid ambiguity.
+
+### Test Obligations (meta)
+
+- see term-specific test obligations in sections 1-15
 
 ---
 
 ## 1. BSP — Bulk Synchronous Parallel / Binary Space Partitioning
 
-### BSPᵗ — Bulk Synchronous Parallel
+### BSPᵗ — Bulk Synchronous Parallel (Temporal)
 
-**Axis:** *Temporal / Execution*
+**Axis:** execution time / synchronization
 
-* Supersteps with barriers
-* Global synchronization points
-* Strata commits are BSPᵗ barriers
+* supersteps + barrier
+* strata commits are BSPᵗ barriers
 
-### BSPˢ — Binary Space Partitioning
+### BSPˢ — Binary Space Partitioning (Spatial)
 
-**Axis:** *Spatial / Memory / Layout*
+**Axis:** memory/layout/locality
 
-* Partitioning nodes, memory, or indices
 * Morton / 2:1 swizzle
-* Blocked / hierarchical arenas
+* blocked / hierarchical arenas
 
-### Desired Commutation
+### Desired Commutation (Denotation Invariance)
+
+Let `q` be the quotient/projection into canonical Ledger IDs, and `denote` produce a normal form in Ledger space.
 
 ```
-denote( BSPᵗ ∘ BSPˢ (P) ) = denote( BSPᵗ (P) )
+pretty(denote(q(BSPᵗ ∘ BSPˢ(P)))) = pretty(denote(q(BSPᵗ(P))))
 ```
 
 ### Why We Want This
 
 * BSPᵗ controls **when identity is created**
 * BSPˢ controls **where provisional data lives**
-* The quotient map `q` erases spatial accidentals
+* the quotient map `q` erases spatial accidentals
 
-### Failure Mode
+### Failure Modes
 
-* Spatial locality affects which rewrite fires
-* Memory order leaks into semantic keys
-* Barrier placement changes identity creation
+* locality changes which rewrite is visible
+* layout affects key material (illegal)
+* barrier placement changes identity creation (illegal unless reflected only in provisional space erased by `q`)
 
 ### Normative Rule
 
-> BSPᵗ and BSPˢ may be composed in any order **iff** denotation after projection through `q` is invariant.
+BSPᵗ and BSPˢ may be composed in any order **iff** the equality above holds for the denotation harness.
+
+### Test Obligations
+
+- (m3) `tests/test_arena_denotation_invariance.py::test_arena_denotation_invariance_random_suite`
+- (m3) `tests/test_morton.py::test_morton_key_stable`
+- (m3) `tests/test_morton.py::test_morton_disabled_matches_rank_sort`
+- (m6) `tests/test_hierarchy.py::test_block_local_sort`
+- (m6) `tests/test_hierarchy.py::test_single_block_same_as_global`
 
 ---
 
@@ -64,56 +72,74 @@ denote( BSPᵗ ∘ BSPˢ (P) ) = denote( BSPᵗ (P) )
 
 ### CDₐ — Cayley–Dickson (Algebra)
 
-**Axis:** *Algebraic / Semantic*
+**Axis:** algebra/semantics
 
-* Doubling constructions
-* Parity, conjugation, cancellation
-* Growth by structure, not scalar width
+* parity/cancellation laws
+* growth-by-structure (not scalar width)
 
 ### CDᵣ — Coordinate Decomposition (Representation)
 
-**Axis:** *Structural / Graph Encoding*
+**Axis:** graph encoding
 
-* Binary trees / DAGs
-* `OP_COORD_ZERO | ONE | PAIR`
-* CNF-2 representation
+* `OP_COORD_ZERO|ONE|PAIR`
+* interned coordinate DAGs
 
-### Desired Commutation
+### Desired Commutation (Coord Canonicality)
+
+Let `coord_norm` be the coordinate normalization procedure that must run **before key encoding** for any coordinate-carrying node. Let `coord_key` be the fully normalized coordinate’s canonical Ledger key or ID.
 
 ```
-canon( CDₐ ∘ CDᵣ (x) ) = canon( CDᵣ ∘ CDₐ (x) )
+coord_key(CDₐ(CDᵣ(x))) = coord_key(CDᵣ(CDₐ(x)))
 ```
 
 ### Why We Want This
 
-* Algebraic meaning must not depend on tree shape
-* Representation must not encode “accidental” algebra
+* algebraic meaning must not depend on tree shape
+* representation must not encode “accidental” algebra
 
-### Failure Mode
+### Failure Modes
 
-* Two algebraically equal coordinates intern differently
-* Partial normalization leaks into key packing
-* Tree shape affects parity or cancellation
+* algebraically equal coordinates intern differently
+* partial coord normalization leaks into key packing
+* tree shape changes cancellation outcome
 
 ### Normative Rule
 
-> CDₐ and CDᵣ commute **iff** coordinate normalization is idempotent and confluent *before* key encoding.
+CDₐ and CDᵣ commute **iff** coordinate normalization is:
+
+* idempotent, and
+* confluent on the staged scope, and
+* applied before packing any parent key that depends on a coordinate.
+
+### Test Obligations
+
+- (m4) `tests/test_coord_ops.py::test_coord_opcodes_exist`
+- (m4) `tests/test_coord_ops.py::test_coord_pointer_equality`
+- (m4) `tests/test_coord_ops.py::test_coord_xor_parity_cancel`
+- (m4) `tests/test_coord_ops.py::test_coord_norm_idempotent`
+- (m4) `tests/test_coord_ops.py::test_coord_norm_confluent_small`
+- (m4) `tests/test_coord_norm_probe.py::test_coord_norm_probe_only_runs_for_pairs`
+- (m4) `tests/test_coord_norm_probe.py::test_coord_norm_probe_skips_non_coord_batch`
+- (m4) `tests/test_coord_batch.py::test_coord_xor_batch_uses_single_intern_call`
+- (m4) `tests/test_coord_batch.py::test_coord_norm_batch_matches_host`
+- (m4) `tests/test_coord_fixtures.py::test_coord_basic_fixture`
+- (m4) `tests/test_coord_fixtures.py::test_coord_noop_fixture`
 
 ---
 
 # Audit of Other Risky Terms (with Desired Commutation)
 
-Below are the other terms that historically drift — **not because commutation is bad**, but because it was *implicit*. We make it explicit.
+Below are the other terms that historically drift — not because commutation is bad, but because it was implicit. We make it explicit.
 
 ---
 
 ## 3. Canonical / Canonicalization
 
-### Meanings in Play
+### Meanings (must be qualified unless it is Canonicalᵢ)
 
-* **Canonicalᵢ**: interned identity (Ledger)
-* **Canonicalʳ**: reduced / simplified form (rewrite intuition)
-* **Canonicalᵣ**: representative under equivalence (future union-find)
+* **Canonicalᵢ**: canonical identity via Ledger interning (full-key equality)
+* **Canonicalʳ**: reduced form (rewrite result) — *not* “canonicalization”
+* **Canonicalₑ**: equivalence-class representative (future union-find)
 
 ### Axes
 
@@ -122,93 +148,129 @@ Below are the other terms that historically drift — **not because commutation 
 ### Desired Commutation
 
 ```
-canonᵢ ∘ rewrite = rewrite ∘ canonᵢ   (up to denotation)
+pretty(denote(q(rewrite(propose(x))))) = pretty(denote(q(propose(rewrite(x)))))
 ```
 
 ### Failure Mode
 
 * “Canonicalization” used to mean eager simplification
-* Identity created during rewrite
-* Rewrite order affects IDs
+* identity created during rewrite
+* rewrite order affects IDs
 
 ### Normative Rule
 
-> **Canonicalization = interning by full key equality.**
+> **Canonicalization = interning by full key-byte equality.**
 > Rewrite *proposes*; canonicalization *decides*.
 
-(Other meanings must be explicitly qualified.)
+(Any other meaning must be explicitly qualified.)
+
+### Test Obligations
+
+- (m1) `tests/test_ledger_intern.py::test_intern_nodes_dedup_batch`
+- (m1) `tests/test_ledger_intern.py::test_intern_nodes_reuses_existing`
+- (m1) `tests/test_ledger_intern.py::test_intern_nodes_order_invariant`
+- (m1) `tests/test_m1_gate.py::test_intern_deterministic_ids_single_engine`
+- (m1) `tests/test_m1_gate.py::test_ledger_full_key_equality`
+- (m1) `tests/test_m1_gate.py::test_key_width_no_alias`
+- (m1) `tests/test_m1_gate.py::test_key_width_no_alias_under_canonicalize`
+- (ungated) `tests/test_invariants.py::test_add_commutative_interning`
+- (ungated) `tests/test_invariants.py::test_mul_commutative_interning`
+- (ungated) `tests/test_invariants.py::test_add_commutative_baseline_cons`
+- (ungated) `tests/test_invariants.py::test_mul_commutative_baseline_cons`
 
 ---
 
 ## 4. Collapse
 
-### Meanings in Play
+### Meanings (must be qualified)
 
-* **Collapseʰ**: homomorphic collapse via `q`
-* **Collapseᵍ**: graph reduction / node elimination
+* **Collapseʰ**: homomorphic collapse via `q` (projection into canonical IDs)
+* **Collapseᵍ**: graph reduction/elimination (a rewrite strategy)
 * **Collapseˡ**: logical identification (proof collapse)
 
 ### Axes
 
 * Semantics vs Structure vs Proof
 
-### Desired Commutation
+### Desired Commutation (Homomorphic Projection)
+
+Let `eval` be evaluator steps in provisional space and `evalₗ` Ledger-space evaluation:
 
 ```
-q ∘ eval = evalₗ ∘ q
+pretty(denote(q(eval(P)))) = pretty(denote(evalₗ(q(P))))
 ```
 
 ### Failure Mode
 
 * “Collapse” interpreted as erasing structure
-* Context clues lost (your original warning)
-* Isomorphism assumed where only homomorphism exists
+* context clues lost (your original warning)
+* isomorphism assumed where only homomorphism exists
 
 ### Normative Rule
 
-> Collapse means **projection of meaning**, not erasure of structure or context.
+> Collapse means **projection of meaning**, not erasure of structure unless explicitly stated as a rewrite.
+
+### Test Obligations
+
+- (m2) `tests/test_commit_stratum.py::test_commit_stratum_identity`
+- (m2) `tests/test_commit_stratum.py::test_commit_stratum_applies_prior_q_to_children`
+- (m2) `tests/test_strata.py::test_stratum_no_within_refs_passes`
+- (m2) `tests/test_strata.py::test_stratum_no_within_refs_detects_self_ref`
+- (m2) `tests/test_strata_random_programs.py::test_strata_validator_random_programs`
+- (ungated) `tests/test_invariants.py::test_validate_stratum_no_within_refs_jax_ok`
+- (ungated) `tests/test_invariants.py::test_validate_stratum_no_within_refs_jax_bad`
 
 ---
 
 ## 5. Normalize / Normal Form
 
-### Meanings in Play
+### Meanings (must be qualified)
 
-* **Normalizeᵣ**: rewrite to a reduced term
-* **Normalizeᵢ**: intern to canonical ID
-* **Normalize𝚌**: coordinate normalization (parity/XOR)
+* **Normalizeᵣ**: rewrite normalization (reduction by rules)
+* **Normalizeᵢ**: interning normalization (identity by full key)
+* **Normalize𝚌**: coordinate normalization (parity/XOR etc.)
 
 ### Axes
 
 * Rewrite vs Identity vs Algebra
 
-### Desired Commutation
+### Normative Order Constraint (Key Safety)
+
+* identity-relevant normalization must occur **before key encoding**
+* rewrite normalization may be staged, but denotation comparisons are performed in Ledger space after `q`
+
+### Commutation Constraints
 
 ```
-normalizeᵢ ∘ normalizeᵣ = normalizeᵢ
-normalizeᵢ ∘ normalize𝚌 = normalizeᵢ
+Normalizeᵢ ∘ Normalizeᵢ = Normalizeᵢ
+Normalizeᵢ ∘ Normalize𝚌 = Normalizeᵢ    (when coords are fully normalized pre-pack)
 ```
 
 ### Failure Mode
 
-* Normalization order affects identity
-* Partial normalization encoded in keys
-* “Normal form” conflated across layers
+* normalization order affects identity
+* partial normalization encoded in keys
+* “normal form” conflated across layers
 
-### Normative Rule
+### Test Obligations
 
-> Only identity-relevant normalization may affect keys.
-> All others must commute *before* interning.
+- (m1) `tests/test_m1_gate.py::test_add_zero_equivalence_baseline_vs_ledger`
+- (m1) `tests/test_bsp_equiv.py::test_bsp_matches_baseline_add_zero`
+- (m1) `tests/test_small_arith.py::test_small_add_mul_baseline_vs_bsp`
+- (m2) `tests/test_candidate_cycle.py::test_cycle_candidates_add_zero`
+- (m2) `tests/test_candidate_cycle.py::test_cycle_candidates_add_suc`
+- (m2) `tests/test_candidate_cycle.py::test_cycle_candidates_mul_zero`
+- (ungated) `tests/test_invariants.py::test_optimize_ptr_zero_rules`
 
 ---
 
 ## 6. Aggregate
 
-### Meanings in Play
+### Meanings (must be qualified)
 
-* **Aggregateᵣ**: fold / reduce
-* **Aggregate𝚌**: coordinate-space combination
-* **Aggregateₚ**: performance batching
+* **Aggregateᵣ**: fold/reduce (computation)
+* **Aggregate𝚌**: coordinate-space combination (semantic)
+* **Aggregateₚ**: performance batching (no semantic effect)
 
 ### Axes
 
@@ -222,22 +284,28 @@ canon( Aggregate𝚌 (x) ) = Aggregate𝚌 ( canon(x) )
 
 ### Failure Mode
 
-* Aggregation treated as arithmetic when it’s semantic
-* Batching affects identity
-* Partial aggregates interned prematurely
+* aggregation treated as arithmetic when it’s semantic
+* batching affects identity
+* partial aggregates interned prematurely
 
 ### Normative Rule
 
-> Aggregation that affects meaning must occur **inside** canonicalization, not around it.
+> Semantic aggregation (Aggregate𝚌) must be applied in the canonicalizer path (before key encoding / during interning rules), not as an external batching trick.
+
+### Test Obligations
+
+- (m4) `tests/test_coord_ops.py::test_coord_xor_parity_cancel`
+- (m4) `tests/test_coord_ops.py::test_coord_pair_dedup`
+- (m4) `tests/test_coord_batch.py::test_coord_xor_batch_uses_single_intern_call`
 
 ---
 
 ## 7. Scheduler / Ordering
 
-### Meanings in Play
+### Meanings (must be qualified)
 
-* **Schedulerₜ**: temporal order of rewrites
-* **Schedulerₛ**: spatial layout / permutation
+* **Schedulerₜ**: temporal evaluation order (which sites fire when)
+* **Schedulerₛ**: spatial layout/permutation (where nodes sit)
 
 ### Axes
 
@@ -246,30 +314,43 @@ canon( Aggregate𝚌 (x) ) = Aggregate𝚌 ( canon(x) )
 ### Desired Commutation
 
 ```
-denote( scheduleₜ ∘ scheduleₛ (P) )
+pretty(denote(q(scheduleₜ ∘ scheduleₛ(P))))
 =
-denote( scheduleₜ (P) )
+pretty(denote(q(scheduleₜ(P))))
 ```
 
 ### Failure Mode
 
-* Order of evaluation affects identity
-* Locality changes rewrite visibility
-* Barrier placement changes results
+* order of evaluation affects identity
+* locality changes rewrite visibility
+* barrier placement changes results
 
 ### Normative Rule
 
 > Scheduling is free **iff** denotation after `q` is invariant.
 
+### Test Obligations
+
+- (m3) `tests/test_arena_denotation_invariance.py::test_arena_denotation_invariance_random_suite`
+- (m3) `tests/test_sort_swizzle.py::test_swizzle_preserves_edges`
+- (m3) `tests/test_sort_swizzle.py::test_swizzle_null_pointer_stays_zero`
+- (m3) `tests/test_sort_swizzle.py::test_sort_swizzle_root_remap`
+- (m3) `tests/test_cycle.py::test_cycle_root_remap`
+- (m3) `tests/test_cycle.py::test_cycle_without_sort_keeps_root`
+- (m3) `tests/test_morton.py::test_morton_key_stable`
+- (m3) `tests/test_morton.py::test_morton_disabled_matches_rank_sort`
+- (m6) `tests/test_hierarchy.py::test_block_local_sort`
+- (m6) `tests/test_hierarchy.py::test_single_block_same_as_global`
+
 ---
 
 ## 8. Identity / Pointer
 
-### Meanings in Play
+### Meanings (must be qualified)
 
-* **Pointerₑ**: evaluator-local address
-* **IDₗ**: ledger canonical ID
-* **IDₑ**: equivalence-class representative (future)
+* **Pointerₑ**: evaluator-local address (Manifest/Arena)
+* **IDₗ**: Ledger canonical ID (semantic identity)
+* **IDₑ**: equivalence representative (future)
 
 ### Axes
 
@@ -283,14 +364,20 @@ q(pointerₑ) = IDₗ
 
 ### Failure Mode
 
-* Pointer equality used as semantic equality
-* Cross-engine pointer comparison
-* Implicit assumptions about stability
+* pointer equality used as semantic equality
+* cross-engine pointer comparison
+* implicit assumptions about stability
 
 ### Normative Rule
 
-> Only ledger IDs carry semantic identity.
-> All other identities are provisional.
+> Only `IDₗ` is semantic identity. All other identities are provisional and must be compared only after `q`.
+
+### Test Obligations
+
+- (m2) `tests/test_commit_stratum.py::test_commit_stratum_identity`
+- (m2) `tests/test_commit_stratum.py::test_commit_stratum_applies_prior_q_to_children`
+- (m2) `tests/test_strata.py::test_stratum_no_within_refs_passes`
+- (m2) `tests/test_strata.py::test_stratum_no_within_refs_detects_self_ref`
 
 ---
 
@@ -308,7 +395,7 @@ q(pointerₑ) = IDₗ
 ### Desired Commutation
 
 ```
-denote(P) == denote(compile(P))
+pretty(denote(q(P))) = pretty(denote(q(compile(P))))
 ```
 
 (Correctness must not depend on the compiler, even when the compile graph is huge.)
@@ -316,23 +403,28 @@ denote(P) == denote(compile(P))
 ### Failure Mode
 
 * `vmap` + `while_loop` + search lowers to a massive HLO even when most lanes are no-ops
-* Runtime guards (`cond`) skip work but do not shrink compile-time HLO
-* Host recursion that calls jitted interning causes many tiny compilations
+* runtime guards (`cond`) skip work but do not shrink compile-time HLO
+* host recursion that calls jitted interning causes many tiny compilations
 
 ### Normative Rule
 
-> If a function contains `vmap + while_loop + lookup`, apply it only to the smallest
-> possible subset (gather -> normalize -> scatter). Keep host recursion as a slow
-> reference path, and provide a batched/jitted path for hot use.
+> If a function contains `vmap + while_loop + lookup`, apply it only to the smallest possible subset (gather -> normalize -> scatter). Keep host recursion as a slow reference path, and provide a batched/jitted path for hot use.
+
+### Test Obligations
+
+- (m4) `tests/test_coord_norm_probe.py::test_coord_norm_probe_only_runs_for_pairs`
+- (m4) `tests/test_coord_norm_probe.py::test_coord_norm_probe_skips_non_coord_batch`
+- (m4) `tests/test_coord_batch.py::test_coord_xor_batch_uses_single_intern_call`
+- (m4) `tests/test_coord_batch.py::test_coord_norm_batch_matches_host`
 
 ---
 
 ## 10. Garbage Collection / Interning (Semantic Compression)
 
-### Meanings in Play
+### Meanings (must be qualified)
 
-* **GCᵣ**: runtime reclamation (tracing/sweeping)
-* **GCᵢ**: interning/dedup as semantic compression
+* **GCᵣ**: resource reclamation
+* **GCᵢ**: semantic compression via interning (dedup)
 
 ### Axes
 
@@ -341,19 +433,25 @@ denote(P) == denote(compile(P))
 ### Desired Commutation
 
 ```
-pretty(denote(rebuild_from_roots(L))) == pretty(denote(L))
+pretty(denote(q(rebuild_from_roots(L)))) = pretty(denote(q(L)))
 ```
 
 ### Failure Mode
 
-* Canonical IDs are reclaimed or reassigned
-* "GC" used to mask semantic aliasing
-* Rebuild changes denotation
+* canonical IDs are reclaimed or reassigned
+* “GC” used to mask semantic aliasing
+* rebuild changes denotation
 
 ### Normative Rule
 
-> Interning is semantic compression; optional rebuilds are allowed only as
-> renormalization that preserves denotation.
+> Interning is semantic compression; optional rebuilds are allowed only as renormalization that preserves denotation.
+
+### Test Obligations
+
+- (m1) `tests/test_ledger_intern.py::test_intern_nodes_dedup_batch`
+- (m1) `tests/test_ledger_intern.py::test_intern_nodes_reuses_existing`
+- (m1) `tests/test_m1_gate.py::test_intern_deterministic_ids_single_engine`
+- (m2) `tests/test_candidate_intern.py::test_intern_candidates_dedup`
 
 ---
 
@@ -371,18 +469,22 @@ pretty(denote(rebuild_from_roots(L))) == pretty(denote(L))
 ### Desired Commutation
 
 ```
-denote( damage_escalate ∘ local_step (P) ) = denote( local_step (P) )
+pretty(denote(q(damage_escalate ∘ local_step(P)))) = pretty(denote(q(local_step(P))))
 ```
 
 ### Failure Mode
 
-* Damage sets influence identity creation
-* Locality changes which rewrites fire
+* damage sets influence identity creation
+* locality changes which rewrites fire
 
 ### Normative Rule
 
-> Damage is a performance signal only; it must be erased by `q` and never
-> affect denotation.
+> Damage/locality is a performance signal only. It must not affect denotation and must be erasable by `q`.
+
+### Test Obligations
+
+- (m3) `tests/test_arena_denotation_invariance.py::test_arena_denotation_invariance_random_suite`
+- (m3) `tests/test_morton.py::test_morton_key_stable`
 
 ---
 
@@ -400,18 +502,25 @@ denote( damage_escalate ∘ local_step (P) ) = denote( local_step (P) )
 ### Desired Commutation
 
 ```
-denote( renorm(P) ) = denote(P)
+pretty(denote(q(renorm(P)))) = pretty(denote(q(P)))
 ```
 
 ### Failure Mode
 
-* Sorting changes keys or rewrite outcomes
-* Root pointer/remap errors leak into meaning
+* sorting changes keys or rewrite outcomes
+* root pointer/remap errors leak into meaning
 
 ### Normative Rule
 
-> Sorting/swizzling are renormalization passes only; preserve edges and NULL,
-> and validate invariance after `q`.
+> Sorting/swizzling are renormalization passes only; preserve edges and NULL, and validate invariance after `q`.
+
+### Test Obligations
+
+- (m3) `tests/test_sort_swizzle.py::test_swizzle_preserves_edges`
+- (m3) `tests/test_sort_swizzle.py::test_swizzle_null_pointer_stays_zero`
+- (m3) `tests/test_sort_swizzle.py::test_sort_swizzle_root_remap`
+- (m3) `tests/test_cycle.py::test_cycle_root_remap`
+- (m3) `tests/test_cycle.py::test_cycle_without_sort_keeps_root`
 
 ---
 
@@ -429,17 +538,33 @@ denote( renorm(P) ) = denote(P)
 ### Desired Commutation
 
 ```
-denote(P) is undefined iff CORRUPT
+denote(q(P)) is undefined iff CORRUPT
 ```
 
 ### Failure Mode
 
-* Key-width overflow treated as OOM
-* Execution proceeds after alias risk
+* key-width overflow treated as OOM
+* execution proceeds after alias risk
 
 ### Normative Rule
 
 > CORRUPT is a hard semantic error; OOM is an admissible resource boundary.
+
+### Test Obligations
+
+- (m1) `tests/test_m1_gate.py::test_intern_corrupt_flag_trips`
+- (m1) `tests/test_m1_gate.py::test_intern_corrupt_flag_trips_on_a1_overflow`
+- (m1) `tests/test_m1_gate.py::test_intern_corrupt_flag_trips_on_a2_overflow`
+- (m1) `tests/test_m1_gate.py::test_intern_corrupt_flag_trips_on_negative_child_id`
+- (m1) `tests/test_m1_gate.py::test_intern_corrupt_flag_trips_on_opcode_out_of_range`
+- (m1) `tests/test_m1_gate.py::test_corrupt_is_sticky_and_non_mutating`
+- (m1) `tests/test_m1_gate.py::test_intern_raises_on_corrupt_host`
+- (ungated) `tests/test_invariants.py::test_ledger_capacity_guard`
+- (ungated) `tests/test_invariants.py::test_intern_nodes_early_out_on_oom_returns_zero_ids`
+- (ungated) `tests/test_invariants.py::test_intern_nodes_early_out_on_corrupt_returns_zero_ids`
+- (ungated) `tests/test_invariants.py::test_kernel_add_oom`
+- (ungated) `tests/test_invariants.py::test_kernel_mul_oom`
+- (ungated) `tests/test_invariants.py::test_op_interact_oom`
 
 ---
 
@@ -462,12 +587,18 @@ use(x, x) should not allocate a duplicate of x
 
 ### Failure Mode
 
-* Primitive copy creates new nodes for existing structure
-* Superlinear growth from repeated use
+* primitive copy creates new nodes for existing structure
+* superlinear growth from repeated use
 
 ### Normative Rule
 
 > Duplication is expressed by sharing canonical IDs; no-copy is an operational axiom.
+
+### Test Obligations
+
+- (m1) `tests/test_ledger_intern.py::test_intern_nodes_dedup_batch`
+- (m1) `tests/test_ledger_intern.py::test_intern_nodes_reuses_existing`
+- (m2) `tests/test_candidate_intern.py::test_intern_candidates_dedup`
 
 ---
 
@@ -490,12 +621,16 @@ compile(λx. x) == compile(λy. y)
 
 ### Failure Mode
 
-* Names leak into keys or identity
-* Alpha-equivalent terms intern differently
+* names leak into keys or identity
+* alpha-equivalent terms intern differently
 
 ### Normative Rule
 
 > Binding is structural; alpha-equivalence must collapse before interning.
+
+### Test Obligations
+
+- (planned) no pytest coverage yet
 
 ---
 
@@ -503,19 +638,17 @@ compile(λx. x) == compile(λy. y)
 
 Whenever a term or acronym is reused:
 
-1. **Name the axes.**
-2. **State the desired commutation.**
-3. **Say what erases what** (usually `q`).
-4. **Add a test obligation** if the commutation matters.
+1. name the axes
+2. state the commutation equation
+3. state what is erased by `q` (if anything)
+4. attach a test obligation marker (`m1..m6`)
 
 If any of those cannot be stated clearly, the reuse is invalid.
 
 ---
 
-## Optional Next Steps (if you want to harden this further)
+## Optional Next Steps
 
-* Add **axis tags** (`ᵗ`, `ˢ`, `ₐ`, `ᵣ`) in code comments where ambiguity matters
-* Add **glossary references in tests** (“this test enforces BSPᵗ/BSPˢ commutation”)
-* Add a short **“forbidden reinterpretations”** appendix listing known past drift cases
-
-This glossary doesn’t freeze language — it freezes **assumptions**. That’s exactly what you need if commutation and convergence are *features*, not accidents.
+* Add axis tags (`ᵗ`, `ˢ`, `ₐ`, `ᵣ`) in code comments where ambiguity matters
+* Add glossary references in tests (“this test enforces BSPᵗ/BSPˢ commutation”)
+* Add a short “forbidden reinterpretations” appendix listing known past drift cases
