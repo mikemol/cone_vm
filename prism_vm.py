@@ -2135,6 +2135,7 @@ class PrismVM:
 
     def _cons_raw(self, op, a1, a2):
         """Physical allocation (Device Write)"""
+        a1, a2 = _canonicalize_commutative_host(op, a1, a2)
         cap = int(self.manifest.opcode.shape[0])
         if self.active_count_host >= cap:
             self.manifest = self.manifest._replace(
