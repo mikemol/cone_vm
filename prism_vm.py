@@ -85,6 +85,8 @@ def _scatter_guard(indices, max_index, label):
 def _scatter_drop(target, indices, values, label):
     max_index = jnp.asarray(target.shape[0], dtype=jnp.int32)
     _scatter_guard(indices, max_index, label)
+    # NOTE: drop semantics allow sentinel indices for masked scatters; stricter
+    # enforcement is deferred to the roadmap in IMPLEMENTATION_PLAN.md.
     return target.at[indices].set(values, mode="drop")
 
 
@@ -109,6 +111,8 @@ def _guard_gather_index(idx, size, label):
 
 def safe_gather_1d(arr, idx, label="safe_gather_1d"):
     # Guarded gather: raise on invalid indices, clamp to avoid backend-specific OOB.
+    # NOTE: non-test runs clamp silently; stricter enforcement is tracked in
+    # IMPLEMENTATION_PLAN.md.
     if _GATHER_GUARD and _HAS_DEBUG_CALLBACK:
         size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
         idx_i = jnp.asarray(idx, dtype=jnp.int32)
@@ -375,6 +379,9 @@ def init_ledger():
     keys_b4_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint8)
     ids_sorted = jnp.zeros(MAX_NODES, dtype=jnp.int32)
 
+    # NOTE: init_ledger uses _pack_key defined later in this module; safe
+    # because init_ledger is called after import today. If that changes,
+    # reorder helpers (see IMPLEMENTATION_PLAN.md).
     k0_b0, k0_b1, k0_b2, k0_b3, k0_b4 = _pack_key(
         jnp.uint8(OP_NULL), jnp.uint16(0), jnp.uint16(0)
     )
@@ -681,6 +688,8 @@ def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     base_next = jnp.where(slot1_mul, slot1_ids, base_next)
 
     wrap_emit = rewrite_child & (base_next != rewrite_ids)
+    # TODO: add debug counters for rewrite_child/changed/wrap_emit; deferred to
+    # IMPLEMENTATION_PLAN.md (CNF-2 staging/observability).
     wrap_ops = jnp.where(wrap_emit, jnp.int32(OP_SUC), jnp.int32(0))
     wrap_a1 = jnp.where(wrap_emit, base_next, jnp.int32(0))
     wrap_a2 = jnp.zeros_like(wrap_a1)
@@ -689,6 +698,8 @@ def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     next_frontier = jnp.where(rewrite_child, frontier_ids, base_next)
     next_frontier = jnp.where(wrap_emit, wrap_ids, next_frontier)
 
+    # Strata counts track appended id ranges (ledger.count deltas), not
+    # proposal counts; keep validators/q-map aligned (see IMPLEMENTATION_PLAN.md).
     stratum0 = Stratum(
         start=start0, count=(ledger0.count - start0).astype(jnp.int32)
     )
@@ -947,6 +958,8 @@ def _lookup_node_id(ledger, op, a1, a2):
 
         pos, _ = lax.while_loop(cond, body, (lo, hi))
         safe_pos = jnp.minimum(pos, count - 1)
+        # count > 0 is enforced by the outer cond; keep that guard if refactoring.
+        # See IMPLEMENTATION_PLAN.md.
         found = (
             (pos < count)
             & (L_b0[safe_pos] == k0)
@@ -1143,6 +1156,8 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     op_hi = op_end[op_idx]
     insert_pos = jax.vmap(_search_one)(s_b0, s_b1, s_b2, s_b3, s_b4, op_lo, op_hi)
     safe_pos = jnp.minimum(insert_pos, count - 1)
+    # Assumes ledger.count > 0 (seeded). If that invariant changes, guard
+    # count==0 here; see IMPLEMENTATION_PLAN.md.
 
     found_match = (
         (insert_pos < count)
@@ -1164,6 +1179,8 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         return zero_ids, new_ledger
 
     # Helper defined before _allocate to avoid JAX tracing scoping ambiguity.
+    # NOTE: global merge is an m1 tradeoff; performance roadmap is tracked in
+    # IMPLEMENTATION_PLAN.md.
     def _merge_sorted_keys(
         old_b0,
         old_b1,
@@ -1360,7 +1377,6 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         )
 
         # Merge sorted new keys into the ledger's sorted key arrays.
-        # _merge_sorted_keys is defined below; it's bound before lax.cond runs.
         (
             new_keys_b0_sorted,
             new_keys_b1_sorted,
