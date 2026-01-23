@@ -102,6 +102,36 @@ def test_ledger_capacity_guard():
 
 
 @pytest.mark.m1
+def test_intern_nodes_early_out_on_oom_returns_zero_ids():
+    ledger = pv.init_ledger()
+    ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
+    ops = jnp.array([pv.OP_ZERO, pv.OP_SUC], dtype=jnp.int32)
+    a1 = jnp.array([0, pv.ZERO_PTR], dtype=jnp.int32)
+    a2 = jnp.array([0, 0], dtype=jnp.int32)
+    ids, new_ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    new_ledger.count.block_until_ready()
+    assert bool(new_ledger.oom) == bool(ledger.oom)
+    assert bool(new_ledger.corrupt) == bool(ledger.corrupt)
+    assert int(new_ledger.count) == int(ledger.count)
+    assert int(jnp.sum(ids)) == 0
+
+
+@pytest.mark.m1
+def test_intern_nodes_early_out_on_corrupt_returns_zero_ids():
+    ledger = pv.init_ledger()
+    ledger = ledger._replace(corrupt=jnp.array(True, dtype=jnp.bool_))
+    ops = jnp.array([pv.OP_ZERO, pv.OP_SUC], dtype=jnp.int32)
+    a1 = jnp.array([0, pv.ZERO_PTR], dtype=jnp.int32)
+    a2 = jnp.array([0, 0], dtype=jnp.int32)
+    ids, new_ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    new_ledger.count.block_until_ready()
+    assert bool(new_ledger.oom) == bool(ledger.oom)
+    assert bool(new_ledger.corrupt) == bool(ledger.corrupt)
+    assert int(new_ledger.count) == int(ledger.count)
+    assert int(jnp.sum(ids)) == 0
+
+
+@pytest.mark.m1
 def test_kernel_add_oom():
     cap = 4
     manifest = _small_add_manifest(cap)

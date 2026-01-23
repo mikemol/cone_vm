@@ -58,26 +58,29 @@ _GATHER_GUARD = _TEST_GUARDS or os.environ.get(
 _HAS_DEBUG_CALLBACK = hasattr(jax, "debug") and hasattr(jax.debug, "callback")
 
 
-def _scatter_guard(indices, label):
+def _scatter_guard(indices, max_index, label):
     if not _SCATTER_GUARD or not _HAS_DEBUG_CALLBACK:
         return
     if indices.size == 0:
         return
-    bad = jnp.any(indices < 0)
     min_idx = jnp.min(indices)
     max_idx = jnp.max(indices)
+    # Allow sentinel index == max_index for intentional drop semantics.
+    bad = (min_idx < 0) | (max_idx > max_index)
 
-    def _raise(bad_val, min_val, max_val):
+    def _raise(bad_val, min_val, max_val, max_allowed):
         if bad_val:
             raise RuntimeError(
-                f"scatter index negative in {label} (min={min_val}, max={max_val})"
+                f"scatter index out of bounds in {label} "
+                f"(min={int(min_val)}, max={int(max_val)}, max={int(max_allowed)})"
             )
 
-    jax.debug.callback(_raise, bad, min_idx, max_idx)
+    jax.debug.callback(_raise, bad, min_idx, max_idx, max_index)
 
 
 def _scatter_drop(target, indices, values, label):
-    _scatter_guard(indices, label)
+    max_index = jnp.asarray(target.shape[0], dtype=jnp.int32)
+    _scatter_guard(indices, max_index, label)
     return target.at[indices].set(values, mode="drop")
 
 
@@ -792,22 +795,8 @@ def _lookup_node_id(ledger, op, a1, a2):
         operand=None,
     )
 
-@jit
-def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
-    """
-    Batch-intern a list of proposed (op,a1,a2) nodes into the canonical Ledger.
-
-    Args:
-      ledger: Ledger
-      proposed_ops/a1/a2: int32 arrays, shape [N]
-
-    Returns:
-      final_ids: int32 array, shape [N], canonical ids for each proposal
-      new_ledger: Ledger, updated
-    """
+def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
     max_key = jnp.uint8(0xFF)
-    if proposed_ops.shape[0] == 0:
-        return jnp.zeros_like(proposed_ops), ledger
     proposed_ops, proposed_a1, proposed_a2 = _canonicalize_nodes(
         proposed_ops, proposed_a1, proposed_a2
     )
@@ -822,11 +811,46 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     proposed_a1 = jnp.where(base_corrupt, jnp.int32(0), proposed_a1)
     proposed_a2 = jnp.where(base_corrupt, jnp.int32(0), proposed_a2)
     is_coord_pair = proposed_ops == OP_COORD_PAIR
-    # NOTE: vmap normalizes all proposals; refactor to subset for HLO size (m4).
-    norm_a1 = jax.vmap(lambda cid: _coord_norm_id_jax(ledger, cid))(proposed_a1)
-    norm_a2 = jax.vmap(lambda cid: _coord_norm_id_jax(ledger, cid))(proposed_a2)
-    proposed_a1 = jnp.where(is_coord_pair, norm_a1, proposed_a1)
-    proposed_a2 = jnp.where(is_coord_pair, norm_a2, proposed_a2)
+
+    has_coord = jnp.any(is_coord_pair)
+
+    def _norm(args):
+        proposed_a1, proposed_a2 = args
+        coord_enabled = is_coord_pair.astype(jnp.int32)
+        coord_idx, coord_valid, _ = _candidate_indices(coord_enabled)
+        coord_idx_safe = jnp.where(coord_valid, coord_idx, 0)
+        coord_a1 = proposed_a1[coord_idx_safe]
+        coord_a2 = proposed_a2[coord_idx_safe]
+
+        def _maybe_norm(cid, do_norm):
+            def _do(_):
+                return _coord_norm_id_jax(ledger, cid)
+
+            def _no(_):
+                return cid
+
+            return lax.cond(do_norm, _do, _no, operand=None)
+
+        # Normalize only the coord-pair subset to avoid global vmap overhead (m4).
+        norm_a1 = jax.vmap(_maybe_norm)(coord_a1, coord_valid)
+        norm_a2 = jax.vmap(_maybe_norm)(coord_a2, coord_valid)
+        scatter_idx = jnp.where(
+            coord_valid, coord_idx_safe, jnp.int32(proposed_a1.shape[0])
+        )
+        proposed_a1 = _scatter_drop(
+            proposed_a1, scatter_idx, norm_a1, "intern_nodes.coord_a1"
+        )
+        proposed_a2 = _scatter_drop(
+            proposed_a2, scatter_idx, norm_a2, "intern_nodes.coord_a2"
+        )
+        return proposed_a1, proposed_a2
+
+    def _no_norm(args):
+        return args
+
+    proposed_a1, proposed_a2 = lax.cond(
+        has_coord, _norm, _no_norm, (proposed_a1, proposed_a2)
+    )
 
     P_b0, P_b1, P_b2, P_b3, P_b4 = _pack_key(
         proposed_ops, proposed_a1, proposed_a2
@@ -1193,6 +1217,33 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
         corrupt=new_corrupt,
     )
     return final_ids, new_ledger
+
+
+@jit
+def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
+    """
+    Batch-intern a list of proposed (op,a1,a2) nodes into the canonical Ledger.
+
+    Args:
+      ledger: Ledger
+      proposed_ops/a1/a2: int32 arrays, shape [N]
+
+    Returns:
+      final_ids: int32 array, shape [N], canonical ids for each proposal
+      new_ledger: Ledger, updated
+    """
+    if proposed_ops.shape[0] == 0:
+        return jnp.zeros_like(proposed_ops), ledger
+    stop = ledger.oom | ledger.corrupt
+
+    # Once invalid, interning must not allocate or mutate state (m1 guardrail).
+    def _skip(_):
+        return jnp.zeros_like(proposed_ops), ledger
+
+    def _do(_):
+        return _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2)
+
+    return lax.cond(stop, _skip, _do, operand=None)
 
 def _active_prefix_count(arena):
     size = arena.rank.shape[0]

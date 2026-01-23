@@ -12,11 +12,9 @@ def _enable_probe(monkeypatch):
     monkeypatch.setenv("PRISM_COORD_NORM_PROBE", "1")
 
 
-@pytest.mark.xfail(
-    reason="m4: intern_nodes still vmaps coord_norm over all proposals",
-    strict=True,
-)
 def test_coord_norm_probe_only_runs_for_pairs():
+    if not pv._HAS_DEBUG_CALLBACK:
+        pytest.skip("jax.debug.callback not available")
     pv.coord_norm_probe_reset()
     ledger = pv.init_ledger()
     ops = jnp.array(
@@ -30,11 +28,9 @@ def test_coord_norm_probe_only_runs_for_pairs():
     assert pv.coord_norm_probe_get() == 2
 
 
-@pytest.mark.xfail(
-    reason="m4: intern_nodes still vmaps coord_norm even when no coord ops exist",
-    strict=True,
-)
 def test_coord_norm_probe_skips_non_coord_batch():
+    if not pv._HAS_DEBUG_CALLBACK:
+        pytest.skip("jax.debug.callback not available")
     pv.coord_norm_probe_reset()
     ledger = pv.init_ledger()
     ops = jnp.array([pv.OP_ADD, pv.OP_MUL, pv.OP_SUC, pv.OP_ZERO], dtype=jnp.int32)
