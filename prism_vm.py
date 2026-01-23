@@ -25,6 +25,8 @@ OP_NAMES = {
     10: "add", 11: "mul", 99: "sort",
     20: "coord_zero", 21: "coord_one", 22: "coord_pair"
 }
+# NOTE: JAX op dtype normalization (int32) is assumed; tighten if drift appears
+# (see IMPLEMENTATION_PLAN.md).
 
 MAX_ROWS = 1024 * 32
 MAX_KEY_NODES = 1 << 16
@@ -249,6 +251,7 @@ def _guard_slot0_perm(perm, inv_perm, label):
     jax.debug.callback(_raise, ok, p0, i0)
 
 
+# NOTE: zero-row (id=1) invariant guard is deferred; see IMPLEMENTATION_PLAN.md.
 def _guard_null_row(opcode, arg1, arg2, label):
     if not _guards_enabled():
         return
@@ -264,6 +267,20 @@ def _guard_null_row(opcode, arg1, arg2, label):
             )
 
     jax.debug.callback(_raise, ok, op0, a10, a20)
+
+
+def _guard_zero_args(mask, arg1, arg2, label):
+    if not _guards_enabled():
+        return
+    if mask.size == 0:
+        return
+    bad = jnp.any(mask & ((arg1 != 0) | (arg2 != 0)))
+
+    def _raise(bad_val):
+        if bad_val:
+            raise RuntimeError(f"guard failed: {label} expected zero args")
+
+    jax.debug.callback(_raise, bad)
 
 
 _coord_norm_probe_count = 0
@@ -415,6 +432,7 @@ def init_ledger():
 def ledger_has_corrupt(ledger):
     # Host helper for deterministic corrupt checks in tests/debug.
     flag = ledger.corrupt if hasattr(ledger, "corrupt") else ledger.oom
+    # SYNC: device_get forces host sync for deterministic checks (m1).
     return bool(jax.device_get(flag))
 
 def emit_candidates(ledger, frontier_ids):
@@ -564,6 +582,7 @@ def validate_stratum_no_within_refs_jax(ledger, stratum):
     return ok_a1 & ok_a2
 
 def validate_stratum_no_within_refs(ledger, stratum):
+    # SYNC: host bool() reads device result for validation (m1).
     return bool(validate_stratum_no_within_refs_jax(ledger, stratum))
 
 def _identity_q(ids):
@@ -589,6 +608,7 @@ def commit_stratum(ledger, stratum, prior_q=None, validate=False):
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
     q_prev = prior_q or _identity_q
+    # SYNC: host int() pulls device scalar for host-side control flow (m1).
     count = int(jnp.maximum(stratum.count, 0))
     if count == 0:
         canon_ids = jnp.zeros((0,), dtype=jnp.int32)
@@ -634,6 +654,8 @@ def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     ids_compact, ledger0 = intern_nodes(ledger, ops0, a1_0, a2_0)
     size0 = candidates.enabled.shape[0]
     ids_full0 = _scatter_compacted_ids(comp_idx0, ids_compact, count0, size0)
+    # Candidate buffer layout invariant: slot0 at 2*i, slot1 at 2*i+1.
+    # cycle_candidates relies on this; see IMPLEMENTATION_PLAN.md.
     idx0 = jnp.arange(num_frontier, dtype=jnp.int32) * 2
     slot0_ids = ids_full0[idx0]
 
@@ -700,6 +722,8 @@ def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     wrap_a2 = jnp.zeros_like(wrap_a1)
     wrap_ids, ledger2 = intern_nodes(ledger1, wrap_ops, wrap_a1, wrap_a2)
 
+    # NOTE: keeping rewrite_child on the outer wrapper can add extra cycles; a
+    # direct wrapper update is deferred to IMPLEMENTATION_PLAN.md.
     next_frontier = jnp.where(rewrite_child, frontier_ids, base_next)
     next_frontier = jnp.where(wrap_emit, wrap_ids, next_frontier)
 
@@ -747,11 +771,12 @@ def _canonicalize_commutative_host(op, a1, a2):
 
 def _canonicalize_nodes(ops, a1, a2):
     is_null = ops == OP_NULL
-    a1 = jnp.where(is_null, jnp.int32(0), a1)
-    a2 = jnp.where(is_null, jnp.int32(0), a2)
     is_coord_leaf = (ops == OP_COORD_ZERO) | (ops == OP_COORD_ONE)
-    a1 = jnp.where(is_coord_leaf, jnp.int32(0), a1)
-    a2 = jnp.where(is_coord_leaf, jnp.int32(0), a2)
+    zero_mask = is_null | is_coord_leaf
+    _guard_zero_args(zero_mask, a1, a2, "canonicalize.zero_args")
+    a1 = jnp.where(zero_mask, jnp.int32(0), a1)
+    a2 = jnp.where(zero_mask, jnp.int32(0), a2)
+    # NOTE: OP_COORD_PAIR is treated as ordered; no commutative swap here.
     swap = (ops == OP_MUL) | (ops == OP_ADD)
     swap = swap & (a2 < a1)
     a1_swapped = jnp.where(swap, a2, a1)
@@ -812,6 +837,11 @@ def _coord_norm_id_jax(ledger, coord_id):
     return lax.fori_loop(0, MAX_COORD_STEPS, body, coord_id)
 
 
+@jit
+def _coord_norm_id_host(ledger, coord_id):
+    return _coord_norm_id_jax(ledger, coord_id)
+
+
 def _coord_leaf_id(ledger, op):
     ids, ledger = intern_nodes(
         ledger,
@@ -819,6 +849,7 @@ def _coord_leaf_id(ledger, op):
         jnp.array([0], dtype=jnp.int32),
         jnp.array([0], dtype=jnp.int32),
     )
+    # SYNC: host reads device id for coord leaf (m1).
     return int(ids[0]), ledger
 
 
@@ -830,32 +861,23 @@ def _coord_promote_leaf(ledger, leaf_id):
         jnp.array([leaf_id], dtype=jnp.int32),
         jnp.array([zero_id], dtype=jnp.int32),
     )
+    # SYNC: host reads device id for coord promotion (m1).
     return int(ids[0]), ledger
 
 
 def coord_norm(ledger, coord_id):
-    # Host-only reference path; device hot paths should use jitted batch ops.
-    coord_id = int(coord_id)
-    op = int(ledger.opcode[coord_id])
-    if op in (OP_COORD_ZERO, OP_COORD_ONE):
-        return coord_id, ledger
-    if op != OP_COORD_PAIR:
-        return coord_id, ledger
-    left = int(ledger.arg1[coord_id])
-    right = int(ledger.arg2[coord_id])
-    left_norm, ledger = coord_norm(ledger, left)
-    right_norm, ledger = coord_norm(ledger, right)
-    ids, ledger = intern_nodes(
-        ledger,
-        jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
-        jnp.array([left_norm], dtype=jnp.int32),
-        jnp.array([right_norm], dtype=jnp.int32),
-    )
-    return int(ids[0]), ledger
+    # Host-only entrypoint; route through the device oracle for consistency.
+    coord_id = jnp.asarray(coord_id, dtype=jnp.int32)
+    norm_id = _coord_norm_id_host(ledger, coord_id)
+    # SYNC: host reads device scalar for coord normalization (m1).
+    return int(jax.device_get(norm_id)), ledger
 
 
 def coord_xor(ledger, left_id, right_id):
     # Host-only reference path; device hot paths should use jitted batch ops.
+    # SYNC: host reads device opcode/args for coord xor (m1).
+    # NOTE: per-scalar device reads can be a perf cliff; batch if needed
+    # (see IMPLEMENTATION_PLAN.md).
     left_id = int(left_id)
     right_id = int(right_id)
     if left_id == right_id:
@@ -895,6 +917,7 @@ def coord_xor(ledger, left_id, right_id):
         jnp.array([new_left], dtype=jnp.int32),
         jnp.array([new_right], dtype=jnp.int32),
     )
+    # SYNC: host reads device id for coord xor (m1).
     return int(ids[0]), ledger
 
 def _pack_key(op, a1, a2):
@@ -963,6 +986,8 @@ def _lookup_node_id(ledger, op, a1, a2):
             hi_i = jnp.where(go_right, hi_i, mid)
             return (lo_i, hi_i)
 
+        # NOTE: lax.while_loop returns (lo, hi); pos is the final lo bound.
+        # Clarify tuple unpacking if refactored (see IMPLEMENTATION_PLAN.md).
         pos, _ = lax.while_loop(cond, body, (lo, hi))
         safe_pos = jnp.minimum(pos, count - 1)
         # count > 0 is enforced by the outer cond; keep that guard if refactoring.
@@ -1024,6 +1049,8 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
 
         # Normalize only the coord-pair subset to avoid global vmap overhead (m4).
         # See IMPLEMENTATION_PLAN.md (m4 coord batching).
+        # NOTE: vmap over cond/loop is heavy; SIMD-style loop refactor is
+        # deferred to IMPLEMENTATION_PLAN.md.
         norm_a1 = jax.vmap(_maybe_norm)(coord_a1, coord_valid)
         norm_a2 = jax.vmap(_maybe_norm)(coord_a2, coord_valid)
         scatter_idx = jnp.where(
@@ -1099,6 +1126,8 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     )
     op_start = jnp.cumsum(op_counts) - op_counts
     op_end = op_start + op_counts
+    # NOTE: opcode buckets are a precursor to per-op merges; full-array merge
+    # remains an m1 tradeoff (see IMPLEMENTATION_PLAN.md).
 
     def _lex_less(a0, a1, a2, a3, a4, b0, b1, b2, b3, b4):
         return jnp.logical_or(
@@ -1215,6 +1244,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         out_b4 = jnp.full_like(old_b4, max_key)
         out_ids = jnp.zeros_like(old_ids)
         total = old_count + new_items
+        _guard_max(total, jnp.int32(old_b0.shape[0]), "merge.total")
 
         def body(k, state):
             i, j, b0, b1, b2, b3, b4, ids = state
@@ -1338,6 +1368,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         new_oom = base_oom
         new_corrupt = base_corrupt
         _guard_max(new_count, max_count, "ledger.count")
+        # NOTE: add a guard vs backing array length if max_count decouples.
 
         new_pos = jnp.where(is_new_mask, offsets, jnp.int32(-1))
         valid_new = new_pos >= 0
@@ -1437,19 +1468,22 @@ def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
         proposed_ops, proposed_a1, proposed_a2
     )
     is_null = proposed_ops == OP_NULL
+    enabled = ~is_null
     max_id = jnp.int32(MAX_ID)
     max_count = jnp.int32(MAX_COUNT)
     # Reject negative ids/opcodes to avoid key aliasing from fixed-width packing.
     op_oob = jnp.any((proposed_ops < 0) | (proposed_ops > jnp.int32(255)))
-    # NOTE: bounds checks scan full proposal buffers; callers must zero disabled
-    # slots. Masked bounds checking is deferred to IMPLEMENTATION_PLAN.md.
+    a1_hi = jnp.any(jnp.where(enabled, proposed_a1 > max_id, False))
+    a2_hi = jnp.any(jnp.where(enabled, proposed_a2 > max_id, False))
+    a1_lo = jnp.any(jnp.where(enabled, proposed_a1 < 0, False))
+    a2_lo = jnp.any(jnp.where(enabled, proposed_a2 < 0, False))
     bounds_corrupt = (
         (ledger.count > max_count)
         | (ledger.count < 0)
-        | jnp.any(proposed_a1 > max_id)
-        | jnp.any(proposed_a2 > max_id)
-        | jnp.any(proposed_a1 < 0)
-        | jnp.any(proposed_a2 < 0)
+        | a1_hi
+        | a2_hi
+        | a1_lo
+        | a2_lo
         | op_oob
     )
 
@@ -1483,6 +1517,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     if proposed_ops.shape[0] == 0:
         return jnp.zeros_like(proposed_ops), ledger
     stop = ledger.oom | ledger.corrupt
+    # NOTE: stop path returns zeros today; read-only lookup fallback is deferred.
 
     # Once invalid, interning must not allocate or mutate state (m1 guardrail).
     # See IMPLEMENTATION_PLAN.md (m1 guardrails).
@@ -1496,6 +1531,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
 
 def _active_prefix_count(arena):
     size = arena.rank.shape[0]
+    # SYNC: host reads device scalar for active count (m1).
     count = int(arena.count)
     # NOTE: clamp to size hides overflow; explicit guard is deferred to plan.
     return size if count > size else count
@@ -2048,6 +2084,7 @@ def cycle(
     return arena, root_arr
 
 # --- 3. JAX Kernels (Static) ---
+# NOTE: duplicate section header retained for now; cleanup is deferred.
 # --- 3. JAX Kernels (Static) ---
 @jit
 def kernel_add(manifest, ptr):
@@ -2225,6 +2262,7 @@ class PrismVM:
         print("⚡ Prism IR: Initializing Host Context...")
         # Baseline oracle (Manifest + host cache) kept for cross-engine checks.
         self.manifest = init_manifest()
+        # SYNC: host reads device scalar for manifest count (m1).
         self.active_count_host = int(self.manifest.active_count)
         self.refresh_cache_on_eval = True
         # Trace Cache: (opcode, arg1, arg2) -> ptr
@@ -2260,6 +2298,8 @@ class PrismVM:
     def _refresh_trace_cache(self, start_idx, end_idx):
         if end_idx <= start_idx:
             return
+        # SYNC: device_get pulls device buffers for host cache refresh (m1).
+        # NOTE: trace_cache is a hint-only memo; avoid pointer rewrites.
         ops = jax.device_get(self.manifest.opcode[start_idx:end_idx])
         a1s = jax.device_get(self.manifest.arg1[start_idx:end_idx])
         a2s = jax.device_get(self.manifest.arg2[start_idx:end_idx])
@@ -2270,11 +2310,9 @@ class PrismVM:
             a2_i = self._canonical_ptr(int(a2))
             a1_i, a2_i = _canonicalize_commutative_host(op_i, a1_i, a2_i)
             signature = (op_i, a1_i, a2_i)
-            canonical = self.trace_cache.get(signature, ptr)
-            self.trace_cache[signature] = canonical
-            self.canonical_ptrs[ptr] = canonical
-            if canonical == ptr:
-                self.canonical_ptrs[canonical] = canonical
+            if signature not in self.trace_cache:
+                self.trace_cache[signature] = ptr
+            self.canonical_ptrs[ptr] = ptr
 
     def _canonical_ptr(self, ptr):
         return self.canonical_ptrs.get(ptr, ptr)
@@ -2305,8 +2343,10 @@ class PrismVM:
         ptr = self._canonical_ptr(ptr)
         ptr_arr = jnp.array(ptr, dtype=jnp.int32)
         opt_ptr, opt_applied = optimize_ptr(self.manifest, ptr_arr)
+        # SYNC: host reads device flag for optimization signal (m1).
         if bool(opt_applied):
             print("   [!] Static Analysis: Optimized (add zero x) -> x")
+        # SYNC: host reads device scalar for optimized ptr (m1).
         return int(self._canonical_ptr(int(opt_ptr)))
 
     def eval(self, ptr):
@@ -2319,16 +2359,20 @@ class PrismVM:
         ptr_arr = jnp.array(ptr, dtype=jnp.int32)
         prev_count = self.active_count_host
         new_manifest, res_ptr, opt_applied = dispatch_kernel(self.manifest, ptr_arr)
+        # SYNC: wait for device result before host state update (m1).
         res_ptr.block_until_ready()
         self.manifest = new_manifest
+        # SYNC: host reads device scalar for manifest count (m1).
         self.active_count_host = int(self.manifest.active_count)
         if self.refresh_cache_on_eval and self.active_count_host > prev_count:
             self._refresh_trace_cache(prev_count, self.active_count_host)
             self.cache_filled_to = self.active_count_host
+        # SYNC: host reads device flags for error/opt reporting (m1).
         if bool(self.manifest.oom):
             raise RuntimeError("Manifest capacity exceeded during kernel execution")
         if bool(opt_applied):
             print("   [!] Static Analysis: Optimized (add zero x) -> x")
+        # SYNC: host reads device scalar for result ptr (m1).
         return int(self._canonical_ptr(int(res_ptr)))
 
     # --- PARSING & DISPLAY ---
@@ -2349,6 +2393,7 @@ class PrismVM:
         raise ValueError(f"Unknown: {token}")
 
     def decode(self, ptr):
+        # SYNC: host reads device opcode/args for decoding (m1).
         op = int(self.manifest.opcode[ptr])
         if op == OP_ZERO: return "zero"
         if op == OP_SUC:  return f"(suc {self.decode(int(self.manifest.arg1[ptr]))})"
@@ -2372,6 +2417,7 @@ class PrismVM_BSP_Legacy:
 
     def _alloc(self, op, a1=0, a2=0):
         cap = int(self.arena.opcode.shape[0])
+        # SYNC: host reads device scalar for arena count (m1).
         idx = int(self.arena.count)
         if idx >= cap:
             self.arena = self.arena._replace(oom=jnp.array(True, dtype=jnp.bool_))
@@ -2401,6 +2447,7 @@ class PrismVM_BSP_Legacy:
         raise ValueError(f"Unknown: {token}")
 
     def decode(self, ptr, show_ids=False):
+        # SYNC: host reads device opcode/args for decoding (m1).
         op = int(self.arena.opcode[ptr])
         if op == OP_ZERO:
             return "zero"
@@ -2425,11 +2472,14 @@ class PrismVM_BSP:
             jnp.array([a1], dtype=jnp.int32),
             jnp.array([a2], dtype=jnp.int32),
         )
+        # SYNC: host wait/flag checks for BSP interning (m1).
         self.ledger.count.block_until_ready()
+        # SYNC: host reads device flags for error checks (m1).
         if bool(self.ledger.corrupt):
             raise RuntimeError("CORRUPT: key encoding alias risk (id width exceeded)")
         if bool(self.ledger.oom):
             raise ValueError("Ledger capacity exceeded during interning")
+        # SYNC: host reads device id for interned node (m1).
         return int(ids[0])
 
     def parse(self, tokens):
@@ -2448,6 +2498,7 @@ class PrismVM_BSP:
         raise ValueError(f"Unknown: {token}")
 
     def decode(self, ptr):
+        # SYNC: host reads device opcode/args for decoding (m1).
         op = int(self.ledger.opcode[ptr])
         if op == OP_ZERO: return "zero"
         if op == OP_SUC:  return f"(suc {self.decode(int(self.ledger.arg1[ptr]))})"
@@ -2470,6 +2521,7 @@ def make_vm(mode="baseline"):
     return PrismVM()
 
 def _rank_counts(arena):
+    # SYNC: host reads device counters for rank summary (m1).
     hot = int(jnp.sum(arena.rank == RANK_HOT))
     warm = int(jnp.sum(arena.rank == RANK_WARM))
     cold = int(jnp.sum(arena.rank == RANK_COLD))
@@ -2484,13 +2536,16 @@ def run_program_lines(lines, vm=None):
         inp = inp.strip()
         if not inp or inp.startswith('#'):
             continue
+        # SYNC: host reads of device counters for telemetry (m1).
         start_rows = int(vm.manifest.active_count)
         t0 = time.perf_counter()
         tokens = re.findall(r'\(|\)|[a-z]+', inp)
         ir_ptr = vm.parse(tokens)
         parse_ms = (time.perf_counter() - t0) * 1000
+        # SYNC: host reads device counters for telemetry (m1).
         mid_rows = int(vm.manifest.active_count)
         ir_allocs = mid_rows - start_rows
+        # SYNC: host reads device opcode for telemetry (m1).
         ir_op = OP_NAMES.get(int(vm.manifest.opcode[ir_ptr]), "?")
         print(f"   ├─ IR Build: {ir_op} @ {ir_ptr}")
         if ir_allocs == 0:
@@ -2500,6 +2555,7 @@ def run_program_lines(lines, vm=None):
         t1 = time.perf_counter()
         res_ptr = vm.eval(ir_ptr)
         eval_ms = (time.perf_counter() - t1) * 1000
+        # SYNC: host reads device counters for telemetry (m1).
         end_rows = int(vm.manifest.active_count)
         exec_allocs = end_rows - mid_rows
         print(f"   ├─ Execute : {eval_ms:.2f}ms")
@@ -2546,7 +2602,9 @@ def run_program_lines_bsp(
                 vm.ledger, frontier, _ = cycle_candidates(
                     vm.ledger, frontier, validate_stratum=validate_stratum
                 )
+            # SYNC: host wait/flag checks for BSP loop (m1).
             vm.ledger.count.block_until_ready()
+            # SYNC: host reads device flags for BSP loop errors (m1).
             if bool(vm.ledger.corrupt):
                 raise RuntimeError(
                     "CORRUPT: key encoding alias risk (id width exceeded)"
@@ -2554,7 +2612,9 @@ def run_program_lines_bsp(
             if bool(vm.ledger.oom):
                 raise RuntimeError("Ledger capacity exceeded during cycle")
         root_ptr = frontier[0]
+        # SYNC: host reads for reporting in BSP loop (m1).
         root_ptr_int = int(root_ptr)
+        # SYNC: host reads device counter for reporting (m1).
         print(f"   ├─ Ledger   : {int(vm.ledger.count)} nodes")
         print(f"   └─ Result  : \033[92m{vm.decode(root_ptr_int)}\033[0m")
     return vm

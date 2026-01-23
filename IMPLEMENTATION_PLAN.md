@@ -33,7 +33,7 @@ the current cross-version audit.
 ## Baseline Summary (Current Code)
 `prism_vm.py` uses a stable heap (`Manifest`) with:
 - `opcode`, `arg1`, `arg2`, `active_count` arrays.
-- Hash-consing via `trace_cache`.
+- Hash-consing via `trace_cache` (hint-only; no retroactive pointer rewrites).
 - Static optimization and branchless dispatch (`optimize_ptr`,
   `dispatch_kernel`).
 - `kernel_add` and a stub `kernel_mul`.
@@ -380,6 +380,7 @@ Tasks:
 - Add `OP_COORD_ZERO`, `OP_COORD_ONE`, `OP_COORD_PAIR`.
 - Representation invariant: coordinates are stored only as interned
   `OP_COORD_*` DAGs; no linear bitstrings/digit arrays are stored anywhere.
+- `OP_COORD_PAIR` is ordered (no commutative canonicalization unless staged).
 - Implement coordinate construction and XOR/parity rewrite rules in the BSP path.
 - Aggregation scope (m4): coordinate lifting applies to `OP_ADD` only; `OP_MUL`
   remains Peano-style until explicitly lifted.
@@ -668,6 +669,46 @@ Performance checks:
 - **Interner rebuild cost**: avoid full-table merges per tiny batch; use staging
   buffers and periodic read-model rebuilds after m3.
 - **JIT recompilations**: keep shapes static (fixed MAX_NODES).
+
+## Deferred Implementation Notes (Code Annotations)
+This section mirrors deferred notes/TODOs in `prism_vm.py` for double-entry
+tracking against the roadmap.
+
+- JAX op dtype normalization (int32) is assumed; tighten if drift appears.
+- `_scatter_drop` uses sentinel drop semantics; add a strict variant when ready.
+- `safe_gather_1d` runs raw gathers outside test mode; add deterministic clamp
+  or strictness when performance allows.
+- Rename `_BINCOUT_HAS_LENGTH` to `_BINCOUNT_HAS_LENGTH`.
+- Add an explicit zero-row (id=1) invariant guard.
+- `init_ledger` relies on `_pack_key` being defined later; reorder helpers if
+  init moves to import time.
+- `validate_stratum_no_within_refs_jax` does a full-shape scan; host-slice
+  validation is deferred to keep JIT shapes static.
+- `_apply_stratum_q` assumes `canon_ids` length equals `stratum.count`; if
+  batching changes, use `stratum.count` and add a guard.
+- `_lookup_node_id` while-loop tuple unpacking (`pos, _`) is potentially
+  confusing; clarify intent if refactored.
+- Add CNF-2 observability counters for `rewrite_child`/`changed`/`wrap_emit`.
+- CNF-2 candidate layout invariant: slot0 at `2*i`, slot1 at `2*i+1`; document
+  and preserve in `cycle_candidates`.
+- Consider updating the wrapper frontier directly in `rewrite_child` cases to
+  avoid extra cycles when the child normalizes.
+- Host-only coord helpers (e.g., `coord_xor`, leaf helpers) do per-scalar device
+  reads; batch or cache if this becomes a perf cliff.
+- `_coord_norm_id_jax` repeats lookups per step; batch coord normalization.
+- Coord normalization uses `vmap` over a `cond`/loop; refactor to a single
+  SIMD-style loop over the coord subset.
+- Opcode buckets are precursors to per-op merges; global merge remains an m1
+  tradeoff.
+- Overflow checks depend on `requested_new`; add a secondary guard on `num_new`.
+- Overflow is treated as CORRUPT in m1 (semantic id cap == capacity); split
+  OOM handling if semantics decouple.
+- `_merge_sorted_keys` is a global merge (m1 tradeoff); optimize per-op merges.
+- Add a guard for `new_count` vs backing array length if `max_count` decouples.
+- `intern_nodes` stop path returns zeros; add a read-only lookup fallback.
+- `_active_prefix_count` clamps to size; add an explicit overflow guard.
+- Add value-bound guards for swizzled args in test mode.
+- Remove the duplicate "JAX Kernels" section header.
 
 ## Deliverables
 - `prism_vm.py`: new `PrismVM_BSP` and arena ops.

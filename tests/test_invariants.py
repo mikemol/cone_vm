@@ -330,11 +330,19 @@ def test_trace_cache_refresh_after_eval():
     assert post_count > pre_count
     for idx in range(pre_count, post_count):
         op = int(vm.manifest.opcode[idx])
-        a1 = vm._canonical_ptr(int(vm.manifest.arg1[idx]))
-        a2 = vm._canonical_ptr(int(vm.manifest.arg2[idx]))
+        a1 = int(vm.manifest.arg1[idx])
+        a2 = int(vm.manifest.arg2[idx])
         a1, a2 = pv._canonicalize_commutative_host(op, a1, a2)
         sig = (op, a1, a2)
-        assert vm.trace_cache.get(sig) == vm._canonical_ptr(idx)
+        cached = vm.trace_cache.get(sig)
+        assert cached is not None
+        cached_op = int(vm.manifest.opcode[cached])
+        cached_a1 = int(vm.manifest.arg1[cached])
+        cached_a2 = int(vm.manifest.arg2[cached])
+        cached_a1, cached_a2 = pv._canonicalize_commutative_host(
+            cached_op, cached_a1, cached_a2
+        )
+        assert (cached_op, cached_a1, cached_a2) == sig
 
 
 @pytest.mark.m1
@@ -358,7 +366,8 @@ def test_baseline_eval_commutative_nodes_are_canonicalized():
         ptr_rev = vm.cons(op, a2, a1)
         after = int(vm.manifest.active_count)
         assert after == before
-        assert ptr_rev == vm._canonical_ptr(idx)
+        c1, c2 = pv._canonicalize_commutative_host(op, a1, a2)
+        assert vm.trace_cache.get((op, c1, c2)) == ptr_rev
     assert found
 
 

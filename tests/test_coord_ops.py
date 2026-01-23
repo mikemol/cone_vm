@@ -37,16 +37,16 @@ def test_coord_xor_parity_cancel():
     assert int(xor_id) == int(one_id)
 
 
-def test_coord_leaf_canonicalization():
+def test_coord_leaf_requires_zero_args():
     ledger = pv.init_ledger()
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_COORD_ZERO, pv.OP_COORD_ZERO], dtype=jnp.int32),
-        jnp.array([0, 7], dtype=jnp.int32),
-        jnp.array([0, 9], dtype=jnp.int32),
-    )
-    assert int(ids[0]) == int(ids[1])
-    assert int(ledger.count) == 3
+    with pytest.raises(RuntimeError, match="canonicalize.zero_args"):
+        ids, _ = pv.intern_nodes(
+            ledger,
+            jnp.array([pv.OP_COORD_ZERO, pv.OP_COORD_ZERO], dtype=jnp.int32),
+            jnp.array([0, 7], dtype=jnp.int32),
+            jnp.array([0, 9], dtype=jnp.int32),
+        )
+        ids.block_until_ready()
 
 
 def test_coord_pair_dedup():
