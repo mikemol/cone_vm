@@ -28,6 +28,7 @@ MAX_ROWS = 1024 * 32
 MAX_KEY_NODES = 1 << 16
 MAX_NODES = MAX_KEY_NODES - 1
 MAX_ID = MAX_NODES - 1
+# Hard-cap is semantic (univalence), not just capacity; see IMPLEMENTATION_PLAN.md.
 if MAX_NODES >= MAX_KEY_NODES:
     raise ValueError("MAX_NODES exceeds 16-bit key packing")
 MAX_COORD_STEPS = 8
@@ -37,6 +38,7 @@ _TEST_GUARDS = os.environ.get("PRISM_TEST_GUARDS", "").strip().lower() in (
     "yes",
     "on",
 )
+# Test-time guards favor correctness over performance (m1 gate in plan).
 _SCATTER_GUARD = _TEST_GUARDS or os.environ.get(
     "PRISM_SCATTER_GUARD", ""
 ).strip().lower() in (
@@ -95,6 +97,7 @@ def _guard_gather_index(idx, size, label):
 
 
 def safe_gather_1d(arr, idx, label="safe_gather_1d"):
+    # Guarded gather: raise on invalid indices, clamp to avoid backend-specific OOB.
     if _GATHER_GUARD and _HAS_DEBUG_CALLBACK:
         size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
         idx_i = jnp.asarray(idx, dtype=jnp.int32)
@@ -159,6 +162,7 @@ _coord_norm_probe_count = 0
 
 
 def coord_norm_probe_reset():
+    # Debug-only probe used by m4 tests to detect coord normalization scope.
     global _coord_norm_probe_count
     _coord_norm_probe_count = 0
 
@@ -173,6 +177,7 @@ def _coord_norm_probe_enabled():
 
 
 def _coord_norm_probe_tick(n):
+    # Only increments when PRISM_COORD_NORM_PROBE is enabled.
     if not _coord_norm_probe_enabled():
         return
     global _coord_norm_probe_count
@@ -568,6 +573,7 @@ def _canonicalize_nodes(ops, a1, a2):
 
 
 def _coord_norm_id_jax(ledger, coord_id):
+    # Debug-only probe to detect vmap scope; see tests/test_coord_norm_probe.py.
     if _guards_enabled():
         jax.debug.callback(_coord_norm_probe_tick, jnp.int32(1))
     leaf_zero_id, leaf_zero_found = _lookup_node_id(
@@ -809,12 +815,14 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     bounds_corrupt = (ledger.count > max_id) | jnp.any(proposed_a1 > max_id) | jnp.any(
         proposed_a2 > max_id
     )
+    # CORRUPT is semantic (alias risk); OOM is capacity.
     base_corrupt = ledger.corrupt | bounds_corrupt
     base_oom = ledger.oom
     proposed_ops = jnp.where(base_corrupt, jnp.int32(0), proposed_ops)
     proposed_a1 = jnp.where(base_corrupt, jnp.int32(0), proposed_a1)
     proposed_a2 = jnp.where(base_corrupt, jnp.int32(0), proposed_a2)
     is_coord_pair = proposed_ops == OP_COORD_PAIR
+    # NOTE: vmap normalizes all proposals; refactor to subset for HLO size (m4).
     norm_a1 = jax.vmap(lambda cid: _coord_norm_id_jax(ledger, cid))(proposed_a1)
     norm_a2 = jax.vmap(lambda cid: _coord_norm_id_jax(ledger, cid))(proposed_a2)
     proposed_a1 = jnp.where(is_coord_pair, norm_a1, proposed_a1)
@@ -1260,6 +1268,7 @@ def _blocked_perm(arena, block_size, morton=None, active_count=None):
         morton_u = jnp.zeros_like(ranks, dtype=jnp.uint32)
     else:
         morton_u = morton.reshape((num_blocks, block_size)).astype(jnp.uint32) & jnp.uint32(0x3FFF)
+    # Keep NULL row pinned to preserve slot-0 invariants across permutations.
     ranks = ranks.at[0, 0].set(jnp.uint32(0))
     morton_u = morton_u.at[0, 0].set(jnp.uint32(0))
 
@@ -2169,6 +2178,7 @@ def run_program_lines_bsp(
     if vm is None:
         vm = PrismVM_BSP()
     if bsp_mode != "intrinsic":
+        # CNF2 pipeline is disabled until m2 to keep intrinsic as the m1 evaluator.
         raise ValueError("bsp_mode='cnf2' disabled until m2")
     for inp in lines:
         inp = inp.strip()
