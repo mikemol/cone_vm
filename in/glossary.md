@@ -294,6 +294,39 @@ q(pointerₑ) = IDₗ
 
 ---
 
+## 9. HLO (XLA IR)
+
+### Meanings in Play
+
+* **HLO**: XLA High-Level Optimizer IR emitted after lowering JAXPR
+* **HLO size**: compile-time graph size and complexity
+
+### Axes
+
+* Compilation-time cost vs Runtime work
+
+### Desired Commutation
+
+```
+denote(P) == denote(compile(P))
+```
+
+(Correctness must not depend on the compiler, even when the compile graph is huge.)
+
+### Failure Mode
+
+* `vmap` + `while_loop` + search lowers to a massive HLO even when most lanes are no-ops
+* Runtime guards (`cond`) skip work but do not shrink compile-time HLO
+* Host recursion that calls jitted interning causes many tiny compilations
+
+### Normative Rule
+
+> If a function contains `vmap + while_loop + lookup`, apply it only to the smallest
+> possible subset (gather -> normalize -> scatter). Keep host recursion as a slow
+> reference path, and provide a batched/jitted path for hot use.
+
+---
+
 # Meta-Rule: How to Use This Going Forward
 
 Whenever a term or acronym is reused:

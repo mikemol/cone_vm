@@ -102,7 +102,7 @@ Manual semantic analysis based on `in/in-*.md`, `in/glossary.md`, `prism_vm.py`,
 - vs `IMPLEMENTATION_PLAN.md`: Intersection: semantic spine vs performance spine, univalence contract, CNF-2 bounded emission, strata discipline, denotation invariance; SymDiff: plan treats ledger as canonical engine but does not explicitly define the quotient map or homomorphism laws; Wedge: add an explicit `q` projection spec (or "stratum commit" step) tying evaluator outputs to ledger interned identity so schedule invariance has a formal anchor.
 
 ## in/glossary.md
-- Core semantics: glossary defines commutation constraints for overloaded terms (BSP, CD, canonicalization, collapse, normalize, aggregate, scheduler, identity) and mandates explicit axes plus `q`-based projection rules.
+- Core semantics: glossary defines commutation constraints for overloaded terms (BSP, CD, canonicalization, collapse, normalize, aggregate, scheduler, identity) and adds compiler-facing hazards (HLO size) with a batching/subsetting rule; mandates explicit axes plus `q`-based projection rules.
 - Prior: none (glossary).
 - vs `prism_vm.py`: Intersection: scheduler invariance tests and coordinate opcodes exist; SymDiff: code has no explicit `q` projection boundary or glossary-aligned axis tags; Wedge: add commutation-focused tests (schedule invariance after `q`, coord normalization before interning) or doc hooks so terminology stays operational.
 - vs `IMPLEMENTATION_PLAN.md`: Intersection: plan includes `q` projection, scheduler invariance, and coordinate normalization; SymDiff: plan does not yet cite the glossary or require commutation tests; Wedge: reference the glossary in plan/test obligations and treat commutation as a named acceptance requirement.

@@ -45,6 +45,14 @@ _SCATTER_GUARD = _TEST_GUARDS or os.environ.get(
     "yes",
     "on",
 )
+_GATHER_GUARD = _TEST_GUARDS or os.environ.get(
+    "PRISM_GATHER_GUARD", ""
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 _HAS_DEBUG_CALLBACK = hasattr(jax, "debug") and hasattr(jax.debug, "callback")
 
 
@@ -69,6 +77,31 @@ def _scatter_guard(indices, label):
 def _scatter_drop(target, indices, values, label):
     _scatter_guard(indices, label)
     return target.at[indices].set(values, mode="drop")
+
+
+def _guard_gather_index(idx, size, label):
+    if not _GATHER_GUARD or not _HAS_DEBUG_CALLBACK:
+        return
+    bad = (idx < 0) | (idx >= size)
+
+    def _raise(bad_val, idx_val, size_val):
+        if bad_val:
+            raise RuntimeError(
+                "gather index out of bounds in "
+                f"{label} (idx={int(idx_val)}, size={int(size_val)})"
+            )
+
+    jax.debug.callback(_raise, bad, idx, size)
+
+
+def safe_gather_1d(arr, idx, label="safe_gather_1d"):
+    if _GATHER_GUARD and _HAS_DEBUG_CALLBACK:
+        size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
+        idx_i = jnp.asarray(idx, dtype=jnp.int32)
+        _guard_gather_index(idx_i, size, label)
+        idx_safe = jnp.clip(idx_i, 0, size - 1)
+        return arr[idx_safe]
+    return arr[idx]
 
 
 def _guards_enabled():
@@ -120,6 +153,30 @@ def _guard_null_row(opcode, arg1, arg2, label):
             )
 
     jax.debug.callback(_raise, ok, op0, a10, a20)
+
+
+_coord_norm_probe_count = 0
+
+
+def coord_norm_probe_reset():
+    global _coord_norm_probe_count
+    _coord_norm_probe_count = 0
+
+
+def coord_norm_probe_get():
+    return int(_coord_norm_probe_count)
+
+
+def _coord_norm_probe_enabled():
+    value = os.environ.get("PRISM_COORD_NORM_PROBE", "").strip().lower()
+    return value in ("1", "true", "yes", "on")
+
+
+def _coord_norm_probe_tick(n):
+    if not _coord_norm_probe_enabled():
+        return
+    global _coord_norm_probe_count
+    _coord_norm_probe_count += int(n)
 
 # --- Rank (2-bit Scheduler) ---
 RANK_HOT = 0
@@ -511,6 +568,8 @@ def _canonicalize_nodes(ops, a1, a2):
 
 
 def _coord_norm_id_jax(ledger, coord_id):
+    if _guards_enabled():
+        jax.debug.callback(_coord_norm_probe_tick, jnp.int32(1))
     leaf_zero_id, leaf_zero_found = _lookup_node_id(
         ledger,
         jnp.int32(OP_COORD_ZERO),
