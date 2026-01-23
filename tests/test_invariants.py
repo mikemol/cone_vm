@@ -71,8 +71,10 @@ def test_manifest_capacity_guard():
     cap = int(vm.manifest.opcode.shape[0])
     vm.active_count_host = cap
     with pytest.raises(ValueError):
-        vm._cons_raw(pv.OP_SUC, pv.ZERO_PTR, 0)
-    assert bool(vm.manifest.oom)
+        vm._cons_raw(
+            pv.OP_SUC, pv._manifest_ptr(pv.ZERO_PTR), pv._manifest_ptr(0)
+        )
+    assert pv._host_bool_value(vm.manifest.oom)
 
 
 @pytest.mark.m3
@@ -81,8 +83,8 @@ def test_arena_capacity_guard():
     cap = int(vm.arena.opcode.shape[0])
     vm.arena = vm.arena._replace(count=jnp.array(cap, dtype=jnp.int32))
     with pytest.raises(ValueError):
-        vm._alloc(pv.OP_SUC, pv.ZERO_PTR, 0)
-    assert bool(vm.arena.oom)
+        vm._alloc(pv.OP_SUC, pv._arena_ptr(pv.ZERO_PTR), pv._arena_ptr(0))
+    assert pv._host_bool_value(vm.arena.oom)
 
 
 @pytest.mark.m1
@@ -95,9 +97,9 @@ def test_ledger_capacity_guard():
         jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32),
         jnp.array([0, pv.ZERO_PTR], dtype=jnp.int32),
     )
-    assert bool(new_ledger.corrupt)
-    assert not bool(new_ledger.oom)
-    assert int(new_ledger.count) == int(ledger.count)
+    assert pv._host_bool_value(new_ledger.corrupt)
+    assert not pv._host_bool_value(new_ledger.oom)
+    assert pv._host_int_value(new_ledger.count) == pv._host_int_value(ledger.count)
     assert int(jnp.sum(ids)) == 0
 
 
@@ -110,9 +112,9 @@ def test_intern_nodes_early_out_on_oom_returns_zero_ids():
     a2 = jnp.array([0, 0], dtype=jnp.int32)
     ids, new_ledger = pv.intern_nodes(ledger, ops, a1, a2)
     new_ledger.count.block_until_ready()
-    assert bool(new_ledger.oom) == bool(ledger.oom)
-    assert bool(new_ledger.corrupt) == bool(ledger.corrupt)
-    assert int(new_ledger.count) == int(ledger.count)
+    assert pv._host_bool_value(new_ledger.oom) == pv._host_bool_value(ledger.oom)
+    assert pv._host_bool_value(new_ledger.corrupt) == pv._host_bool_value(ledger.corrupt)
+    assert pv._host_int_value(new_ledger.count) == pv._host_int_value(ledger.count)
     assert int(jnp.sum(ids)) == 0
 
 
@@ -125,9 +127,9 @@ def test_intern_nodes_early_out_on_corrupt_returns_zero_ids():
     a2 = jnp.array([0, 0], dtype=jnp.int32)
     ids, new_ledger = pv.intern_nodes(ledger, ops, a1, a2)
     new_ledger.count.block_until_ready()
-    assert bool(new_ledger.oom) == bool(ledger.oom)
-    assert bool(new_ledger.corrupt) == bool(ledger.corrupt)
-    assert int(new_ledger.count) == int(ledger.count)
+    assert pv._host_bool_value(new_ledger.oom) == pv._host_bool_value(ledger.oom)
+    assert pv._host_bool_value(new_ledger.corrupt) == pv._host_bool_value(ledger.corrupt)
+    assert pv._host_int_value(new_ledger.count) == pv._host_int_value(ledger.count)
     assert int(jnp.sum(ids)) == 0
 
 
@@ -295,28 +297,28 @@ def test_intern_nodes_opcode_bucket():
 @pytest.mark.m1
 def test_optimize_ptr_zero_rules():
     vm = pv.PrismVM()
-    zero = vm.cons(pv.OP_ZERO, 0, 0)
-    one = vm.cons(pv.OP_SUC, zero, 0)
+    zero = vm.cons(pv.OP_ZERO, pv._manifest_ptr(0), pv._manifest_ptr(0))
+    one = vm.cons(pv.OP_SUC, zero, pv._manifest_ptr(0))
 
     add_left = vm.cons(pv.OP_ADD, zero, one)
     ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(add_left))
-    assert bool(optimized)
-    assert int(ptr) == one
+    assert pv._host_bool_value(optimized)
+    assert pv._host_int_value(ptr) == int(one)
 
     add_right = vm.cons(pv.OP_ADD, one, zero)
     ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(add_right))
-    assert bool(optimized)
-    assert int(ptr) == one
+    assert pv._host_bool_value(optimized)
+    assert pv._host_int_value(ptr) == int(one)
 
     mul_left = vm.cons(pv.OP_MUL, zero, one)
     ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(mul_left))
-    assert bool(optimized)
-    assert int(ptr) == pv.ZERO_PTR
+    assert pv._host_bool_value(optimized)
+    assert pv._host_int_value(ptr) == pv.ZERO_PTR
 
     mul_right = vm.cons(pv.OP_MUL, one, zero)
     ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(mul_right))
-    assert bool(optimized)
-    assert int(ptr) == pv.ZERO_PTR
+    assert pv._host_bool_value(optimized)
+    assert pv._host_int_value(ptr) == pv.ZERO_PTR
 
 
 @pytest.mark.m1
@@ -324,25 +326,25 @@ def test_trace_cache_refresh_after_eval():
     vm = pv.PrismVM()
     tokens = re.findall(r"\(|\)|[a-z]+", "(add (suc zero) (suc zero))")
     ptr = vm.parse(tokens)
-    pre_count = int(vm.manifest.active_count)
+    pre_count = pv._host_int_value(vm.manifest.active_count)
     vm.eval(ptr)
-    post_count = int(vm.manifest.active_count)
+    post_count = pv._host_int_value(vm.manifest.active_count)
     assert post_count > pre_count
     for idx in range(pre_count, post_count):
-        op = int(vm.manifest.opcode[idx])
-        a1 = int(vm.manifest.arg1[idx])
-        a2 = int(vm.manifest.arg2[idx])
+        op = pv._host_int_value(vm.manifest.opcode[idx])
+        a1 = pv._host_int_value(vm.manifest.arg1[idx])
+        a2 = pv._host_int_value(vm.manifest.arg2[idx])
         a1, a2 = pv._canonicalize_commutative_host(op, a1, a2)
-        sig = (op, a1, a2)
+        sig = (op, pv._manifest_ptr(a1), pv._manifest_ptr(a2))
         cached = vm.trace_cache.get(sig)
         assert cached is not None
-        cached_op = int(vm.manifest.opcode[cached])
-        cached_a1 = int(vm.manifest.arg1[cached])
-        cached_a2 = int(vm.manifest.arg2[cached])
+        cached_op = pv._host_int_value(vm.manifest.opcode[int(cached)])
+        cached_a1 = pv._host_int_value(vm.manifest.arg1[int(cached)])
+        cached_a2 = pv._host_int_value(vm.manifest.arg2[int(cached)])
         cached_a1, cached_a2 = pv._canonicalize_commutative_host(
             cached_op, cached_a1, cached_a2
         )
-        assert (cached_op, cached_a1, cached_a2) == sig
+        assert (cached_op, pv._manifest_ptr(cached_a1), pv._manifest_ptr(cached_a2)) == sig
 
 
 @pytest.mark.m1
@@ -350,24 +352,24 @@ def test_baseline_eval_commutative_nodes_are_canonicalized():
     vm = pv.PrismVM()
     tokens = re.findall(r"\(|\)|[a-z]+", "(mul (suc (suc zero)) (suc zero))")
     ptr = vm.parse(tokens)
-    pre_count = int(vm.manifest.active_count)
+    pre_count = pv._host_int_value(vm.manifest.active_count)
     vm.eval(ptr)
-    post_count = int(vm.manifest.active_count)
+    post_count = pv._host_int_value(vm.manifest.active_count)
     assert post_count > pre_count
     found = False
     for idx in range(pre_count, post_count):
-        op = int(vm.manifest.opcode[idx])
+        op = pv._host_int_value(vm.manifest.opcode[idx])
         if op not in (pv.OP_ADD, pv.OP_MUL):
             continue
         found = True
-        before = int(vm.manifest.active_count)
-        a1 = int(vm.manifest.arg1[idx])
-        a2 = int(vm.manifest.arg2[idx])
-        ptr_rev = vm.cons(op, a2, a1)
-        after = int(vm.manifest.active_count)
+        before = pv._host_int_value(vm.manifest.active_count)
+        a1 = pv._host_int_value(vm.manifest.arg1[idx])
+        a2 = pv._host_int_value(vm.manifest.arg2[idx])
+        ptr_rev = vm.cons(op, pv._manifest_ptr(a2), pv._manifest_ptr(a1))
+        after = pv._host_int_value(vm.manifest.active_count)
         assert after == before
         c1, c2 = pv._canonicalize_commutative_host(op, a1, a2)
-        assert vm.trace_cache.get((op, c1, c2)) == ptr_rev
+        assert vm.trace_cache.get((op, pv._manifest_ptr(c1), pv._manifest_ptr(c2))) == ptr_rev
     assert found
 
 
@@ -424,8 +426,8 @@ def test_add_commutative_interning():
 @pytest.mark.m1
 def test_mul_commutative_baseline_cons():
     vm = pv.PrismVM()
-    zero = pv.ZERO_PTR
-    one = vm.cons(pv.OP_SUC, zero, 0)
+    zero = pv._manifest_ptr(pv.ZERO_PTR)
+    one = vm.cons(pv.OP_SUC, zero, pv._manifest_ptr(0))
     mul1 = vm.cons(pv.OP_MUL, zero, one)
     mul2 = vm.cons(pv.OP_MUL, one, zero)
     assert mul1 == mul2
@@ -434,8 +436,8 @@ def test_mul_commutative_baseline_cons():
 @pytest.mark.m1
 def test_add_commutative_baseline_cons():
     vm = pv.PrismVM()
-    zero = pv.ZERO_PTR
-    one = vm.cons(pv.OP_SUC, zero, 0)
+    zero = pv._manifest_ptr(pv.ZERO_PTR)
+    one = vm.cons(pv.OP_SUC, zero, pv._manifest_ptr(0))
     add1 = vm.cons(pv.OP_ADD, zero, one)
     add2 = vm.cons(pv.OP_ADD, one, zero)
     assert add1 == add2

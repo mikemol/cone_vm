@@ -165,7 +165,7 @@ def test_intern_raises_on_corrupt_host():
     vm = pv.PrismVM_BSP()
     vm.ledger = vm.ledger._replace(count=jnp.array(pv.MAX_ID + 1, dtype=jnp.int32))
     with pytest.raises(RuntimeError, match="CORRUPT"):
-        vm._intern(pv.OP_SUC, pv.ZERO_PTR, 0)
+        vm._intern(pv.OP_SUC, pv._ledger_id(pv.ZERO_PTR), pv._ledger_id(0))
 
 
 def test_ledger_full_key_equality():

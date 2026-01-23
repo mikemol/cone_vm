@@ -24,10 +24,11 @@ def normalize_baseline(expr, max_steps=64, vm=None):
     ptr = parse_expr(vm, expr)
     last = None
     for _ in range(max_steps):
-        ptr = int(vm.eval(ptr))
-        if ptr == last:
+        ptr = vm.eval(ptr)
+        curr = int(ptr)
+        if curr == last:
             return STATUS_CONVERGED, vm, ptr
-        last = ptr
+        last = curr
     return STATUS_BUDGET_EXHAUSTED, vm, ptr
 
 
@@ -60,7 +61,7 @@ def pretty_baseline(expr, vm=None, max_steps=64):
 def normalize_bsp_intrinsic(expr, max_steps=64, vm=None):
     vm = vm or pv.PrismVM_BSP()
     root_ptr = parse_expr(vm, expr)
-    frontier = jnp.array([root_ptr], dtype=jnp.int32)
+    frontier = jnp.array([int(root_ptr)], dtype=jnp.int32)
     last = None
     for _ in range(max_steps):
         vm.ledger, frontier = pv.cycle_intrinsic(vm.ledger, frontier)
@@ -69,11 +70,11 @@ def normalize_bsp_intrinsic(expr, max_steps=64, vm=None):
             raise RuntimeError(
                 "CORRUPT: key encoding alias risk (id width exceeded)"
             )
-        curr = int(frontier[0])
+        curr = pv._host_int_value(frontier[0])
         if curr == last:
-            return STATUS_CONVERGED, vm, curr
+            return STATUS_CONVERGED, vm, pv._ledger_id(curr)
         last = curr
-    return STATUS_BUDGET_EXHAUSTED, vm, int(frontier[0])
+    return STATUS_BUDGET_EXHAUSTED, vm, pv._ledger_id(pv._host_int_value(frontier[0]))
 
 
 def run_bsp_intrinsic(expr, max_steps=64, vm=None):
@@ -107,7 +108,9 @@ def pretty_bsp_intrinsic(expr, max_steps=64, vm=None):
 def normalize_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False):
     vm = vm or pv.PrismVM_BSP()
     root_ptr = parse_expr(vm, expr)
-    frontier = jnp.array([root_ptr], dtype=jnp.int32)
+    frontier = pv._committed_ids(
+        jnp.array([int(root_ptr)], dtype=jnp.int32)
+    )
     last = None
     for _ in range(max_steps):
         vm.ledger, next_frontier, _ = pv.cycle_candidates(
@@ -118,14 +121,14 @@ def normalize_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False
             raise RuntimeError(
                 "CORRUPT: key encoding alias risk (id width exceeded)"
             )
-        if int(next_frontier.shape[0]) == 0:
-            return STATUS_CONVERGED, vm, int(frontier[0])
-        curr = int(next_frontier[0])
+        if next_frontier.a.shape[0] == 0:
+            return STATUS_CONVERGED, vm, pv._ledger_id(pv._host_int_value(frontier.a[0]))
+        curr = pv._host_int_value(next_frontier.a[0])
         if curr == last:
-            return STATUS_CONVERGED, vm, curr
+            return STATUS_CONVERGED, vm, pv._ledger_id(curr)
         last = curr
         frontier = next_frontier
-    return STATUS_BUDGET_EXHAUSTED, vm, int(frontier[0])
+    return STATUS_BUDGET_EXHAUSTED, vm, pv._ledger_id(pv._host_int_value(frontier.a[0]))
 
 
 def run_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False):
@@ -212,8 +215,9 @@ def run_arena(
             l1_block_size=l1_block_size,
             do_global=do_global,
         )
+        root_ptr = pv._arena_ptr(pv._host_int_value(root_ptr))
     vm.arena = arena
-    return vm.decode(int(root_ptr))
+    return vm.decode(root_ptr)
 
 
 def assert_arena_schedule_invariance(expr, steps=4):

@@ -12,12 +12,13 @@ def _eval(expr):
 
 def _count_suc(vm, ptr):
     count = 0
+    ptr_i = int(ptr)
     while True:
-        op = int(vm.manifest.opcode[ptr])
+        op = pv._host_int_value(vm.manifest.opcode[ptr_i])
         if op == pv.OP_ZERO:
             return count
         assert op == pv.OP_SUC
-        ptr = int(vm.manifest.arg1[ptr])
+        ptr_i = pv._host_int_value(vm.manifest.arg1[ptr_i])
         count += 1
 
 

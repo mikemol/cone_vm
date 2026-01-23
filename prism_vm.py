@@ -1,7 +1,8 @@
 from jax import jit, lax
 import jax
 import jax.numpy as jnp
-from typing import NamedTuple, Dict, Callable, Tuple, NewType
+from dataclasses import dataclass
+from typing import NamedTuple, Dict, Callable, Tuple
 import inspect
 import os
 import re
@@ -25,45 +26,150 @@ OP_NAMES = {
     10: "add", 11: "mul", 99: "sort",
     20: "coord_zero", 21: "coord_one", 22: "coord_pair"
 }
-# Pointer domain newtypes (static typing only).
-ManifestPtr = NewType("ManifestPtr", int)
-LedgerId = NewType("LedgerId", int)
-ArenaPtr = NewType("ArenaPtr", int)
+# Pointer domain wrappers (runtime separation).
+@dataclass(frozen=True)
+class ManifestPtr:
+    i: int
+
+    def __int__(self) -> int:
+        return int(self.i)
+
+    def __index__(self) -> int:
+        return int(self.i)
+
+
+@dataclass(frozen=True)
+class LedgerId:
+    i: int
+
+    def __int__(self) -> int:
+        return int(self.i)
+
+    def __index__(self) -> int:
+        return int(self.i)
+
+
+@dataclass(frozen=True)
+class ArenaPtr:
+    i: int
+
+    def __int__(self) -> int:
+        return int(self.i)
+
+    def __index__(self) -> int:
+        return int(self.i)
 # Host-only scalar markers for sync boundaries.
-HostInt = NewType("HostInt", int)
-HostBool = NewType("HostBool", bool)
+@dataclass(frozen=True)
+class HostInt:
+    v: int
+
+    def __int__(self) -> int:
+        return int(self.v)
+
+    def __index__(self) -> int:
+        return int(self.v)
+
+
+@dataclass(frozen=True)
+class HostBool:
+    v: bool
+
+    def __bool__(self) -> bool:
+        return bool(self.v)
 # Stratum phase markers for device id arrays.
-ProvisionalIds = NewType("ProvisionalIds", jnp.ndarray)
-CommittedIds = NewType("CommittedIds", jnp.ndarray)
+@dataclass(frozen=True)
+class ProvisionalIds:
+    a: jnp.ndarray
+
+
+@dataclass(frozen=True)
+class CommittedIds:
+    a: jnp.ndarray
+
+
 QMap = Callable[[ProvisionalIds], CommittedIds]
 
 
-def _manifest_ptr(value: int) -> ManifestPtr:
-    return ManifestPtr(int(value))
+def _manifest_ptr(value) -> ManifestPtr:
+    if isinstance(value, ManifestPtr):
+        return value
+    if isinstance(value, (LedgerId, ArenaPtr)):
+        raise TypeError("expected ManifestPtr, got different pointer domain")
+    return ManifestPtr(_host_int_value(value))
 
 
-def _ledger_id(value: int) -> LedgerId:
-    return LedgerId(int(value))
+def _ledger_id(value) -> LedgerId:
+    if isinstance(value, LedgerId):
+        return value
+    if isinstance(value, (ManifestPtr, ArenaPtr)):
+        raise TypeError("expected LedgerId, got different pointer domain")
+    return LedgerId(_host_int_value(value))
 
 
-def _arena_ptr(value: int) -> ArenaPtr:
-    return ArenaPtr(int(value))
+def _arena_ptr(value) -> ArenaPtr:
+    if isinstance(value, ArenaPtr):
+        return value
+    if isinstance(value, (ManifestPtr, LedgerId)):
+        raise TypeError("expected ArenaPtr, got different pointer domain")
+    return ArenaPtr(_host_int_value(value))
+
+
+def _require_manifest_ptr(ptr: ManifestPtr, label: str) -> ManifestPtr:
+    if not isinstance(ptr, ManifestPtr):
+        raise TypeError(f"{label} expected ManifestPtr")
+    return ptr
+
+
+def _require_ledger_id(ptr: LedgerId, label: str) -> LedgerId:
+    if not isinstance(ptr, LedgerId):
+        raise TypeError(f"{label} expected LedgerId")
+    return ptr
+
+
+def _require_arena_ptr(ptr: ArenaPtr, label: str) -> ArenaPtr:
+    if not isinstance(ptr, ArenaPtr):
+        raise TypeError(f"{label} expected ArenaPtr")
+    return ptr
 
 
 def _host_int(value) -> HostInt:
-    return HostInt(int(value))
+    if isinstance(value, HostInt):
+        return value
+    if isinstance(value, HostBool):
+        raise TypeError("expected HostInt, got HostBool")
+    return HostInt(int(jax.device_get(value)))
 
 
 def _host_bool(value) -> HostBool:
-    return HostBool(bool(value))
+    if isinstance(value, HostBool):
+        return value
+    if isinstance(value, HostInt):
+        raise TypeError("expected HostBool, got HostInt")
+    return HostBool(bool(jax.device_get(value)))
 
 
-def _provisional_ids(value: jnp.ndarray) -> ProvisionalIds:
-    return ProvisionalIds(value)
+def _host_int_value(value) -> int:
+    return int(_host_int(value))
 
 
-def _committed_ids(value: jnp.ndarray) -> CommittedIds:
-    return CommittedIds(value)
+def _host_bool_value(value) -> bool:
+    return bool(_host_bool(value))
+
+
+def _provisional_ids(value) -> ProvisionalIds:
+    if isinstance(value, ProvisionalIds):
+        return value
+    if isinstance(value, CommittedIds):
+        raise TypeError("expected ProvisionalIds, got CommittedIds")
+    return ProvisionalIds(jnp.asarray(value))
+
+
+def _committed_ids(value) -> CommittedIds:
+    if isinstance(value, CommittedIds):
+        return value
+    if isinstance(value, ProvisionalIds):
+        raise TypeError("expected CommittedIds, got ProvisionalIds")
+    return CommittedIds(jnp.asarray(value))
 
 # NOTE: JAX op dtype normalization (int32) is assumed; tighten if drift appears
 # (see IMPLEMENTATION_PLAN.md).
@@ -390,9 +496,23 @@ class CandidateBuffer(NamedTuple):
     arg1: jnp.ndarray
     arg2: jnp.ndarray
 
+class NodeBatch(NamedTuple):
+    op: jnp.ndarray
+    a1: jnp.ndarray
+    a2: jnp.ndarray
+
 class Stratum(NamedTuple):
     start: jnp.ndarray
     count: jnp.ndarray
+
+
+def node_batch(op, a1, a2) -> NodeBatch:
+    if _TEST_GUARDS:
+        if op.shape != a1.shape or op.shape != a2.shape:
+            raise ValueError("node_batch expects aligned 1d arrays")
+        if op.ndim != 1 or a1.ndim != 1 or a2.ndim != 1:
+            raise ValueError("node_batch expects aligned 1d arrays")
+    return NodeBatch(op=op, a1=a1, a2=a2)
 
 def init_manifest():
     return Manifest(
@@ -598,7 +718,7 @@ def intern_candidates(ledger, candidates):
     ops = jnp.where(enabled, compacted.opcode, jnp.int32(0))
     a1 = jnp.where(enabled, compacted.arg1, jnp.int32(0))
     a2 = jnp.where(enabled, compacted.arg2, jnp.int32(0))
-    ids, new_ledger = intern_nodes(ledger, ops, a1, a2)
+    ids, new_ledger = intern_nodes(ledger, node_batch(ops, a1, a2))
     return ids, new_ledger, count
 
 
@@ -625,7 +745,7 @@ def validate_stratum_no_within_refs(ledger, stratum) -> HostBool:
     return _host_bool(validate_stratum_no_within_refs_jax(ledger, stratum))
 
 def _identity_q(ids: ProvisionalIds) -> CommittedIds:
-    return _committed_ids(ids)
+    return _committed_ids(ids.a)
 
 
 def _apply_stratum_q(
@@ -634,16 +754,16 @@ def _apply_stratum_q(
     canon_ids: CommittedIds,
     label: str,
 ) -> ProvisionalIds:
-    if canon_ids.shape[0] == 0:
+    if canon_ids.a.shape[0] == 0:
         return ids
     start = jnp.asarray(stratum.start, dtype=jnp.int32)
     # NOTE: assumes canon_ids length matches stratum.count for this commit path;
     # if stratum batching changes, use stratum.count and add a guard (see plan).
-    count = jnp.asarray(canon_ids.shape[0], dtype=jnp.int32)
-    in_range = (ids >= start) & (ids < start + count)
-    idx = jnp.where(in_range, ids - start, jnp.int32(0))
-    mapped = safe_gather_1d(canon_ids, idx, label)
-    return _provisional_ids(jnp.where(in_range, mapped, ids))
+    count = jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32)
+    in_range = (ids.a >= start) & (ids.a < start + count)
+    idx = jnp.where(in_range, ids.a - start, jnp.int32(0))
+    mapped = safe_gather_1d(canon_ids.a, idx, label)
+    return _provisional_ids(jnp.where(in_range, mapped, ids.a))
 
 
 def commit_stratum(
@@ -658,16 +778,16 @@ def commit_stratum(
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
     q_prev: QMap = prior_q or _identity_q
     # SYNC: host int() pulls device scalar for host-side control flow (m1).
-    count = int(jnp.maximum(stratum.count, 0))
+    count = _host_int_value(jnp.maximum(stratum.count, 0))
     if count == 0:
         canon_ids = _committed_ids(jnp.zeros((0,), dtype=jnp.int32))
         return ledger, canon_ids, q_prev
     start = jnp.asarray(stratum.start, dtype=jnp.int32)
     ids = start + jnp.arange(count, dtype=jnp.int32)
     ops = ledger.opcode[ids]
-    a1 = q_prev(ledger.arg1[ids])
-    a2 = q_prev(ledger.arg2[ids])
-    canon_ids_raw, ledger = intern_nodes(ledger, ops, a1, a2)
+    a1 = q_prev(_provisional_ids(ledger.arg1[ids])).a
+    a2 = q_prev(_provisional_ids(ledger.arg2[ids])).a
+    canon_ids_raw, ledger = intern_nodes(ledger, node_batch(ops, a1, a2))
     canon_ids = _committed_ids(canon_ids_raw)
 
     def q_map(ids_in: ProvisionalIds) -> CommittedIds:
@@ -681,22 +801,23 @@ def cycle_candidates(
     frontier_ids: CommittedIds,
     validate_stratum: bool = False,
 ) -> Tuple[Ledger, CommittedIds, Tuple[Stratum, Stratum, Stratum]]:
+    frontier_ids = _committed_ids(frontier_ids)
     if not _cnf2_enabled():
         # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
         # See IMPLEMENTATION_PLAN.md (m2 CNF-2 pipeline).
         raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
-    num_frontier = frontier_ids.shape[0]
+    num_frontier = frontier_ids.a.shape[0]
     if num_frontier == 0:
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
         return ledger, frontier_ids, (empty, empty, empty)
 
-    f_ops = ledger.opcode[frontier_ids]
-    f_a1 = ledger.arg1[frontier_ids]
+    f_ops = ledger.opcode[frontier_ids.a]
+    f_a1 = ledger.arg1[frontier_ids.a]
     child_ops = ledger.opcode[f_a1]
     rewrite_child = (f_ops == OP_SUC) & (
         (child_ops == OP_ADD) | (child_ops == OP_MUL)
     )
-    rewrite_ids = jnp.where(rewrite_child, f_a1, frontier_ids)
+    rewrite_ids = jnp.where(rewrite_child, f_a1, frontier_ids.a)
 
     candidates = emit_candidates(ledger, rewrite_ids)
     start0 = ledger.count.astype(jnp.int32)
@@ -705,7 +826,7 @@ def cycle_candidates(
     ops0 = jnp.where(enabled0, compacted0.opcode, jnp.int32(0))
     a1_0 = jnp.where(enabled0, compacted0.arg1, jnp.int32(0))
     a2_0 = jnp.where(enabled0, compacted0.arg2, jnp.int32(0))
-    ids_compact, ledger0 = intern_nodes(ledger, ops0, a1_0, a2_0)
+    ids_compact, ledger0 = intern_nodes(ledger, node_batch(ops0, a1_0, a2_0))
     size0 = candidates.enabled.shape[0]
     ids_full0 = _scatter_compacted_ids(comp_idx0, ids_compact, count0, size0)
     # Candidate buffer layout invariant: slot0 at 2*i, slot1 at 2*i+1.
@@ -755,7 +876,9 @@ def cycle_candidates(
     slot1_a1 = jnp.where(slot1_enabled, slot1_a1, jnp.int32(0))
     slot1_a2 = jnp.where(slot1_enabled, slot1_a2, jnp.int32(0))
     if slot1_gate:
-        slot1_ids, ledger1 = intern_nodes(ledger0, slot1_ops, slot1_a1, slot1_a2)
+        slot1_ids, ledger1 = intern_nodes(
+            ledger0, node_batch(slot1_ops, slot1_a1, slot1_a2)
+        )
     else:
         slot1_ids = jnp.zeros_like(rewrite_ids)
         ledger1 = ledger0
@@ -774,11 +897,11 @@ def cycle_candidates(
     wrap_ops = jnp.where(wrap_emit, jnp.int32(OP_SUC), jnp.int32(0))
     wrap_a1 = jnp.where(wrap_emit, base_next, jnp.int32(0))
     wrap_a2 = jnp.zeros_like(wrap_a1)
-    wrap_ids, ledger2 = intern_nodes(ledger1, wrap_ops, wrap_a1, wrap_a2)
+    wrap_ids, ledger2 = intern_nodes(ledger1, node_batch(wrap_ops, wrap_a1, wrap_a2))
 
     # NOTE: keeping rewrite_child on the outer wrapper can add extra cycles; a
     # direct wrapper update is deferred to IMPLEMENTATION_PLAN.md.
-    next_frontier = jnp.where(rewrite_child, frontier_ids, base_next)
+    next_frontier = jnp.where(rewrite_child, frontier_ids.a, base_next)
     next_frontier = jnp.where(wrap_emit, wrap_ids, next_frontier)
 
     # Strata counts track appended id ranges (ledger.count deltas), not
@@ -899,24 +1022,28 @@ def _coord_norm_id_host(ledger, coord_id):
 def _coord_leaf_id(ledger, op):
     ids, ledger = intern_nodes(
         ledger,
-        jnp.array([op], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
+        node_batch(
+            jnp.array([op], dtype=jnp.int32),
+            jnp.array([0], dtype=jnp.int32),
+            jnp.array([0], dtype=jnp.int32),
+        ),
     )
     # SYNC: host reads device id for coord leaf (m1).
-    return int(ids[0]), ledger
+    return _host_int_value(ids[0]), ledger
 
 
 def _coord_promote_leaf(ledger, leaf_id):
     zero_id, ledger = _coord_leaf_id(ledger, OP_COORD_ZERO)
     ids, ledger = intern_nodes(
         ledger,
-        jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
-        jnp.array([leaf_id], dtype=jnp.int32),
-        jnp.array([zero_id], dtype=jnp.int32),
+        node_batch(
+            jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
+            jnp.array([leaf_id], dtype=jnp.int32),
+            jnp.array([zero_id], dtype=jnp.int32),
+        ),
     )
     # SYNC: host reads device id for coord promotion (m1).
-    return int(ids[0]), ledger
+    return _host_int_value(ids[0]), ledger
 
 
 def coord_norm(ledger, coord_id):
@@ -924,7 +1051,7 @@ def coord_norm(ledger, coord_id):
     coord_id = jnp.asarray(coord_id, dtype=jnp.int32)
     norm_id = _coord_norm_id_host(ledger, coord_id)
     # SYNC: host reads device scalar for coord normalization (m1).
-    return int(jax.device_get(norm_id)), ledger
+    return _host_int_value(norm_id), ledger
 
 
 def coord_xor(ledger, left_id, right_id):
@@ -937,8 +1064,8 @@ def coord_xor(ledger, left_id, right_id):
     if left_id == right_id:
         return _coord_leaf_id(ledger, OP_COORD_ZERO)
 
-    left_op = int(ledger.opcode[left_id])
-    right_op = int(ledger.opcode[right_id])
+    left_op = _host_int_value(ledger.opcode[left_id])
+    right_op = _host_int_value(ledger.opcode[right_id])
 
     if left_op == OP_COORD_ZERO:
         return right_id, ledger
@@ -958,21 +1085,23 @@ def coord_xor(ledger, left_id, right_id):
     if right_op != OP_COORD_PAIR:
         right_id, ledger = _coord_promote_leaf(ledger, right_id)
 
-    left_a1 = int(ledger.arg1[left_id])
-    left_a2 = int(ledger.arg2[left_id])
-    right_a1 = int(ledger.arg1[right_id])
-    right_a2 = int(ledger.arg2[right_id])
+    left_a1 = _host_int_value(ledger.arg1[left_id])
+    left_a2 = _host_int_value(ledger.arg2[left_id])
+    right_a1 = _host_int_value(ledger.arg1[right_id])
+    right_a2 = _host_int_value(ledger.arg2[right_id])
 
     new_left, ledger = coord_xor(ledger, left_a1, right_a1)
     new_right, ledger = coord_xor(ledger, left_a2, right_a2)
     ids, ledger = intern_nodes(
         ledger,
-        jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
-        jnp.array([new_left], dtype=jnp.int32),
-        jnp.array([new_right], dtype=jnp.int32),
+        node_batch(
+            jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
+            jnp.array([new_left], dtype=jnp.int32),
+            jnp.array([new_right], dtype=jnp.int32),
+        ),
     )
     # SYNC: host reads device id for coord xor (m1).
-    return int(ids[0]), ledger
+    return _host_int_value(ids[0]), ledger
 
 def _pack_key(op, a1, a2):
     # Byte layout: op, a1_hi, a1_lo, a2_hi, a2_lo for lexicographic sort.
@@ -1516,8 +1645,9 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     return lax.cond(overflow, _overflow, _allocate, operand=None)
 
 
-def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
+def _intern_nodes_impl(ledger, batch: NodeBatch):
     # Canonical_i: full key equality; only key-safe normalization belongs here.
+    proposed_ops, proposed_a1, proposed_a2 = batch
     proposed_ops, proposed_a1, proposed_a2 = _canonicalize_nodes(
         proposed_ops, proposed_a1, proposed_a2
     )
@@ -1556,18 +1686,28 @@ def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
 
 
 @jit
-def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
+def intern_nodes(ledger, batch_or_ops, a1=None, a2=None):
     """
     Batch-intern a list of proposed (op,a1,a2) nodes into the canonical Ledger.
 
     Args:
       ledger: Ledger
-      proposed_ops/a1/a2: int32 arrays, shape [N]
+      batch_or_ops: NodeBatch or ops array
+      a1/a2: optional arg arrays when passing raw ops
 
     Returns:
       final_ids: int32 array, shape [N], canonical ids for each proposal
       new_ledger: Ledger, updated
     """
+    if a1 is None and a2 is None:
+        if not isinstance(batch_or_ops, NodeBatch):
+            raise TypeError("intern_nodes expects a NodeBatch or (ops, a1, a2)")
+        batch = batch_or_ops
+    else:
+        if a1 is None or a2 is None:
+            raise TypeError("intern_nodes expects both a1 and a2 arrays")
+        batch = node_batch(batch_or_ops, a1, a2)
+    proposed_ops, proposed_a1, proposed_a2 = batch
     if proposed_ops.shape[0] == 0:
         return jnp.zeros_like(proposed_ops), ledger
     stop = ledger.oom | ledger.corrupt
@@ -1579,7 +1719,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
         return jnp.zeros_like(proposed_ops), ledger
 
     def _do(_):
-        return _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2)
+        return _intern_nodes_impl(ledger, batch)
 
     return lax.cond(stop, _skip, _do, operand=None)
 
@@ -1641,10 +1781,11 @@ def _op_sort_and_swizzle_with_perm_prefix(arena, active_count):
 
 def op_sort_and_swizzle_with_perm(arena):
     active_count = _active_prefix_count(arena)
+    active_count_i = int(active_count)
     size = arena.rank.shape[0]
-    if active_count >= size:
+    if active_count_i >= size:
         return _op_sort_and_swizzle_with_perm_full(arena)
-    return _op_sort_and_swizzle_with_perm_prefix(arena, active_count)
+    return _op_sort_and_swizzle_with_perm_prefix(arena, active_count_i)
 
 def op_sort_and_swizzle(arena):
     sorted_arena, _ = op_sort_and_swizzle_with_perm(arena)
@@ -1704,7 +1845,9 @@ def _blocked_perm(arena, block_size, morton=None, active_count=None):
 
 def op_sort_and_swizzle_blocked_with_perm(arena, block_size, morton=None):
     active_count = _active_prefix_count(arena)
-    perm = _blocked_perm(arena, block_size, morton=morton, active_count=active_count)
+    perm = _blocked_perm(
+        arena, block_size, morton=morton, active_count=int(active_count)
+    )
     return _apply_perm_and_swizzle(arena, perm)
 
 def op_sort_and_swizzle_blocked(arena, block_size, morton=None):
@@ -1906,10 +2049,13 @@ def _op_sort_and_swizzle_morton_with_perm_prefix(arena, morton, active_count):
 
 def op_sort_and_swizzle_morton_with_perm(arena, morton):
     active_count = _active_prefix_count(arena)
+    active_count_i = int(active_count)
     size = arena.rank.shape[0]
-    if active_count >= size:
+    if active_count_i >= size:
         return _op_sort_and_swizzle_morton_with_perm_full(arena, morton)
-    return _op_sort_and_swizzle_morton_with_perm_prefix(arena, morton, active_count)
+    return _op_sort_and_swizzle_morton_with_perm_prefix(
+        arena, morton, active_count_i
+    )
 
 def op_sort_and_swizzle_morton(arena, morton):
     sorted_arena, _ = op_sort_and_swizzle_morton_with_perm(arena, morton)
@@ -2049,7 +2195,7 @@ def cycle_intrinsic(ledger, frontier_ids):
     l1_a1 = jnp.where(is_mul_suc, val_x, l1_a1)
     l1_a2 = jnp.where(is_mul_suc, val_y, l1_a2)
 
-    l1_ids, ledger = intern_nodes(ledger, l1_ops, l1_a1, l1_a2)
+    l1_ids, ledger = intern_nodes(ledger, node_batch(l1_ops, l1_a1, l1_a2))
 
     l2_ops = jnp.zeros_like(t_ops)
     l2_a1 = jnp.zeros_like(t_a1)
@@ -2060,7 +2206,7 @@ def cycle_intrinsic(ledger, frontier_ids):
     l2_a1 = jnp.where(is_mul_suc, val_y, l2_a1)
     l2_a2 = jnp.where(is_mul_suc, l1_ids, l2_a2)
 
-    l2_ids, ledger = intern_nodes(ledger, l2_ops, l2_a1, l2_a2)
+    l2_ids, ledger = intern_nodes(ledger, node_batch(l2_ops, l2_a1, l2_a2))
 
     base_next = base_ids
     base_next = jnp.where(is_add_zero, zero_other, base_next)
@@ -2081,7 +2227,7 @@ def cycle_intrinsic(ledger, frontier_ids):
         ops = jnp.where(to_wrap, jnp.int32(OP_SUC), jnp.int32(0))
         a1 = jnp.where(to_wrap, child, jnp.int32(0))
         a2 = jnp.zeros_like(a1)
-        new_ids, led = intern_nodes(led, ops, a1, a2)
+        new_ids, led = intern_nodes(led, node_batch(ops, a1, a2))
         child = jnp.where(to_wrap, new_ids, child)
         depth = depth - to_wrap.astype(jnp.int32)
         return depth, child, led
@@ -2317,7 +2463,7 @@ class PrismVM:
         # Baseline oracle (Manifest + host cache) kept for cross-engine checks.
         self.manifest = init_manifest()
         # SYNC: host reads device scalar for manifest count (m1).
-        self.active_count_host = int(self.manifest.active_count)
+        self.active_count_host = _host_int_value(self.manifest.active_count)
         self.refresh_cache_on_eval = True
         # Trace Cache: (opcode, arg1, arg2) -> ptr
         self.trace_cache: Dict[Tuple[int, ManifestPtr, ManifestPtr], ManifestPtr] = {}
@@ -2334,6 +2480,8 @@ class PrismVM:
 
     def _cons_raw(self, op: int, a1: ManifestPtr, a2: ManifestPtr) -> ManifestPtr:
         """Physical allocation (Device Write)"""
+        _require_manifest_ptr(a1, "PrismVM._cons_raw a1")
+        _require_manifest_ptr(a2, "PrismVM._cons_raw a2")
         a1_i, a2_i = _canonicalize_commutative_host(op, int(a1), int(a2))
         cap = int(self.manifest.opcode.shape[0])
         if self.active_count_host >= cap:
@@ -2384,6 +2532,8 @@ class PrismVM:
         1. Checks Cache (Deduplication).
         2. Allocates if new.
         """
+        _require_manifest_ptr(a1, "PrismVM.cons a1")
+        _require_manifest_ptr(a2, "PrismVM.cons a2")
         a1_i = int(self._canonical_ptr(a1))
         a2_i = int(self._canonical_ptr(a2))
         a1_i, a2_i = _canonicalize_commutative_host(op, a1_i, a2_i)
@@ -2401,14 +2551,15 @@ class PrismVM:
         Examines the IR at `ptr` BEFORE execution.
         Performs trivial reductions (Constant Folding / Identity Elimination).
         """
+        _require_manifest_ptr(ptr, "PrismVM.analyze_and_optimize ptr")
         ptr = self._canonical_ptr(ptr)
         ptr_arr = jnp.array(int(ptr), dtype=jnp.int32)
         opt_ptr, opt_applied = optimize_ptr(self.manifest, ptr_arr)
         # SYNC: host reads device flag for optimization signal (m1).
-        if bool(opt_applied):
+        if _host_bool_value(opt_applied):
             print("   [!] Static Analysis: Optimized (add zero x) -> x")
         # SYNC: host reads device scalar for optimized ptr (m1).
-        return self._canonical_ptr(_manifest_ptr(int(opt_ptr)))
+        return self._canonical_ptr(_manifest_ptr(_host_int_value(opt_ptr)))
 
     def eval(self, ptr: ManifestPtr) -> ManifestPtr:
         """
@@ -2416,6 +2567,7 @@ class PrismVM:
         1. Static Analysis (Host)
         2. Dispatch (Device)
         """
+        _require_manifest_ptr(ptr, "PrismVM.eval ptr")
         ptr = self._canonical_ptr(ptr)
         ptr_arr = jnp.array(int(ptr), dtype=jnp.int32)
         prev_count = self.active_count_host
@@ -2424,17 +2576,17 @@ class PrismVM:
         res_ptr.block_until_ready()
         self.manifest = new_manifest
         # SYNC: host reads device scalar for manifest count (m1).
-        self.active_count_host = int(self.manifest.active_count)
+        self.active_count_host = _host_int_value(self.manifest.active_count)
         if self.refresh_cache_on_eval and self.active_count_host > prev_count:
             self._refresh_trace_cache(prev_count, self.active_count_host)
             self.cache_filled_to = self.active_count_host
         # SYNC: host reads device flags for error/opt reporting (m1).
-        if bool(self.manifest.oom):
+        if _host_bool_value(self.manifest.oom):
             raise RuntimeError("Manifest capacity exceeded during kernel execution")
-        if bool(opt_applied):
+        if _host_bool_value(opt_applied):
             print("   [!] Static Analysis: Optimized (add zero x) -> x")
         # SYNC: host reads device scalar for result ptr (m1).
-        return self._canonical_ptr(_manifest_ptr(int(res_ptr)))
+        return self._canonical_ptr(_manifest_ptr(_host_int_value(res_ptr)))
 
     # --- PARSING & DISPLAY ---
     def parse(self, tokens) -> ManifestPtr:
@@ -2455,8 +2607,9 @@ class PrismVM:
 
     def decode(self, ptr: ManifestPtr) -> str:
         # SYNC: host reads device opcode/args for decoding (m1).
+        _require_manifest_ptr(ptr, "PrismVM.decode ptr")
         ptr_i = int(ptr)
-        op = int(self.manifest.opcode[ptr_i])
+        op = _host_int_value(self.manifest.opcode[ptr_i])
         if op == OP_ZERO: return "zero"
         if op == OP_SUC:
             return f"(suc {self.decode(_manifest_ptr(self.manifest.arg1[ptr_i]))})"
@@ -2483,10 +2636,12 @@ class PrismVM_BSP_Legacy:
     ) -> ArenaPtr:
         cap = int(self.arena.opcode.shape[0])
         # SYNC: host reads device scalar for arena count (m1).
-        idx = int(self.arena.count)
+        idx = _host_int_value(self.arena.count)
         if idx >= cap:
             self.arena = self.arena._replace(oom=jnp.array(True, dtype=jnp.bool_))
             raise ValueError("Arena capacity exceeded")
+        _require_arena_ptr(a1, "PrismVM_BSP_Legacy._alloc a1")
+        _require_arena_ptr(a2, "PrismVM_BSP_Legacy._alloc a2")
         a1_i, a2_i = _canonicalize_commutative_host(op, int(a1), int(a2))
         self.arena = self.arena._replace(
             opcode=self.arena.opcode.at[idx].set(op),
@@ -2513,8 +2668,9 @@ class PrismVM_BSP_Legacy:
 
     def decode(self, ptr: ArenaPtr, show_ids: bool = False) -> str:
         # SYNC: host reads device opcode/args for decoding (m1).
+        _require_arena_ptr(ptr, "PrismVM_BSP_Legacy.decode ptr")
         ptr_i = int(ptr)
-        op = int(self.arena.opcode[ptr_i])
+        op = _host_int_value(self.arena.opcode[ptr_i])
         if op == OP_ZERO:
             return "zero"
         if op == OP_SUC:
@@ -2536,19 +2692,23 @@ class PrismVM_BSP:
     def _intern(
         self, op: int, a1: LedgerId = LedgerId(0), a2: LedgerId = LedgerId(0)
     ) -> LedgerId:
+        _require_ledger_id(a1, "PrismVM_BSP._intern a1")
+        _require_ledger_id(a2, "PrismVM_BSP._intern a2")
         a1_i, a2_i = _canonicalize_commutative_host(op, int(a1), int(a2))
         ids, self.ledger = intern_nodes(
             self.ledger,
-            jnp.array([op], dtype=jnp.int32),
-            jnp.array([a1_i], dtype=jnp.int32),
-            jnp.array([a2_i], dtype=jnp.int32),
+            node_batch(
+                jnp.array([op], dtype=jnp.int32),
+                jnp.array([a1_i], dtype=jnp.int32),
+                jnp.array([a2_i], dtype=jnp.int32),
+            ),
         )
         # SYNC: host wait/flag checks for BSP interning (m1).
         self.ledger.count.block_until_ready()
         # SYNC: host reads device flags for error checks (m1).
-        if bool(self.ledger.corrupt):
+        if _host_bool_value(self.ledger.corrupt):
             raise RuntimeError("CORRUPT: key encoding alias risk (id width exceeded)")
-        if bool(self.ledger.oom):
+        if _host_bool_value(self.ledger.oom):
             raise ValueError("Ledger capacity exceeded during interning")
         # SYNC: host reads device id for interned node (m1).
         return _ledger_id(ids[0])
@@ -2570,8 +2730,9 @@ class PrismVM_BSP:
 
     def decode(self, ptr: LedgerId) -> str:
         # SYNC: host reads device opcode/args for decoding (m1).
+        _require_ledger_id(ptr, "PrismVM_BSP.decode ptr")
         ptr_i = int(ptr)
-        op = int(self.ledger.opcode[ptr_i])
+        op = _host_int_value(self.ledger.opcode[ptr_i])
         if op == OP_ZERO: return "zero"
         if op == OP_SUC:
             return f"(suc {self.decode(_ledger_id(self.ledger.arg1[ptr_i]))})"
@@ -2610,17 +2771,17 @@ def run_program_lines(lines, vm=None):
         if not inp or inp.startswith('#'):
             continue
         # SYNC: host reads of device counters for telemetry (m1).
-        start_rows = int(vm.manifest.active_count)
+        start_rows = _host_int_value(vm.manifest.active_count)
         t0 = time.perf_counter()
         tokens = re.findall(r'\(|\)|[a-z]+', inp)
         ir_ptr = vm.parse(tokens)
         ir_ptr_i = int(ir_ptr)
         parse_ms = (time.perf_counter() - t0) * 1000
         # SYNC: host reads device counters for telemetry (m1).
-        mid_rows = int(vm.manifest.active_count)
+        mid_rows = _host_int_value(vm.manifest.active_count)
         ir_allocs = mid_rows - start_rows
         # SYNC: host reads device opcode for telemetry (m1).
-        ir_op = OP_NAMES.get(int(vm.manifest.opcode[ir_ptr_i]), "?")
+        ir_op = OP_NAMES.get(_host_int_value(vm.manifest.opcode[ir_ptr_i]), "?")
         print(f"   ├─ IR Build: {ir_op} @ {ir_ptr}")
         if ir_allocs == 0:
             print(f"   ├─ Cache   : \033[96mHIT (No new IR rows)\033[0m")
@@ -2630,7 +2791,7 @@ def run_program_lines(lines, vm=None):
         res_ptr = vm.eval(ir_ptr)
         eval_ms = (time.perf_counter() - t1) * 1000
         # SYNC: host reads device counters for telemetry (m1).
-        end_rows = int(vm.manifest.active_count)
+        end_rows = _host_int_value(vm.manifest.active_count)
         exec_allocs = end_rows - mid_rows
         print(f"   ├─ Execute : {eval_ms:.2f}ms")
         if exec_allocs > 0:
@@ -2671,7 +2832,8 @@ def run_program_lines_bsp(
         frontier = _committed_ids(jnp.array([int(root_ptr)], dtype=jnp.int32))
         for _ in range(max(1, cycles)):
             if bsp_mode == "intrinsic":
-                vm.ledger, frontier = cycle_intrinsic(vm.ledger, frontier)
+                vm.ledger, frontier_arr = cycle_intrinsic(vm.ledger, frontier.a)
+                frontier = _committed_ids(frontier_arr)
             else:
                 vm.ledger, frontier, _ = cycle_candidates(
                     vm.ledger, frontier, validate_stratum=validate_stratum
@@ -2679,17 +2841,17 @@ def run_program_lines_bsp(
             # SYNC: host wait/flag checks for BSP loop (m1).
             vm.ledger.count.block_until_ready()
             # SYNC: host reads device flags for BSP loop errors (m1).
-            if bool(vm.ledger.corrupt):
+            if _host_bool_value(vm.ledger.corrupt):
                 raise RuntimeError(
                     "CORRUPT: key encoding alias risk (id width exceeded)"
                 )
-            if bool(vm.ledger.oom):
+            if _host_bool_value(vm.ledger.oom):
                 raise RuntimeError("Ledger capacity exceeded during cycle")
-        root_ptr = frontier[0]
+        root_ptr = frontier.a[0]
         # SYNC: host reads for reporting in BSP loop (m1).
-        root_ptr_int = int(root_ptr)
+        root_ptr_int = _host_int_value(root_ptr)
         # SYNC: host reads device counter for reporting (m1).
-        print(f"   ├─ Ledger   : {int(vm.ledger.count)} nodes")
+        print(f"   ├─ Ledger   : {_host_int_value(vm.ledger.count)} nodes")
         print(f"   └─ Result  : \033[92m{vm.decode(_ledger_id(root_ptr_int))}\033[0m")
     return vm
 

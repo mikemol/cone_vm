@@ -34,8 +34,8 @@ def test_arena_denotation_invariance_random_suite():
 def test_arena_decode_hides_ids_by_default():
     vm = pv.PrismVM_BSP_Legacy()
     root_ptr = vm.parse(harness.tokenize("(mul zero zero)"))
-    no_ids = vm.decode(int(root_ptr))
-    with_ids = vm.decode(int(root_ptr), show_ids=True)
+    no_ids = vm.decode(root_ptr)
+    with_ids = vm.decode(root_ptr, show_ids=True)
     assert no_ids == "<mul>"
     assert with_ids.startswith("<mul:")
     assert with_ids.endswith(">")
