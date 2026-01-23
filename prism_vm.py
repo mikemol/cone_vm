@@ -665,13 +665,6 @@ def emit_candidates(ledger, frontier_ids):
 
     return CandidateBuffer(enabled=enabled, opcode=opcode, arg1=arg1, arg2=arg2)
 
-def _candidate_perm(enabled):
-    enabled = enabled.astype(jnp.int32)
-    size = enabled.shape[0]
-    idx = jnp.arange(size, dtype=jnp.int32)
-    sort_key = (1 - enabled) * (size + 1) + idx
-    return jnp.argsort(sort_key).astype(jnp.int32)
-
 def _candidate_indices(enabled):
     size = enabled.shape[0]
     count = jnp.sum(enabled).astype(jnp.int32)
@@ -794,6 +787,8 @@ def commit_stratum(
     a2 = q_prev(_provisional_ids(ledger.arg2[ids])).a
     canon_ids_raw, ledger = intern_nodes(ledger, node_batch(ops, a1, a2))
     canon_ids = _committed_ids(canon_ids_raw)
+    if (validate or _guards_enabled()) and canon_ids.a.shape[0] != count:
+        raise ValueError("Stratum count mismatch in commit_stratum")
 
     def q_map(ids_in: ProvisionalIds) -> CommittedIds:
         mapped = _apply_stratum_q(ids_in, stratum, canon_ids, "commit_stratum.q")
@@ -811,6 +806,15 @@ def cycle_candidates(
         # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
         # See IMPLEMENTATION_PLAN.md (m2 CNF-2 pipeline).
         raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
+    # SYNC: host read to short-circuit on corrupt ledgers (m1).
+    if _host_bool_value(ledger.corrupt):
+        empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
+        return (
+            ledger,
+            _provisional_ids(frontier_ids.a),
+            (empty, empty, empty),
+            _identity_q,
+        )
     num_frontier = frontier_ids.a.shape[0]
     if num_frontier == 0:
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
@@ -1529,9 +1533,10 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         new_arg1 = ledger.arg1
         new_arg2 = ledger.arg2
 
-        write_idx = jnp.where(is_new_mask, write_start + offsets, jnp.int32(-1))
-        valid_w = write_idx >= 0
-        safe_w = jnp.where(valid_w, write_idx, jnp.int32(new_opcode.shape[0]))
+        valid_w = is_new_mask
+        safe_w = jnp.where(
+            valid_w, write_start + offsets, jnp.int32(new_opcode.shape[0])
+        )
 
         new_opcode = _scatter_drop(
             new_opcode,
@@ -1556,11 +1561,14 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         new_oom = base_oom
         new_corrupt = base_corrupt
         _guard_max(new_count, max_count, "ledger.count")
-        # NOTE: add a guard vs backing array length if max_count decouples.
+        _guard_max(
+            new_count,
+            jnp.int32(new_opcode.shape[0]),
+            "ledger.backing_array_length",
+        )
 
-        new_pos = jnp.where(is_new_mask, offsets, jnp.int32(-1))
-        valid_new = new_pos >= 0
-        safe_new = jnp.where(valid_new, new_pos, jnp.int32(new_entry_len))
+        valid_new = is_new_mask
+        safe_new = jnp.where(valid_new, offsets, jnp.int32(new_entry_len))
 
         new_entry_b0_sorted = jnp.full_like(s_b0, max_key)
         new_entry_b1_sorted = jnp.full_like(s_b1, max_key)
@@ -1653,6 +1661,10 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
 def _intern_nodes_impl(ledger, batch: NodeBatch):
     # Canonical_i: full key equality; only key-safe normalization belongs here.
     proposed_ops, proposed_a1, proposed_a2 = batch
+    coord_leaf_mask = (proposed_ops == OP_COORD_ZERO) | (proposed_ops == OP_COORD_ONE)
+    coord_leaf_nonzero = jnp.any(
+        coord_leaf_mask & ((proposed_a1 != 0) | (proposed_a2 != 0))
+    )
     proposed_ops, proposed_a1, proposed_a2 = _canonicalize_nodes(
         proposed_ops, proposed_a1, proposed_a2
     )
@@ -1674,6 +1686,7 @@ def _intern_nodes_impl(ledger, batch: NodeBatch):
         | a1_lo
         | a2_lo
         | op_oob
+        | coord_leaf_nonzero
     )
 
     def _corrupt_return(_):
@@ -1749,8 +1762,8 @@ def _apply_perm_and_swizzle(arena, perm):
     idx2 = jnp.where(live, new_arg2, jnp.int32(0))
     g1 = safe_gather_1d(inv_perm, idx1, "swizzle.arg1")
     g2 = safe_gather_1d(inv_perm, idx2, "swizzle.arg2")
-    swizzled_arg1 = jnp.where(new_arg1 != 0, g1, 0)
-    swizzled_arg2 = jnp.where(new_arg2 != 0, g2, 0)
+    swizzled_arg1 = jnp.where(live & (new_arg1 != 0), g1, 0)
+    swizzled_arg2 = jnp.where(live & (new_arg2 != 0), g2, 0)
     # NOTE: value-bound guards for swizzled args in test mode are deferred to
     # IMPLEMENTATION_PLAN.md.
     # Swizzle is renormalization only; denotation must not change (plan).
@@ -2105,18 +2118,17 @@ def op_interact(arena):
     new_a2 = jnp.where(spawn_mask, 0, new_a2)
 
     # Scatter-create the spawned add nodes only where mask_suc is true.
-    idxs = jnp.where(spawn_mask, new_add_idx, jnp.int32(-1))
     a1_for_spawn = jnp.where(spawn_mask, a1, jnp.int32(0))
     grandchild_x = safe_gather_1d(a1, a1_for_spawn, "op_interact.grandchild_x")
-    payload_op = jnp.full_like(idxs, OP_ADD)
+    payload_op = jnp.full_like(new_add_idx, OP_ADD)
     payload_a1_raw = jnp.where(spawn_mask, grandchild_x, jnp.int32(0))
     payload_a2_raw = jnp.where(spawn_mask, a2, jnp.int32(0))
     payload_swap = payload_a2_raw < payload_a1_raw
     payload_a1 = jnp.where(payload_swap, payload_a2_raw, payload_a1_raw)
     payload_a2 = jnp.where(payload_swap, payload_a1_raw, payload_a2_raw)
 
-    valid = idxs >= 0
-    idxs2 = jnp.where(valid, idxs, cap)
+    valid = spawn_mask
+    idxs2 = jnp.where(valid, new_add_idx, cap)
     # idxs2 uses cap as a drop sentinel for _scatter_drop (see helper note).
 
     final_ops = _scatter_drop(
@@ -2150,97 +2162,109 @@ def op_interact(arena):
 def cycle_intrinsic(ledger, frontier_ids):
     # m1 evaluator: intrinsic rewrite steps on Ledger (CNF-2 gated off).
     # See IMPLEMENTATION_PLAN.md (m1 intrinsic evaluator).
-    def _peel_one(ptr):
-        def cond(state):
-            curr, _ = state
-            return ledger.opcode[curr] == OP_SUC
+    def _skip(_):
+        return ledger, frontier_ids
 
-        def body(state):
-            curr, depth = state
-            return ledger.arg1[curr], depth + 1
+    def _do(_):
+        ledger_local = ledger
 
-        return lax.while_loop(cond, body, (ptr, jnp.int32(0)))
+        def _peel_one(ptr):
+            def cond(state):
+                curr, _ = state
+                return ledger_local.opcode[curr] == OP_SUC
 
-    base_ids, depths = jax.vmap(_peel_one)(frontier_ids)
+            def body(state):
+                curr, depth = state
+                return ledger_local.arg1[curr], depth + 1
 
-    t_ops = ledger.opcode[base_ids]
-    t_a1 = ledger.arg1[base_ids]
-    t_a2 = ledger.arg2[base_ids]
-    op_a1 = ledger.opcode[t_a1]
-    op_a2 = ledger.opcode[t_a2]
-    is_add = t_ops == OP_ADD
-    is_mul = t_ops == OP_MUL
-    is_zero_a1 = op_a1 == OP_ZERO
-    is_zero_a2 = op_a2 == OP_ZERO
-    is_suc_a1 = op_a1 == OP_SUC
-    is_suc_a2 = op_a2 == OP_SUC
-    is_add_suc = is_add & (is_suc_a1 | is_suc_a2)
-    is_mul_suc = is_mul & (is_suc_a1 | is_suc_a2)
-    is_add_zero = is_add & (is_zero_a1 | is_zero_a2)
-    is_mul_zero = is_mul & (is_zero_a1 | is_zero_a2)
-    is_add_suc = is_add_suc & (~is_add_zero)
-    is_mul_suc = is_mul_suc & (~is_mul_zero)
-    zero_on_a1 = is_zero_a1
-    zero_on_a2 = (~is_zero_a1) & is_zero_a2
-    zero_other = jnp.where(zero_on_a1, t_a2, t_a1)
+            return lax.while_loop(cond, body, (ptr, jnp.int32(0)))
 
-    suc_on_a1 = is_suc_a1
-    suc_on_a2 = (~is_suc_a1) & is_suc_a2
-    suc_node = jnp.where(suc_on_a1, t_a1, t_a2)
-    val_x = ledger.arg1[suc_node]
-    val_y = jnp.where(suc_on_a1, t_a2, t_a1)
+        base_ids, depths = jax.vmap(_peel_one)(frontier_ids)
 
-    l1_ops = jnp.zeros_like(t_ops)
-    l1_a1 = jnp.zeros_like(t_a1)
-    l1_a2 = jnp.zeros_like(t_a2)
-    l1_ops = jnp.where(is_add_suc, OP_ADD, l1_ops)
-    l1_a1 = jnp.where(is_add_suc, val_x, l1_a1)
-    l1_a2 = jnp.where(is_add_suc, val_y, l1_a2)
-    l1_ops = jnp.where(is_mul_suc, OP_MUL, l1_ops)
-    l1_a1 = jnp.where(is_mul_suc, val_x, l1_a1)
-    l1_a2 = jnp.where(is_mul_suc, val_y, l1_a2)
+        t_ops = ledger_local.opcode[base_ids]
+        t_a1 = ledger_local.arg1[base_ids]
+        t_a2 = ledger_local.arg2[base_ids]
+        op_a1 = ledger_local.opcode[t_a1]
+        op_a2 = ledger_local.opcode[t_a2]
+        is_add = t_ops == OP_ADD
+        is_mul = t_ops == OP_MUL
+        is_zero_a1 = op_a1 == OP_ZERO
+        is_zero_a2 = op_a2 == OP_ZERO
+        is_suc_a1 = op_a1 == OP_SUC
+        is_suc_a2 = op_a2 == OP_SUC
+        is_add_suc = is_add & (is_suc_a1 | is_suc_a2)
+        is_mul_suc = is_mul & (is_suc_a1 | is_suc_a2)
+        is_add_zero = is_add & (is_zero_a1 | is_zero_a2)
+        is_mul_zero = is_mul & (is_zero_a1 | is_zero_a2)
+        is_add_suc = is_add_suc & (~is_add_zero)
+        is_mul_suc = is_mul_suc & (~is_mul_zero)
+        zero_on_a1 = is_zero_a1
+        zero_on_a2 = (~is_zero_a1) & is_zero_a2
+        zero_other = jnp.where(zero_on_a1, t_a2, t_a1)
 
-    l1_ids, ledger = intern_nodes(ledger, node_batch(l1_ops, l1_a1, l1_a2))
+        suc_on_a1 = is_suc_a1
+        suc_on_a2 = (~is_suc_a1) & is_suc_a2
+        suc_node = jnp.where(suc_on_a1, t_a1, t_a2)
+        val_x = ledger_local.arg1[suc_node]
+        val_y = jnp.where(suc_on_a1, t_a2, t_a1)
 
-    l2_ops = jnp.zeros_like(t_ops)
-    l2_a1 = jnp.zeros_like(t_a1)
-    l2_a2 = jnp.zeros_like(t_a2)
-    l2_ops = jnp.where(is_add_suc, OP_SUC, l2_ops)
-    l2_a1 = jnp.where(is_add_suc, l1_ids, l2_a1)
-    l2_ops = jnp.where(is_mul_suc, OP_ADD, l2_ops)
-    l2_a1 = jnp.where(is_mul_suc, val_y, l2_a1)
-    l2_a2 = jnp.where(is_mul_suc, l1_ids, l2_a2)
+        l1_ops = jnp.zeros_like(t_ops)
+        l1_a1 = jnp.zeros_like(t_a1)
+        l1_a2 = jnp.zeros_like(t_a2)
+        l1_ops = jnp.where(is_add_suc, OP_ADD, l1_ops)
+        l1_a1 = jnp.where(is_add_suc, val_x, l1_a1)
+        l1_a2 = jnp.where(is_add_suc, val_y, l1_a2)
+        l1_ops = jnp.where(is_mul_suc, OP_MUL, l1_ops)
+        l1_a1 = jnp.where(is_mul_suc, val_x, l1_a1)
+        l1_a2 = jnp.where(is_mul_suc, val_y, l1_a2)
 
-    l2_ids, ledger = intern_nodes(ledger, node_batch(l2_ops, l2_a1, l2_a2))
+        l1_ids, ledger_local = intern_nodes(
+            ledger_local, node_batch(l1_ops, l1_a1, l1_a2)
+        )
 
-    base_next = base_ids
-    base_next = jnp.where(is_add_zero, zero_other, base_next)
-    base_next = jnp.where(is_mul_zero, jnp.int32(ZERO_PTR), base_next)
-    base_next = jnp.where(is_add_suc, l2_ids, base_next)
-    base_next = jnp.where(is_mul_suc, l2_ids, base_next)
-    changed = base_next != base_ids
-    wrap_depth = jnp.where(changed, depths, jnp.int32(0))
-    wrap_child = jnp.where(changed, base_next, frontier_ids)
+        l2_ops = jnp.zeros_like(t_ops)
+        l2_a1 = jnp.zeros_like(t_a1)
+        l2_a2 = jnp.zeros_like(t_a2)
+        l2_ops = jnp.where(is_add_suc, OP_SUC, l2_ops)
+        l2_a1 = jnp.where(is_add_suc, l1_ids, l2_a1)
+        l2_ops = jnp.where(is_mul_suc, OP_ADD, l2_ops)
+        l2_a1 = jnp.where(is_mul_suc, val_y, l2_a1)
+        l2_a2 = jnp.where(is_mul_suc, l1_ids, l2_a2)
 
-    def wrap_cond(state):
-        depth, _, led = state
-        return jnp.any((depth > 0) & (~led.oom))
+        l2_ids, ledger_local = intern_nodes(
+            ledger_local, node_batch(l2_ops, l2_a1, l2_a2)
+        )
 
-    def wrap_body(state):
-        depth, child, led = state
-        to_wrap = (depth > 0) & (~led.oom)
-        ops = jnp.where(to_wrap, jnp.int32(OP_SUC), jnp.int32(0))
-        a1 = jnp.where(to_wrap, child, jnp.int32(0))
-        a2 = jnp.zeros_like(a1)
-        new_ids, led = intern_nodes(led, node_batch(ops, a1, a2))
-        child = jnp.where(to_wrap, new_ids, child)
-        depth = depth - to_wrap.astype(jnp.int32)
-        return depth, child, led
+        base_next = base_ids
+        base_next = jnp.where(is_add_zero, zero_other, base_next)
+        base_next = jnp.where(is_mul_zero, jnp.int32(ZERO_PTR), base_next)
+        base_next = jnp.where(is_add_suc, l2_ids, base_next)
+        base_next = jnp.where(is_mul_suc, l2_ids, base_next)
+        changed = base_next != base_ids
+        wrap_depth = jnp.where(changed, depths, jnp.int32(0))
+        wrap_child = jnp.where(changed, base_next, frontier_ids)
 
-    _, wrap_child, ledger = lax.while_loop(
-        wrap_cond, wrap_body, (wrap_depth, wrap_child, ledger)
-    )
-    return ledger, wrap_child
+        def wrap_cond(state):
+            depth, _, led = state
+            return jnp.any((depth > 0) & (~led.oom))
+
+        def wrap_body(state):
+            depth, child, led = state
+            to_wrap = (depth > 0) & (~led.oom)
+            ops = jnp.where(to_wrap, jnp.int32(OP_SUC), jnp.int32(0))
+            a1 = jnp.where(to_wrap, child, jnp.int32(0))
+            a2 = jnp.zeros_like(a1)
+            new_ids, led = intern_nodes(led, node_batch(ops, a1, a2))
+            child = jnp.where(to_wrap, new_ids, child)
+            depth = depth - to_wrap.astype(jnp.int32)
+            return depth, child, led
+
+        _, wrap_child, ledger_local = lax.while_loop(
+            wrap_cond, wrap_body, (wrap_depth, wrap_child, ledger_local)
+        )
+        return ledger_local, wrap_child
+
+    return lax.cond(ledger.corrupt, _skip, _do, operand=None)
 
 def cycle(
     arena,
