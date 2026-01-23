@@ -39,7 +39,7 @@ def test_coord_xor_parity_cancel():
 
 def test_coord_leaf_requires_zero_args():
     ledger = pv.init_ledger()
-    with pytest.raises(RuntimeError, match="canonicalize.zero_args"):
+    with pytest.raises(RuntimeError, match="canonicalize.coord_leaf_args"):
         ids, _ = pv.intern_nodes(
             ledger,
             jnp.array([pv.OP_COORD_ZERO, pv.OP_COORD_ZERO], dtype=jnp.int32),
