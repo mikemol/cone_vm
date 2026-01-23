@@ -132,16 +132,19 @@ Therefore, the id bound is a semantic invariant, not a memory limit.
 
 ### Representational Cap (Hard Semantic Invariant)
 
-Define:
+Define (naming is capacity vs legal id):
 
-- `MAX_NODES = 65535`
-- `MAX_ID = 65534`
+- `MAX_NODES = 65535` (backing array length / capacity)
+- `MAX_ID = 65534` (max legal id; `MAX_NODES - 1`)
+- `MAX_COUNT = MAX_ID + 1` (next-free upper bound; equals capacity)
 - `id = 0` reserved for `NULL`
 - `id = 1` reserved for `ZERO`
 
 Invariant:
 
-All reachable ids used in key encoding must satisfy `id <= MAX_ID`.
+- All reachable ids used in key encoding must satisfy `id <= MAX_ID`.
+- `ledger.count` is a next-free pointer and may equal `MAX_COUNT` (full).
+- Any allocation that would make `count > MAX_COUNT` is CORRUPT.
 
 Violating this invariant would cause key aliasing and destroy univalence.
 
@@ -157,7 +160,7 @@ To maintain determinism and avoid undefined behavior in JIT-compiled code:
 Device-side (checked packing / interning):
 
 - If any of the following occur:
-  - `count > MAX_ID`
+  - `count > MAX_COUNT`
   - `a1 > MAX_ID`
   - `a2 > MAX_ID`
 - Then:
@@ -243,6 +246,8 @@ Define a shared denotation interface used for cross-engine comparisons:
 - Homomorphic projection: define `q(provisional_node) -> canonical_id` and
   compare denotations only after projection; evaluator steps must commute with
   `q` up to canonical rewrite (see `in/in-16.md`).
+- Normal-form reporting: `pretty` should return tagged outcomes (e.g.,
+  `("ok", decoded)`, `("oom", ...)`, `("corrupt", ...)`, `("timeout", steps)`).
 
 ## Locked Decisions
 - Read model backend (m1): keep the current ordered index (sorted lanes +
@@ -271,8 +276,9 @@ Tests (before implementation):
 - Pytest: `test_ledger_full_key_equality` (expected: hash collision does not merge distinct nodes).
 - Pytest: `test_key_width_no_alias` (null: distinct child ids never alias in key encoding).
 - Pytest: `test_intern_corrupt_flag_trips` (expected: corrupt flag is set and host raises).
-- Pytest: `test_intern_nodes_early_out_on_oom_returns_zero_ids` (null: no mutation when invalid).
-- Pytest: `test_intern_nodes_early_out_on_corrupt_returns_zero_ids` (null: no mutation when invalid).
+- Pytest: `test_intern_nodes_early_out_on_oom_returns_zero_ids` (null: no mutation; count/key prefix unchanged).
+- Pytest: `test_intern_nodes_early_out_on_corrupt_returns_zero_ids` (null: no mutation; count/key prefix unchanged).
+- Pytest: `test_corrupt_is_sticky_and_non_mutating` (expected: corrupt blocks future interns; no mutation).
 - Pytest: `test_gather_guard_negative_index_raises` (expected: guarded gather trips on idx < 0).
 - Pytest: `test_gather_guard_oob_raises` (expected: guarded gather trips on idx >= size).
 - Pytest: `test_gather_guard_valid_indices_noop` (null: valid gather remains intact).
@@ -288,7 +294,8 @@ Tasks:
 - Add a canonicalize-before-pack hook for any derived representations.
 - Guard against truncation aliasing (m1 uses hard-cap mode).
 - Enforce `MAX_NODES = 65535`, define `MAX_ID = 65534`, reserve `0/1` for
-  NULL/ZERO, and hard-trap on `count > MAX_ID` before any allocation or intern.
+  NULL/ZERO, and hard-trap on `count > MAX_COUNT` (lazy on allocation; eager if
+  count already exceeds the bound).
 - Implement a deterministic JAX trap:
   - Maintain a `corrupt` flag (or `oom`) in the interner state.
   - In checked packing, set `corrupt` on bounds violations (`a1/a2 > MAX_ID`)
@@ -318,6 +325,7 @@ Objective: enforce fixed-arity rewrite semantics and explicit strata discipline.
 
 Tests (before implementation):
 - Pytest: `test_cnf2_fixed_arity` (expected: exactly 2 candidate slots per site).
+- Pytest: `test_cnf2_slot_layout_indices` (expected: slot0 at `2*i`, slot1 at `2*i+1`; compaction preserves slot0 mapping).
 - Pytest: `test_candidate_compaction_enabled_only` (null: disabled slots dropped).
 - Pytest: `test_candidate_intern_sees_only_enabled` (expected: disabled slots
   are never interned).
@@ -345,6 +353,7 @@ Tests (before implementation):
   prior strata).
 - Pytest: `test_stratum_commit_projects_q` (expected: provisional nodes map to
   canonical ids and swizzle is stable).
+- Pytest: `test_commit_stratum_count_mismatch_fails` (expected: guard trips or corrupt flag is set deterministically).
 - Program: `tests/strata_basic.txt` (expected: same normal form as baseline).
 - Program null: `tests/strata_noop.txt` (expected: no changes).
 
@@ -381,6 +390,8 @@ Tasks:
 - Representation invariant: coordinates are stored only as interned
   `OP_COORD_*` DAGs; no linear bitstrings/digit arrays are stored anywhere.
 - `OP_COORD_PAIR` is ordered (no commutative canonicalization unless staged).
+- Coordinate normalization is part of canonicalization-before-pack (key-safe
+  normalization), not a semantic rewrite stage.
 - Implement coordinate construction and XOR/parity rewrite rules in the BSP path.
 - Aggregation scope (m4): coordinate lifting applies to `OP_ADD` only; `OP_MUL`
   remains Peano-style until explicitly lifted.
@@ -592,6 +603,7 @@ m1:
 - Baseline vs ledger equivalence on small add-zero suite.
 - Guarded gathers and scatters reject out-of-range indices under test guards.
 - Interning early-outs when `oom` or `corrupt` is set.
+- Corrupt is sticky; stop paths leave `count` and key-prefix arrays unchanged.
 m2:
 - CNF-2 emission is fixed-arity (2 slots per site) with slot1 disabled.
 - Compaction never interns disabled payloads.
@@ -609,7 +621,7 @@ m5:
 ## Next Commit Checklist (m1 landing)
 1. Add `tests/harness.py` with shared parse/run/normalize helpers.
 2. Add tests `test_univalence_no_alias_guard`, `test_add_zero_equivalence_baseline_vs_ledger` (both operand orders), and `test_intern_deterministic_ids_single_engine`.
-3. Implement key-width fix and hard-trap on `count > 65534`.
+3. Implement key-width fix and hard-trap on `count > MAX_COUNT`.
 4. Ensure `cycle_intrinsic` reduces the add-zero cases.
 5. Only then introduce CNF-2 pipeline tests (m2).
 
@@ -634,6 +646,7 @@ Unit tests (ordered by dependency):
 - Alpha-equivalence collapse (xfail until lambda encoding exists).
 - Coordinate parity normalization (pointer equality for canonical coordinates).
 - CNF-2 fixed arity: two candidate slots per rewrite site.
+- CNF-2 slot layout indices are stable (slot0/slot1 mapping).
 - 2:1 denotation invariance once swizzle is mandatory.
 
 Integration tests:
