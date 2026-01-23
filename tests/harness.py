@@ -5,6 +5,9 @@ import jax.numpy as jnp
 import prism_vm as pv
 
 TOKEN_RE = re.compile(r"\(|\)|[a-z]+")
+STATUS_CONVERGED = "converged"
+STATUS_BUDGET_EXHAUSTED = "budget_exhausted"
+STATUS_ERROR = "error"
 
 
 def tokenize(expr):
@@ -16,80 +19,206 @@ def parse_expr(vm, expr):
     return vm.parse(tokens)
 
 
-def denote_baseline(expr, vm=None):
+def normalize_baseline(expr, max_steps=64, vm=None):
     vm = vm or pv.PrismVM()
     ptr = parse_expr(vm, expr)
-    res_ptr = vm.eval(ptr)
-    return vm, int(res_ptr)
-
-
-def pretty_baseline(expr, vm=None):
-    vm, ptr = denote_baseline(expr, vm=vm)
-    return vm.decode(ptr)
-
-
-def _run_intrinsic(ledger, frontier, max_steps):
     last = None
     for _ in range(max_steps):
-        ledger, frontier = pv.cycle_intrinsic(ledger, frontier)
-        ledger.count.block_until_ready()
-        if hasattr(ledger, "corrupt") and bool(ledger.corrupt):
+        ptr = int(vm.eval(ptr))
+        if ptr == last:
+            return STATUS_CONVERGED, vm, ptr
+        last = ptr
+    return STATUS_BUDGET_EXHAUSTED, vm, ptr
+
+
+def run_baseline(expr, max_steps=64, vm=None):
+    try:
+        status, vm, ptr = normalize_baseline(expr, max_steps=max_steps, vm=vm)
+    except Exception:
+        return STATUS_ERROR, None
+    return status, vm.decode(ptr)
+
+
+def denote_baseline(expr, vm=None, max_steps=64):
+    status, vm, ptr = normalize_baseline(expr, max_steps=max_steps, vm=vm)
+    if status != STATUS_CONVERGED:
+        raise AssertionError(
+            f"baseline evaluation did not converge within max_steps={max_steps}"
+        )
+    return vm, ptr
+
+
+def pretty_baseline(expr, vm=None, max_steps=64):
+    status, pretty = run_baseline(expr, max_steps=max_steps, vm=vm)
+    if status != STATUS_CONVERGED:
+        raise AssertionError(
+            f"baseline evaluation did not converge within max_steps={max_steps}"
+        )
+    return pretty
+
+
+def normalize_bsp_intrinsic(expr, max_steps=64, vm=None):
+    vm = vm or pv.PrismVM_BSP()
+    root_ptr = parse_expr(vm, expr)
+    frontier = jnp.array([root_ptr], dtype=jnp.int32)
+    last = None
+    for _ in range(max_steps):
+        vm.ledger, frontier = pv.cycle_intrinsic(vm.ledger, frontier)
+        vm.ledger.count.block_until_ready()
+        if hasattr(vm.ledger, "corrupt") and bool(vm.ledger.corrupt):
             raise RuntimeError(
                 "CORRUPT: key encoding alias risk (id width exceeded)"
             )
         curr = int(frontier[0])
         if curr == last:
-            return ledger, frontier
+            return STATUS_CONVERGED, vm, curr
         last = curr
-    raise AssertionError("BSP intrinsic evaluation did not converge within max_steps")
+    return STATUS_BUDGET_EXHAUSTED, vm, int(frontier[0])
 
 
-def _run_candidates(ledger, frontier, max_steps, validate_stratum=False):
+def run_bsp_intrinsic(expr, max_steps=64, vm=None):
+    try:
+        status, vm, ptr = normalize_bsp_intrinsic(
+            expr, max_steps=max_steps, vm=vm
+        )
+    except Exception:
+        return STATUS_ERROR, None
+    return status, vm.decode(ptr)
+
+
+def denote_bsp_intrinsic(expr, max_steps=64, vm=None):
+    status, vm, ptr = normalize_bsp_intrinsic(expr, max_steps=max_steps, vm=vm)
+    if status != STATUS_CONVERGED:
+        raise AssertionError(
+            f"BSP intrinsic evaluation did not converge within max_steps={max_steps}"
+        )
+    return vm, ptr
+
+
+def pretty_bsp_intrinsic(expr, max_steps=64, vm=None):
+    status, pretty = run_bsp_intrinsic(expr, max_steps=max_steps, vm=vm)
+    if status != STATUS_CONVERGED:
+        raise AssertionError(
+            f"BSP intrinsic evaluation did not converge within max_steps={max_steps}"
+        )
+    return pretty
+
+
+def normalize_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False):
+    vm = vm or pv.PrismVM_BSP()
+    root_ptr = parse_expr(vm, expr)
+    frontier = jnp.array([root_ptr], dtype=jnp.int32)
     last = None
     for _ in range(max_steps):
-        ledger, next_frontier, _ = pv.cycle_candidates(
-            ledger, frontier, validate_stratum=validate_stratum
+        vm.ledger, next_frontier, _ = pv.cycle_candidates(
+            vm.ledger, frontier, validate_stratum=validate_stratum
         )
-        ledger.count.block_until_ready()
-        if hasattr(ledger, "corrupt") and bool(ledger.corrupt):
+        vm.ledger.count.block_until_ready()
+        if hasattr(vm.ledger, "corrupt") and bool(vm.ledger.corrupt):
             raise RuntimeError(
                 "CORRUPT: key encoding alias risk (id width exceeded)"
             )
         if int(next_frontier.shape[0]) == 0:
-            return ledger, frontier
+            return STATUS_CONVERGED, vm, int(frontier[0])
         curr = int(next_frontier[0])
         if curr == last:
-            return ledger, next_frontier
+            return STATUS_CONVERGED, vm, curr
         last = curr
         frontier = next_frontier
-    raise AssertionError("BSP candidate evaluation did not converge within max_steps")
+    return STATUS_BUDGET_EXHAUSTED, vm, int(frontier[0])
 
 
-def denote_bsp_intrinsic(expr, max_steps=64, vm=None):
-    vm = vm or pv.PrismVM_BSP()
-    root_ptr = parse_expr(vm, expr)
-    frontier = jnp.array([root_ptr], dtype=jnp.int32)
-    vm.ledger, frontier = _run_intrinsic(vm.ledger, frontier, max_steps)
-    return vm, int(frontier[0])
-
-
-def pretty_bsp_intrinsic(expr, max_steps=64, vm=None):
-    vm, ptr = denote_bsp_intrinsic(expr, max_steps=max_steps, vm=vm)
-    return vm.decode(ptr)
+def run_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False):
+    try:
+        status, vm, ptr = normalize_bsp_candidates(
+            expr,
+            max_steps=max_steps,
+            vm=vm,
+            validate_stratum=validate_stratum,
+        )
+    except Exception:
+        return STATUS_ERROR, None
+    return status, vm.decode(ptr)
 
 
 def denote_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False):
-    vm = vm or pv.PrismVM_BSP()
-    root_ptr = parse_expr(vm, expr)
-    frontier = jnp.array([root_ptr], dtype=jnp.int32)
-    vm.ledger, frontier = _run_candidates(
-        vm.ledger, frontier, max_steps, validate_stratum=validate_stratum
+    status, vm, ptr = normalize_bsp_candidates(
+        expr, max_steps=max_steps, vm=vm, validate_stratum=validate_stratum
     )
-    return vm, int(frontier[0])
+    if status != STATUS_CONVERGED:
+        raise AssertionError(
+            f"BSP candidates evaluation did not converge within max_steps={max_steps}"
+        )
+    return vm, ptr
 
 
 def pretty_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False):
-    vm, ptr = denote_bsp_candidates(
+    status, pretty = run_bsp_candidates(
         expr, max_steps=max_steps, vm=vm, validate_stratum=validate_stratum
     )
-    return vm.decode(ptr)
+    if status != STATUS_CONVERGED:
+        raise AssertionError(
+            f"BSP candidates evaluation did not converge within max_steps={max_steps}"
+        )
+    return pretty
+
+
+def _assert_converged(status, label, max_steps):
+    if status != STATUS_CONVERGED:
+        raise AssertionError(
+            f"{label} evaluation did not converge within max_steps={max_steps}"
+        )
+
+
+def assert_baseline_equals_bsp_intrinsic(expr, max_steps=64):
+    status_base, pretty_base = run_baseline(expr, max_steps=max_steps)
+    status_bsp, pretty_bsp = run_bsp_intrinsic(expr, max_steps=max_steps)
+    _assert_converged(status_base, "baseline", max_steps)
+    _assert_converged(status_bsp, "bsp_intrinsic", max_steps)
+    assert pretty_base == pretty_bsp
+
+
+def assert_baseline_equals_bsp_candidates(expr, max_steps=64, validate_stratum=False):
+    status_base, pretty_base = run_baseline(expr, max_steps=max_steps)
+    status_bsp, pretty_bsp = run_bsp_candidates(
+        expr, max_steps=max_steps, validate_stratum=validate_stratum
+    )
+    _assert_converged(status_base, "baseline", max_steps)
+    _assert_converged(status_bsp, "bsp_candidates", max_steps)
+    assert pretty_base == pretty_bsp
+
+
+def run_arena(
+    expr,
+    steps=4,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+):
+    vm = pv.PrismVM_BSP_Legacy()
+    root_ptr = vm.parse(tokenize(expr))
+    arena = vm.arena
+    for _ in range(steps):
+        arena, root_ptr = pv.cycle(
+            arena,
+            root_ptr,
+            do_sort=do_sort,
+            use_morton=use_morton,
+            block_size=block_size,
+            l2_block_size=l2_block_size,
+            l1_block_size=l1_block_size,
+            do_global=do_global,
+        )
+    vm.arena = arena
+    return vm.decode(int(root_ptr))
+
+
+def assert_arena_schedule_invariance(expr, steps=4):
+    no_sort = run_arena(expr, steps=steps, do_sort=False, use_morton=False)
+    rank_sort = run_arena(expr, steps=steps, do_sort=True, use_morton=False)
+    morton_sort = run_arena(expr, steps=steps, do_sort=True, use_morton=True)
+    assert no_sort == rank_sort
+    assert no_sort == morton_sort

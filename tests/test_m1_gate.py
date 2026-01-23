@@ -19,7 +19,7 @@ def test_add_zero_equivalence_baseline_vs_ledger():
         "(add (suc zero) zero)",
     ]
     for expr in exprs:
-        assert harness.pretty_baseline(expr) == harness.pretty_bsp_intrinsic(expr)
+        harness.assert_baseline_equals_bsp_intrinsic(expr)
 
 
 def test_intern_deterministic_ids_single_engine():
@@ -104,9 +104,18 @@ def test_corrupt_is_sticky_and_non_mutating():
         jnp.array([pv.MAX_ID + 1], dtype=jnp.int32),
         jnp.array([0], dtype=jnp.int32),
     )
+    ledger.count.block_until_ready()
     assert bool(ledger.corrupt)
     assert int(ids[0]) == 0
     pre_count = int(ledger.count)
+    pre_keys = (
+        ledger.keys_b0_sorted[:pre_count],
+        ledger.keys_b1_sorted[:pre_count],
+        ledger.keys_b2_sorted[:pre_count],
+        ledger.keys_b3_sorted[:pre_count],
+        ledger.keys_b4_sorted[:pre_count],
+        ledger.ids_sorted[:pre_count],
+    )
     ids2, ledger2 = pv.intern_nodes(
         ledger,
         jnp.array([pv.OP_SUC], dtype=jnp.int32),
@@ -117,6 +126,16 @@ def test_corrupt_is_sticky_and_non_mutating():
     assert bool(ledger2.corrupt)
     assert int(ledger2.count) == pre_count
     assert int(jnp.sum(ids2)) == 0
+    post_keys = (
+        ledger2.keys_b0_sorted[:pre_count],
+        ledger2.keys_b1_sorted[:pre_count],
+        ledger2.keys_b2_sorted[:pre_count],
+        ledger2.keys_b3_sorted[:pre_count],
+        ledger2.keys_b4_sorted[:pre_count],
+        ledger2.ids_sorted[:pre_count],
+    )
+    for before, after in zip(pre_keys, post_keys):
+        assert bool(jnp.array_equal(before, after))
 
 
 @pytest.mark.parametrize("bad_a1, bad_a2", [(-1, 0), (0, -1)])

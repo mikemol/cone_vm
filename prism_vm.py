@@ -561,6 +561,7 @@ def _apply_stratum_q(ids, stratum, canon_ids, label):
 def commit_stratum(ledger, stratum, prior_q=None, validate=False):
     if validate and not validate_stratum_no_within_refs(ledger, stratum):
         raise ValueError("Stratum contains within-tier references")
+    # BSP_t barrier + Collapse_h: project provisional ids via q-map.
     q_prev = prior_q or _identity_q
     count = int(jnp.maximum(stratum.count, 0))
     if count == 0:
@@ -959,6 +960,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     is_coord_pair = proposed_ops == OP_COORD_PAIR
 
     has_coord = jnp.any(is_coord_pair)
+    # CD_r/CD_a: normalize coord pairs before packing keys.
 
     def _norm(args):
         proposed_a1, proposed_a2 = args
@@ -1373,6 +1375,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
 
 
 def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
+    # Canonical_i: full key equality; only key-safe normalization belongs here.
     proposed_ops, proposed_a1, proposed_a2 = _canonicalize_nodes(
         proposed_ops, proposed_a1, proposed_a2
     )
@@ -1436,6 +1439,7 @@ def _active_prefix_count(arena):
     return size if count > size else count
 
 def _apply_perm_and_swizzle(arena, perm):
+    # BSP_s renorm: layout-only; must commute with q/denote.
     inv_perm = _invert_perm(perm)
     new_ops = arena.opcode[perm]
     new_arg1 = arena.arg1[perm]

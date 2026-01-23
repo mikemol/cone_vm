@@ -114,3 +114,31 @@ def test_coord_norm_confluent_small():
     norm_xor, ledger = pv.coord_norm(ledger, xor_id)
     norm_zero, ledger = pv.coord_norm(ledger, zero_id)
     assert int(norm_xor) == int(norm_zero)
+
+
+def test_coord_norm_commutes_with_xor():
+    _require_coord_norm()
+    _require_coord_xor()
+    ledger = pv.init_ledger()
+    one_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ONE)
+    zero_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ZERO)
+    pair_a_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
+        jnp.array([one_id], dtype=jnp.int32),
+        jnp.array([zero_id], dtype=jnp.int32),
+    )
+    pair_b_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
+        jnp.array([zero_id], dtype=jnp.int32),
+        jnp.array([one_id], dtype=jnp.int32),
+    )
+    pair_a = int(pair_a_ids[0])
+    pair_b = int(pair_b_ids[0])
+    xor_raw, ledger = pv.coord_xor(ledger, pair_a, pair_b)
+    norm_raw, ledger = pv.coord_norm(ledger, xor_raw)
+    norm_left, ledger = pv.coord_norm(ledger, pair_a)
+    norm_right, ledger = pv.coord_norm(ledger, pair_b)
+    xor_norm, ledger = pv.coord_xor(ledger, norm_left, norm_right)
+    assert int(norm_raw) == int(xor_norm)

@@ -118,6 +118,7 @@ CDₐ and CDᵣ commute **iff** coordinate normalization is:
 - (m4) `tests/test_coord_ops.py::test_coord_xor_parity_cancel`
 - (m4) `tests/test_coord_ops.py::test_coord_norm_idempotent`
 - (m4) `tests/test_coord_ops.py::test_coord_norm_confluent_small`
+- (m4) `tests/test_coord_ops.py::test_coord_norm_commutes_with_xor`
 - (m4) `tests/test_coord_norm_probe.py::test_coord_norm_probe_only_runs_for_pairs`
 - (m4) `tests/test_coord_norm_probe.py::test_coord_norm_probe_skips_non_coord_batch`
 - (m4) `tests/test_coord_batch.py::test_coord_xor_batch_uses_single_intern_call`
