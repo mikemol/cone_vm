@@ -1163,6 +1163,100 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         new_ledger = ledger._replace(corrupt=jnp.array(True, dtype=jnp.bool_))
         return zero_ids, new_ledger
 
+    # Helper defined before _allocate to avoid JAX tracing scoping ambiguity.
+    def _merge_sorted_keys(
+        old_b0,
+        old_b1,
+        old_b2,
+        old_b3,
+        old_b4,
+        old_ids,
+        old_count,
+        new_b0,
+        new_b1,
+        new_b2,
+        new_b3,
+        new_b4,
+        new_ids,
+        new_items,
+    ):
+        out_b0 = jnp.full_like(old_b0, max_key)
+        out_b1 = jnp.full_like(old_b1, max_key)
+        out_b2 = jnp.full_like(old_b2, max_key)
+        out_b3 = jnp.full_like(old_b3, max_key)
+        out_b4 = jnp.full_like(old_b4, max_key)
+        out_ids = jnp.zeros_like(old_ids)
+        total = old_count + new_items
+
+        def body(k, state):
+            i, j, b0, b1, b2, b3, b4, ids = state
+            old_valid = i < old_count
+            new_valid = j < new_items
+            safe_i = jnp.where(old_valid, i, 0)
+            safe_j = jnp.where(new_valid, j, 0)
+
+            old0 = jnp.where(old_valid, old_b0[safe_i], max_key)
+            old1 = jnp.where(old_valid, old_b1[safe_i], max_key)
+            old2 = jnp.where(old_valid, old_b2[safe_i], max_key)
+            old3 = jnp.where(old_valid, old_b3[safe_i], max_key)
+            old4 = jnp.where(old_valid, old_b4[safe_i], max_key)
+
+            new0 = jnp.where(new_valid, new_b0[safe_j], max_key)
+            new1 = jnp.where(new_valid, new_b1[safe_j], max_key)
+            new2 = jnp.where(new_valid, new_b2[safe_j], max_key)
+            new3 = jnp.where(new_valid, new_b3[safe_j], max_key)
+            new4 = jnp.where(new_valid, new_b4[safe_j], max_key)
+
+            new_less = _lex_less(
+                new0,
+                new1,
+                new2,
+                new3,
+                new4,
+                old0,
+                old1,
+                old2,
+                old3,
+                old4,
+            )
+            take_new = jnp.where(old_valid & new_valid, new_less, new_valid)
+
+            picked0 = jnp.where(take_new, new0, old0)
+            picked1 = jnp.where(take_new, new1, old1)
+            picked2 = jnp.where(take_new, new2, old2)
+            picked3 = jnp.where(take_new, new3, old3)
+            picked4 = jnp.where(take_new, new4, old4)
+
+            old_id = jnp.where(old_valid, old_ids[safe_i], jnp.int32(0))
+            new_id = jnp.where(new_valid, new_ids[safe_j], jnp.int32(0))
+            picked_id = jnp.where(take_new, new_id, old_id)
+
+            b0 = b0.at[k].set(picked0)
+            b1 = b1.at[k].set(picked1)
+            b2 = b2.at[k].set(picked2)
+            b3 = b3.at[k].set(picked3)
+            b4 = b4.at[k].set(picked4)
+            ids = ids.at[k].set(picked_id)
+
+            i = jnp.where(take_new, i, i + 1)
+            j = jnp.where(take_new, j + 1, j)
+            return (i, j, b0, b1, b2, b3, b4, ids)
+
+        init_state = (
+            jnp.int32(0),
+            jnp.int32(0),
+            out_b0,
+            out_b1,
+            out_b2,
+            out_b3,
+            out_b4,
+            out_ids,
+        )
+        _, _, out_b0, out_b1, out_b2, out_b3, out_b4, out_ids = lax.fori_loop(
+            0, total, body, init_state
+        )
+        return out_b0, out_b1, out_b2, out_b3, out_b4, out_ids
+
     def _allocate(_):
         # Allocate new ids (subject to capacity) and write node payloads.
         spawn = is_new.astype(jnp.int32)
@@ -1306,100 +1400,6 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
             corrupt=new_corrupt,
         )
         return final_ids, new_ledger
-
-    # Local helper kept below _allocate for locality; name is resolved at call time.
-    def _merge_sorted_keys(
-        old_b0,
-        old_b1,
-        old_b2,
-        old_b3,
-        old_b4,
-        old_ids,
-        old_count,
-        new_b0,
-        new_b1,
-        new_b2,
-        new_b3,
-        new_b4,
-        new_ids,
-        new_items,
-    ):
-        out_b0 = jnp.full_like(old_b0, max_key)
-        out_b1 = jnp.full_like(old_b1, max_key)
-        out_b2 = jnp.full_like(old_b2, max_key)
-        out_b3 = jnp.full_like(old_b3, max_key)
-        out_b4 = jnp.full_like(old_b4, max_key)
-        out_ids = jnp.zeros_like(old_ids)
-        total = old_count + new_items
-
-        def body(k, state):
-            i, j, b0, b1, b2, b3, b4, ids = state
-            old_valid = i < old_count
-            new_valid = j < new_items
-            safe_i = jnp.where(old_valid, i, 0)
-            safe_j = jnp.where(new_valid, j, 0)
-
-            old0 = jnp.where(old_valid, old_b0[safe_i], max_key)
-            old1 = jnp.where(old_valid, old_b1[safe_i], max_key)
-            old2 = jnp.where(old_valid, old_b2[safe_i], max_key)
-            old3 = jnp.where(old_valid, old_b3[safe_i], max_key)
-            old4 = jnp.where(old_valid, old_b4[safe_i], max_key)
-
-            new0 = jnp.where(new_valid, new_b0[safe_j], max_key)
-            new1 = jnp.where(new_valid, new_b1[safe_j], max_key)
-            new2 = jnp.where(new_valid, new_b2[safe_j], max_key)
-            new3 = jnp.where(new_valid, new_b3[safe_j], max_key)
-            new4 = jnp.where(new_valid, new_b4[safe_j], max_key)
-
-            new_less = _lex_less(
-                new0,
-                new1,
-                new2,
-                new3,
-                new4,
-                old0,
-                old1,
-                old2,
-                old3,
-                old4,
-            )
-            take_new = jnp.where(old_valid & new_valid, new_less, new_valid)
-
-            picked0 = jnp.where(take_new, new0, old0)
-            picked1 = jnp.where(take_new, new1, old1)
-            picked2 = jnp.where(take_new, new2, old2)
-            picked3 = jnp.where(take_new, new3, old3)
-            picked4 = jnp.where(take_new, new4, old4)
-
-            old_id = jnp.where(old_valid, old_ids[safe_i], jnp.int32(0))
-            new_id = jnp.where(new_valid, new_ids[safe_j], jnp.int32(0))
-            picked_id = jnp.where(take_new, new_id, old_id)
-
-            b0 = b0.at[k].set(picked0)
-            b1 = b1.at[k].set(picked1)
-            b2 = b2.at[k].set(picked2)
-            b3 = b3.at[k].set(picked3)
-            b4 = b4.at[k].set(picked4)
-            ids = ids.at[k].set(picked_id)
-
-            i = jnp.where(take_new, i, i + 1)
-            j = jnp.where(take_new, j + 1, j)
-            return (i, j, b0, b1, b2, b3, b4, ids)
-
-        init_state = (
-            jnp.int32(0),
-            jnp.int32(0),
-            out_b0,
-            out_b1,
-            out_b2,
-            out_b3,
-            out_b4,
-            out_ids,
-        )
-        _, _, out_b0, out_b1, out_b2, out_b3, out_b4, out_ids = lax.fori_loop(
-            0, total, body, init_state
-        )
-        return out_b0, out_b1, out_b2, out_b3, out_b4, out_ids
 
     return lax.cond(overflow, _overflow, _allocate, operand=None)
 
