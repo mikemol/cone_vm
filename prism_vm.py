@@ -553,6 +553,8 @@ def validate_stratum_no_within_refs_jax(ledger, stratum):
     count = jnp.maximum(stratum.count, 0)
     ids = jnp.arange(ledger.arg1.shape[0], dtype=jnp.int32)
     # Mask to live region only; static shape keeps JIT happy while ignoring junk.
+    # NOTE: full-shape scan is an m1 tradeoff; host-slice validation is deferred
+    # to IMPLEMENTATION_PLAN.md.
     live = ids < ledger.count.astype(jnp.int32)
     mask = live & (ids >= start) & (ids < start + count)
     a1 = ledger.arg1[ids]
@@ -1514,6 +1516,8 @@ def _apply_perm_and_swizzle(arena, perm):
     g2 = safe_gather_1d(inv_perm, idx2, "swizzle.arg2")
     swizzled_arg1 = jnp.where(new_arg1 != 0, g1, 0)
     swizzled_arg2 = jnp.where(new_arg2 != 0, g2, 0)
+    # NOTE: value-bound guards for swizzled args in test mode are deferred to
+    # IMPLEMENTATION_PLAN.md.
     # Swizzle is renormalization only; denotation must not change (plan).
     # See IMPLEMENTATION_PLAN.md (m3 denotation invariance).
     _guard_slot0_perm(perm, inv_perm, "swizzle.perm")
