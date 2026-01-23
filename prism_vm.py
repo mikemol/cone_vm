@@ -532,6 +532,42 @@ def validate_stratum_no_within_refs_jax(ledger, stratum):
 def validate_stratum_no_within_refs(ledger, stratum):
     return bool(validate_stratum_no_within_refs_jax(ledger, stratum))
 
+def _identity_q(ids):
+    return ids
+
+
+def _apply_stratum_q(ids, stratum, canon_ids, label):
+    if canon_ids.shape[0] == 0:
+        return ids
+    start = jnp.asarray(stratum.start, dtype=jnp.int32)
+    count = jnp.asarray(canon_ids.shape[0], dtype=jnp.int32)
+    in_range = (ids >= start) & (ids < start + count)
+    idx = jnp.where(in_range, ids - start, jnp.int32(0))
+    mapped = safe_gather_1d(canon_ids, idx, label)
+    return jnp.where(in_range, mapped, ids)
+
+
+def commit_stratum(ledger, stratum, prior_q=None, validate=False):
+    if validate and not validate_stratum_no_within_refs(ledger, stratum):
+        raise ValueError("Stratum contains within-tier references")
+    q_prev = prior_q or _identity_q
+    count = int(jnp.maximum(stratum.count, 0))
+    if count == 0:
+        canon_ids = jnp.zeros((0,), dtype=jnp.int32)
+        return ledger, canon_ids, q_prev
+    start = jnp.asarray(stratum.start, dtype=jnp.int32)
+    ids = start + jnp.arange(count, dtype=jnp.int32)
+    ops = ledger.opcode[ids]
+    a1 = q_prev(ledger.arg1[ids])
+    a2 = q_prev(ledger.arg2[ids])
+    canon_ids, ledger = intern_nodes(ledger, ops, a1, a2)
+
+    def q_map(ids_in):
+        mapped = _apply_stratum_q(ids_in, stratum, canon_ids, "commit_stratum.q")
+        return q_prev(mapped)
+
+    return ledger, canon_ids, q_map
+
 def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     if not _cnf2_enabled():
         # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
@@ -629,13 +665,16 @@ def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     stratum2 = Stratum(
         start=start2, count=(ledger2.count - start2).astype(jnp.int32)
     )
-    if validate_stratum:
-        if not validate_stratum_no_within_refs(ledger0, stratum0):
-            raise ValueError("Stratum contains within-tier references")
-        if not validate_stratum_no_within_refs(ledger1, stratum1):
-            raise ValueError("Stratum contains within-tier references")
-        if not validate_stratum_no_within_refs(ledger2, stratum2):
-            raise ValueError("Stratum contains within-tier references")
+    ledger2, _, q_map = commit_stratum(
+        ledger2, stratum0, validate=validate_stratum
+    )
+    ledger2, _, q_map = commit_stratum(
+        ledger2, stratum1, prior_q=q_map, validate=validate_stratum
+    )
+    ledger2, _, q_map = commit_stratum(
+        ledger2, stratum2, prior_q=q_map, validate=validate_stratum
+    )
+    next_frontier = q_map(next_frontier)
     return ledger2, next_frontier, (stratum0, stratum1, stratum2)
 
 @jit
