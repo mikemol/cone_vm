@@ -254,6 +254,9 @@ Tests (before implementation):
 - Pytest: `test_ledger_full_key_equality` (expected: hash collision does not merge distinct nodes).
 - Pytest: `test_key_width_no_alias` (null: distinct child ids never alias in key encoding).
 - Pytest: `test_intern_corrupt_flag_trips` (expected: corrupt flag is set and host raises).
+- Pytest: `test_gather_guard_negative_index_raises` (expected: guarded gather trips on idx < 0).
+- Pytest: `test_gather_guard_oob_raises` (expected: guarded gather trips on idx >= size).
+- Pytest: `test_gather_guard_valid_indices_noop` (null: valid gather remains intact).
 - Program: `tests/ledger_univalence.txt` (expected: deterministic canonical ids).
 - Program null: `tests/ledger_noop.txt` (expected: no changes).
 
@@ -328,6 +331,10 @@ Tests (before implementation):
 - Pytest: `test_coord_xor_parity_cancel` (expected: parity cancellation is idempotent).
 - Pytest: `test_coord_norm_idempotent` (expected: canonicalization is stable).
 - Pytest: `test_coord_norm_confluent_small` (expected: small expressions converge).
+- Pytest: `test_coord_norm_probe_only_runs_for_pairs` (expected: probe counts only coord pairs; xfail until batching refactor).
+- Pytest: `test_coord_norm_probe_skips_non_coord_batch` (null: probe stays zero; xfail until batching refactor).
+- Pytest: `test_coord_xor_batch_uses_single_intern_call` (expected: batch path bounds interning; xfail until batching refactor).
+- Pytest: `test_coord_norm_batch_matches_host` (expected: batch path matches host; xfail until batching refactor).
 - Program: `tests/coord_basic.txt` (expected: canonical ids for coordinates).
 - Program null: `tests/coord_noop.txt` (expected: no rewrite for non-coord ops).
 
@@ -527,6 +534,7 @@ m1:
 - Key-byte univalence holds under hard-cap mode (`MAX_ID` checks + corrupt trap).
 - Deterministic interning for identical inputs within a single engine.
 - Baseline vs ledger equivalence on small add-zero suite.
+- Guarded gathers reject out-of-range indices under test guards.
 m2:
 - CNF-2 emission is fixed-arity (2 slots per site) with slot1 disabled.
 - Compaction never interns disabled payloads.
@@ -563,6 +571,7 @@ Unit tests (ordered by dependency):
 - Strata discipline: newly created nodes only reference prior strata.
 - Lossless univalence/dedup (interning returns canonical ids).
 - Key-width aliasing guard (full-key equality, no truncation merges).
+- Gather guard rejects out-of-range indices (test-guard mode).
 - Coordinate parity normalization (pointer equality for canonical coordinates).
 - CNF-2 fixed arity: two candidate slots per rewrite site.
 - 2:1 denotation invariance once swizzle is mandatory.
