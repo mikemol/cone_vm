@@ -1,7 +1,7 @@
 from jax import jit, lax
 import jax
 import jax.numpy as jnp
-from typing import NamedTuple, Dict, Callable, Tuple
+from typing import NamedTuple, Dict, Callable, Tuple, NewType
 import inspect
 import os
 import re
@@ -25,6 +25,23 @@ OP_NAMES = {
     10: "add", 11: "mul", 99: "sort",
     20: "coord_zero", 21: "coord_one", 22: "coord_pair"
 }
+# Pointer domain newtypes (static typing only).
+ManifestPtr = NewType("ManifestPtr", int)
+LedgerId = NewType("LedgerId", int)
+ArenaPtr = NewType("ArenaPtr", int)
+
+
+def _manifest_ptr(value: int) -> ManifestPtr:
+    return ManifestPtr(int(value))
+
+
+def _ledger_id(value: int) -> LedgerId:
+    return LedgerId(int(value))
+
+
+def _arena_ptr(value: int) -> ArenaPtr:
+    return ArenaPtr(int(value))
+
 # NOTE: JAX op dtype normalization (int32) is assumed; tighten if drift appears
 # (see IMPLEMENTATION_PLAN.md).
 
@@ -2266,19 +2283,21 @@ class PrismVM:
         self.active_count_host = int(self.manifest.active_count)
         self.refresh_cache_on_eval = True
         # Trace Cache: (opcode, arg1, arg2) -> ptr
-        self.trace_cache: Dict[Tuple[int, int, int], int] = {}
-        self.canonical_ptrs: Dict[int, int] = {0: 0}
+        self.trace_cache: Dict[Tuple[int, ManifestPtr, ManifestPtr], ManifestPtr] = {}
+        self.canonical_ptrs: Dict[ManifestPtr, ManifestPtr] = {
+            _manifest_ptr(0): _manifest_ptr(0)
+        }
         # Initialize Universe (Seed with ZERO)
-        self._cons_raw(OP_ZERO, 0, 0)
-        self.trace_cache[(OP_ZERO, 0, 0)] = 1
-        self.canonical_ptrs[1] = 1
+        zero_ptr = self._cons_raw(OP_ZERO, _manifest_ptr(0), _manifest_ptr(0))
+        self.trace_cache[(OP_ZERO, _manifest_ptr(0), _manifest_ptr(0))] = zero_ptr
+        self.canonical_ptrs[zero_ptr] = zero_ptr
         self.cache_filled_to = self.active_count_host
 
         self.kernels = {OP_ADD: kernel_add, OP_MUL: kernel_mul}
 
-    def _cons_raw(self, op, a1, a2):
+    def _cons_raw(self, op: int, a1: ManifestPtr, a2: ManifestPtr) -> ManifestPtr:
         """Physical allocation (Device Write)"""
-        a1, a2 = _canonicalize_commutative_host(op, a1, a2)
+        a1_i, a2_i = _canonicalize_commutative_host(op, int(a1), int(a2))
         cap = int(self.manifest.opcode.shape[0])
         if self.active_count_host >= cap:
             self.manifest = self.manifest._replace(
@@ -2289,13 +2308,13 @@ class PrismVM:
         self.active_count_host += 1
         self.manifest = self.manifest._replace(
             opcode=self.manifest.opcode.at[idx].set(op),
-            arg1=self.manifest.arg1.at[idx].set(a1),
-            arg2=self.manifest.arg2.at[idx].set(a2),
+            arg1=self.manifest.arg1.at[idx].set(a1_i),
+            arg2=self.manifest.arg2.at[idx].set(a2_i),
             active_count=jnp.array(self.active_count_host, dtype=jnp.int32)
         )
-        return idx
+        return _manifest_ptr(idx)
 
-    def _refresh_trace_cache(self, start_idx, end_idx):
+    def _refresh_trace_cache(self, start_idx: int, end_idx: int) -> None:
         if end_idx <= start_idx:
             return
         # SYNC: device_get pulls device buffers for host cache refresh (m1).
@@ -2304,59 +2323,64 @@ class PrismVM:
         a1s = jax.device_get(self.manifest.arg1[start_idx:end_idx])
         a2s = jax.device_get(self.manifest.arg2[start_idx:end_idx])
         for offset, (op, a1, a2) in enumerate(zip(ops, a1s, a2s)):
-            ptr = start_idx + offset
+            ptr = _manifest_ptr(start_idx + offset)
             op_i = int(op)
-            a1_i = self._canonical_ptr(int(a1))
-            a2_i = self._canonical_ptr(int(a2))
+            a1_i = int(self._canonical_ptr(_manifest_ptr(a1)))
+            a2_i = int(self._canonical_ptr(_manifest_ptr(a2)))
             a1_i, a2_i = _canonicalize_commutative_host(op_i, a1_i, a2_i)
-            signature = (op_i, a1_i, a2_i)
+            signature = (op_i, _manifest_ptr(a1_i), _manifest_ptr(a2_i))
             if signature not in self.trace_cache:
                 self.trace_cache[signature] = ptr
             self.canonical_ptrs[ptr] = ptr
 
-    def _canonical_ptr(self, ptr):
+    def _canonical_ptr(self, ptr: ManifestPtr) -> ManifestPtr:
         return self.canonical_ptrs.get(ptr, ptr)
 
-    def cons(self, op, a1=0, a2=0):
+    def cons(
+        self,
+        op: int,
+        a1: ManifestPtr = ManifestPtr(0),
+        a2: ManifestPtr = ManifestPtr(0),
+    ) -> ManifestPtr:
         """
         The Smart Allocator.
         1. Checks Cache (Deduplication).
         2. Allocates if new.
         """
-        a1 = self._canonical_ptr(a1)
-        a2 = self._canonical_ptr(a2)
-        a1, a2 = _canonicalize_commutative_host(op, a1, a2)
-        signature = (op, a1, a2)
+        a1_i = int(self._canonical_ptr(a1))
+        a2_i = int(self._canonical_ptr(a2))
+        a1_i, a2_i = _canonicalize_commutative_host(op, a1_i, a2_i)
+        signature = (op, _manifest_ptr(a1_i), _manifest_ptr(a2_i))
         if signature in self.trace_cache:
             return self.trace_cache[signature]
-        ptr = self._cons_raw(op, a1, a2)
+        ptr = self._cons_raw(op, _manifest_ptr(a1_i), _manifest_ptr(a2_i))
         self.trace_cache[signature] = ptr
         self.canonical_ptrs[ptr] = ptr
         return ptr
 
     # --- STATIC ANALYSIS ENGINE ---
-    def analyze_and_optimize(self, ptr):
+    def analyze_and_optimize(self, ptr: ManifestPtr) -> ManifestPtr:
         """
         Examines the IR at `ptr` BEFORE execution.
         Performs trivial reductions (Constant Folding / Identity Elimination).
         """
         ptr = self._canonical_ptr(ptr)
-        ptr_arr = jnp.array(ptr, dtype=jnp.int32)
+        ptr_arr = jnp.array(int(ptr), dtype=jnp.int32)
         opt_ptr, opt_applied = optimize_ptr(self.manifest, ptr_arr)
         # SYNC: host reads device flag for optimization signal (m1).
         if bool(opt_applied):
             print("   [!] Static Analysis: Optimized (add zero x) -> x")
         # SYNC: host reads device scalar for optimized ptr (m1).
-        return int(self._canonical_ptr(int(opt_ptr)))
+        return self._canonical_ptr(_manifest_ptr(int(opt_ptr)))
 
-    def eval(self, ptr):
+    def eval(self, ptr: ManifestPtr) -> ManifestPtr:
         """
         The Hybrid Interpreter.
         1. Static Analysis (Host)
         2. Dispatch (Device)
         """
         ptr = self._canonical_ptr(ptr)
-        ptr_arr = jnp.array(ptr, dtype=jnp.int32)
+        ptr_arr = jnp.array(int(ptr), dtype=jnp.int32)
         prev_count = self.active_count_host
         new_manifest, res_ptr, opt_applied = dispatch_kernel(self.manifest, ptr_arr)
         # SYNC: wait for device result before host state update (m1).
@@ -2373,10 +2397,10 @@ class PrismVM:
         if bool(opt_applied):
             print("   [!] Static Analysis: Optimized (add zero x) -> x")
         # SYNC: host reads device scalar for result ptr (m1).
-        return int(self._canonical_ptr(int(res_ptr)))
+        return self._canonical_ptr(_manifest_ptr(int(res_ptr)))
 
     # --- PARSING & DISPLAY ---
-    def parse(self, tokens):
+    def parse(self, tokens) -> ManifestPtr:
         # Explicit token pops keep parse errors readable for malformed input.
         token = _pop_token(tokens)
         if token == 'zero': return self.cons(OP_ZERO)
@@ -2392,20 +2416,22 @@ class PrismVM:
             return val
         raise ValueError(f"Unknown: {token}")
 
-    def decode(self, ptr):
+    def decode(self, ptr: ManifestPtr) -> str:
         # SYNC: host reads device opcode/args for decoding (m1).
-        op = int(self.manifest.opcode[ptr])
+        ptr_i = int(ptr)
+        op = int(self.manifest.opcode[ptr_i])
         if op == OP_ZERO: return "zero"
-        if op == OP_SUC:  return f"(suc {self.decode(int(self.manifest.arg1[ptr]))})"
+        if op == OP_SUC:
+            return f"(suc {self.decode(_manifest_ptr(self.manifest.arg1[ptr_i]))})"
         if op == OP_ADD:
             return (
-                f"(add {self.decode(int(self.manifest.arg1[ptr]))} "
-                f"{self.decode(int(self.manifest.arg2[ptr]))})"
+                f"(add {self.decode(_manifest_ptr(self.manifest.arg1[ptr_i]))} "
+                f"{self.decode(_manifest_ptr(self.manifest.arg2[ptr_i]))})"
             )
         if op == OP_MUL:
             return (
-                f"(mul {self.decode(int(self.manifest.arg1[ptr]))} "
-                f"{self.decode(int(self.manifest.arg2[ptr]))})"
+                f"(mul {self.decode(_manifest_ptr(self.manifest.arg1[ptr_i]))} "
+                f"{self.decode(_manifest_ptr(self.manifest.arg2[ptr_i]))})"
             )
         return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
 
@@ -2415,26 +2441,28 @@ class PrismVM_BSP_Legacy:
         print("⚡ Prism IR: Initializing BSP Arena (Legacy)...")
         self.arena = init_arena()
 
-    def _alloc(self, op, a1=0, a2=0):
+    def _alloc(
+        self, op: int, a1: ArenaPtr = ArenaPtr(0), a2: ArenaPtr = ArenaPtr(0)
+    ) -> ArenaPtr:
         cap = int(self.arena.opcode.shape[0])
         # SYNC: host reads device scalar for arena count (m1).
         idx = int(self.arena.count)
         if idx >= cap:
             self.arena = self.arena._replace(oom=jnp.array(True, dtype=jnp.bool_))
             raise ValueError("Arena capacity exceeded")
-        a1, a2 = _canonicalize_commutative_host(op, a1, a2)
+        a1_i, a2_i = _canonicalize_commutative_host(op, int(a1), int(a2))
         self.arena = self.arena._replace(
             opcode=self.arena.opcode.at[idx].set(op),
-            arg1=self.arena.arg1.at[idx].set(a1),
-            arg2=self.arena.arg2.at[idx].set(a2),
+            arg1=self.arena.arg1.at[idx].set(a1_i),
+            arg2=self.arena.arg2.at[idx].set(a2_i),
             count=jnp.array(idx + 1, dtype=jnp.int32),
         )
-        return idx
+        return _arena_ptr(idx)
 
-    def parse(self, tokens):
+    def parse(self, tokens) -> ArenaPtr:
         token = _pop_token(tokens)
-        if token == "zero": return self._alloc(OP_ZERO, 0, 0)
-        if token == "suc":  return self._alloc(OP_SUC, self.parse(tokens), 0)
+        if token == "zero": return self._alloc(OP_ZERO)
+        if token == "suc":  return self._alloc(OP_SUC, self.parse(tokens))
         if token in ["add", "mul"]:
             op = OP_ADD if token == "add" else OP_MUL
             a1 = self.parse(tokens)
@@ -2446,13 +2474,17 @@ class PrismVM_BSP_Legacy:
             return val
         raise ValueError(f"Unknown: {token}")
 
-    def decode(self, ptr, show_ids=False):
+    def decode(self, ptr: ArenaPtr, show_ids: bool = False) -> str:
         # SYNC: host reads device opcode/args for decoding (m1).
-        op = int(self.arena.opcode[ptr])
+        ptr_i = int(ptr)
+        op = int(self.arena.opcode[ptr_i])
         if op == OP_ZERO:
             return "zero"
         if op == OP_SUC:
-            return f"(suc {self.decode(int(self.arena.arg1[ptr]), show_ids=show_ids)})"
+            return (
+                f"(suc "
+                f"{self.decode(_arena_ptr(self.arena.arg1[ptr_i]), show_ids=show_ids)})"
+            )
         name = OP_NAMES.get(op, "?")
         if show_ids:
             return f"<{name}:{ptr}>"
@@ -2464,13 +2496,15 @@ class PrismVM_BSP:
         # Canonical Ledger path (univalence + deterministic interning).
         self.ledger = init_ledger()
 
-    def _intern(self, op, a1=0, a2=0):
-        a1, a2 = _canonicalize_commutative_host(op, a1, a2)
+    def _intern(
+        self, op: int, a1: LedgerId = LedgerId(0), a2: LedgerId = LedgerId(0)
+    ) -> LedgerId:
+        a1_i, a2_i = _canonicalize_commutative_host(op, int(a1), int(a2))
         ids, self.ledger = intern_nodes(
             self.ledger,
             jnp.array([op], dtype=jnp.int32),
-            jnp.array([a1], dtype=jnp.int32),
-            jnp.array([a2], dtype=jnp.int32),
+            jnp.array([a1_i], dtype=jnp.int32),
+            jnp.array([a2_i], dtype=jnp.int32),
         )
         # SYNC: host wait/flag checks for BSP interning (m1).
         self.ledger.count.block_until_ready()
@@ -2480,12 +2514,12 @@ class PrismVM_BSP:
         if bool(self.ledger.oom):
             raise ValueError("Ledger capacity exceeded during interning")
         # SYNC: host reads device id for interned node (m1).
-        return int(ids[0])
+        return _ledger_id(ids[0])
 
-    def parse(self, tokens):
+    def parse(self, tokens) -> LedgerId:
         token = _pop_token(tokens)
-        if token == "zero": return self._intern(OP_ZERO, 0, 0)
-        if token == "suc":  return self._intern(OP_SUC, self.parse(tokens), 0)
+        if token == "zero": return self._intern(OP_ZERO)
+        if token == "suc":  return self._intern(OP_SUC, self.parse(tokens))
         if token in ["add", "mul"]:
             op = OP_ADD if token == "add" else OP_MUL
             a1 = self.parse(tokens)
@@ -2497,20 +2531,22 @@ class PrismVM_BSP:
             return val
         raise ValueError(f"Unknown: {token}")
 
-    def decode(self, ptr):
+    def decode(self, ptr: LedgerId) -> str:
         # SYNC: host reads device opcode/args for decoding (m1).
-        op = int(self.ledger.opcode[ptr])
+        ptr_i = int(ptr)
+        op = int(self.ledger.opcode[ptr_i])
         if op == OP_ZERO: return "zero"
-        if op == OP_SUC:  return f"(suc {self.decode(int(self.ledger.arg1[ptr]))})"
+        if op == OP_SUC:
+            return f"(suc {self.decode(_ledger_id(self.ledger.arg1[ptr_i]))})"
         if op == OP_ADD:
             return (
-                f"(add {self.decode(int(self.ledger.arg1[ptr]))} "
-                f"{self.decode(int(self.ledger.arg2[ptr]))})"
+                f"(add {self.decode(_ledger_id(self.ledger.arg1[ptr_i]))} "
+                f"{self.decode(_ledger_id(self.ledger.arg2[ptr_i]))})"
             )
         if op == OP_MUL:
             return (
-                f"(mul {self.decode(int(self.ledger.arg1[ptr]))} "
-                f"{self.decode(int(self.ledger.arg2[ptr]))})"
+                f"(mul {self.decode(_ledger_id(self.ledger.arg1[ptr_i]))} "
+                f"{self.decode(_ledger_id(self.ledger.arg2[ptr_i]))})"
             )
         return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
 
@@ -2541,12 +2577,13 @@ def run_program_lines(lines, vm=None):
         t0 = time.perf_counter()
         tokens = re.findall(r'\(|\)|[a-z]+', inp)
         ir_ptr = vm.parse(tokens)
+        ir_ptr_i = int(ir_ptr)
         parse_ms = (time.perf_counter() - t0) * 1000
         # SYNC: host reads device counters for telemetry (m1).
         mid_rows = int(vm.manifest.active_count)
         ir_allocs = mid_rows - start_rows
         # SYNC: host reads device opcode for telemetry (m1).
-        ir_op = OP_NAMES.get(int(vm.manifest.opcode[ir_ptr]), "?")
+        ir_op = OP_NAMES.get(int(vm.manifest.opcode[ir_ptr_i]), "?")
         print(f"   ├─ IR Build: {ir_op} @ {ir_ptr}")
         if ir_allocs == 0:
             print(f"   ├─ Cache   : \033[96mHIT (No new IR rows)\033[0m")
@@ -2594,7 +2631,7 @@ def run_program_lines_bsp(
             continue
         tokens = re.findall(r"\(|\)|[a-z]+", inp)
         root_ptr = vm.parse(tokens)
-        frontier = jnp.array([root_ptr], dtype=jnp.int32)
+        frontier = jnp.array([int(root_ptr)], dtype=jnp.int32)
         for _ in range(max(1, cycles)):
             if bsp_mode == "intrinsic":
                 vm.ledger, frontier = cycle_intrinsic(vm.ledger, frontier)
@@ -2616,7 +2653,7 @@ def run_program_lines_bsp(
         root_ptr_int = int(root_ptr)
         # SYNC: host reads device counter for reporting (m1).
         print(f"   ├─ Ledger   : {int(vm.ledger.count)} nodes")
-        print(f"   └─ Result  : \033[92m{vm.decode(root_ptr_int)}\033[0m")
+        print(f"   └─ Result  : \033[92m{vm.decode(_ledger_id(root_ptr_int))}\033[0m")
     return vm
 
 def repl(
