@@ -30,6 +30,14 @@ if TYPE_CHECKING:
     assert_type(committed, pv.CommittedIds)
     _ = pv._identity_q(committed)  # type: ignore
 
+    frontier = pv._committed_ids(jnp.array([0], dtype=jnp.int32))
+    led = pv.init_ledger()
+    led2, prov_frontier, _, q_map = pv.cycle_candidates(led, frontier)
+    assert_type(prov_frontier, pv.ProvisionalIds)
+    assert_type(q_map, pv.QMap)
+    committed_frontier = pv.apply_q(q_map, prov_frontier)
+    assert_type(committed_frontier, pv.CommittedIds)
+
     bad_manifest: pv.ManifestPtr = lid  # type: ignore
     bad_ledger: pv.LedgerId = mptr  # type: ignore
     _ = vm.eval(lid)  # type: ignore

@@ -113,9 +113,10 @@ def normalize_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False
     )
     last = None
     for _ in range(max_steps):
-        vm.ledger, next_frontier, _ = pv.cycle_candidates(
+        vm.ledger, next_frontier_prov, _, q_map = pv.cycle_candidates(
             vm.ledger, frontier, validate_stratum=validate_stratum
         )
+        next_frontier = pv.apply_q(q_map, next_frontier_prov)
         vm.ledger.count.block_until_ready()
         if pv.ledger_has_corrupt(vm.ledger):
             raise RuntimeError(

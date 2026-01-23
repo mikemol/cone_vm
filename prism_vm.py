@@ -2,7 +2,7 @@ from jax import jit, lax
 import jax
 import jax.numpy as jnp
 from dataclasses import dataclass
-from typing import NamedTuple, Dict, Callable, Tuple
+from typing import NamedTuple, Dict, Callable, Tuple, Protocol
 import inspect
 import os
 import re
@@ -87,13 +87,14 @@ class CommittedIds:
     a: jnp.ndarray
 
 
-QMap = Callable[[ProvisionalIds], CommittedIds]
+class QMap(Protocol):
+    def __call__(self, ids: ProvisionalIds) -> CommittedIds: ...
 
 
 def _manifest_ptr(value) -> ManifestPtr:
     if isinstance(value, ManifestPtr):
         return value
-    if isinstance(value, (LedgerId, ArenaPtr)):
+    if isinstance(value, (LedgerId, ArenaPtr, ProvisionalIds, CommittedIds)):
         raise TypeError("expected ManifestPtr, got different pointer domain")
     return ManifestPtr(_host_int_value(value))
 
@@ -101,7 +102,7 @@ def _manifest_ptr(value) -> ManifestPtr:
 def _ledger_id(value) -> LedgerId:
     if isinstance(value, LedgerId):
         return value
-    if isinstance(value, (ManifestPtr, ArenaPtr)):
+    if isinstance(value, (ManifestPtr, ArenaPtr, ProvisionalIds, CommittedIds)):
         raise TypeError("expected LedgerId, got different pointer domain")
     return LedgerId(_host_int_value(value))
 
@@ -109,7 +110,7 @@ def _ledger_id(value) -> LedgerId:
 def _arena_ptr(value) -> ArenaPtr:
     if isinstance(value, ArenaPtr):
         return value
-    if isinstance(value, (ManifestPtr, LedgerId)):
+    if isinstance(value, (ManifestPtr, LedgerId, ProvisionalIds, CommittedIds)):
         raise TypeError("expected ArenaPtr, got different pointer domain")
     return ArenaPtr(_host_int_value(value))
 
@@ -748,6 +749,10 @@ def _identity_q(ids: ProvisionalIds) -> CommittedIds:
     return _committed_ids(ids.a)
 
 
+def apply_q(q: QMap, ids: ProvisionalIds) -> CommittedIds:
+    return q(_provisional_ids(ids))
+
+
 def _apply_stratum_q(
     ids: ProvisionalIds,
     stratum,
@@ -800,7 +805,7 @@ def cycle_candidates(
     ledger,
     frontier_ids: CommittedIds,
     validate_stratum: bool = False,
-) -> Tuple[Ledger, CommittedIds, Tuple[Stratum, Stratum, Stratum]]:
+) -> Tuple[Ledger, ProvisionalIds, Tuple[Stratum, Stratum, Stratum], QMap]:
     frontier_ids = _committed_ids(frontier_ids)
     if not _cnf2_enabled():
         # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
@@ -809,7 +814,7 @@ def cycle_candidates(
     num_frontier = frontier_ids.a.shape[0]
     if num_frontier == 0:
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
-        return ledger, frontier_ids, (empty, empty, empty)
+        return ledger, _provisional_ids(frontier_ids.a), (empty, empty, empty), _identity_q
 
     f_ops = ledger.opcode[frontier_ids.a]
     f_a1 = ledger.arg1[frontier_ids.a]
@@ -926,8 +931,8 @@ def cycle_candidates(
     ledger2, _, q_map = commit_stratum(
         ledger2, stratum2, prior_q=q_map, validate=validate_stratum
     )
-    next_frontier = q_map(_provisional_ids(next_frontier))
-    return ledger2, next_frontier, (stratum0, stratum1, stratum2)
+    next_frontier = _provisional_ids(next_frontier)
+    return ledger2, next_frontier, (stratum0, stratum1, stratum2), q_map
 
 @jit
 def op_rank(arena):
@@ -2835,9 +2840,10 @@ def run_program_lines_bsp(
                 vm.ledger, frontier_arr = cycle_intrinsic(vm.ledger, frontier.a)
                 frontier = _committed_ids(frontier_arr)
             else:
-                vm.ledger, frontier, _ = cycle_candidates(
+                vm.ledger, frontier_prov, _, q_map = cycle_candidates(
                     vm.ledger, frontier, validate_stratum=validate_stratum
                 )
+                frontier = apply_q(q_map, frontier_prov)
             # SYNC: host wait/flag checks for BSP loop (m1).
             vm.ledger.count.block_until_ready()
             # SYNC: host reads device flags for BSP loop errors (m1).
