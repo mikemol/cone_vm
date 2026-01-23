@@ -2,6 +2,7 @@ from jax import jit, lax
 import jax
 import jax.numpy as jnp
 from typing import NamedTuple, Dict, Callable, Tuple
+import inspect
 import os
 import re
 import time
@@ -108,6 +109,17 @@ def safe_gather_1d(arr, idx, label="safe_gather_1d"):
         idx_safe = jnp.clip(idx_i, 0, size - 1)
         return arr[idx_safe]
     return arr[idx]
+
+
+_BINCOUT_HAS_LENGTH = "length" in inspect.signature(jnp.bincount).parameters
+
+
+def _bincount_256(x, weights):
+    # Fixed-size bincount keeps JIT shapes static across JAX versions.
+    if _BINCOUT_HAS_LENGTH:
+        return jnp.bincount(x, weights=weights, minlength=256, length=256)
+    out = jnp.zeros(256, dtype=weights.dtype)
+    return out.at[x].add(weights)
 
 
 def _guards_enabled():
@@ -795,17 +807,10 @@ def _lookup_node_id(ledger, op, a1, a2):
         operand=None,
     )
 
-def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
+def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     max_key = jnp.uint8(0xFF)
-    proposed_ops, proposed_a1, proposed_a2 = _canonicalize_nodes(
-        proposed_ops, proposed_a1, proposed_a2
-    )
-    max_id = jnp.int32(MAX_ID)
-    bounds_corrupt = (ledger.count > max_id) | jnp.any(proposed_a1 > max_id) | jnp.any(
-        proposed_a2 > max_id
-    )
     # CORRUPT is semantic (alias risk); OOM is capacity.
-    base_corrupt = ledger.corrupt | bounds_corrupt
+    base_corrupt = ledger.corrupt
     base_oom = ledger.oom
     proposed_ops = jnp.where(base_corrupt, jnp.int32(0), proposed_ops)
     proposed_a1 = jnp.where(base_corrupt, jnp.int32(0), proposed_a1)
@@ -898,11 +903,9 @@ def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
     available = jnp.where(base_oom | base_corrupt, jnp.int32(0), available)
     idx_all = jnp.arange(L_b0.shape[0], dtype=jnp.int32)
     valid_all = idx_all < count
-    op_counts = jnp.bincount(
+    op_counts = _bincount_256(
         L_b0.astype(jnp.int32),
-        weights=valid_all.astype(jnp.int32),
-        minlength=256,
-        length=256,
+        valid_all.astype(jnp.int32),
     )
     op_start = jnp.cumsum(op_counts) - op_counts
     op_end = op_start + op_counts
@@ -1217,6 +1220,27 @@ def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
         corrupt=new_corrupt,
     )
     return final_ids, new_ledger
+
+
+def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
+    proposed_ops, proposed_a1, proposed_a2 = _canonicalize_nodes(
+        proposed_ops, proposed_a1, proposed_a2
+    )
+    max_id = jnp.int32(MAX_ID)
+    bounds_corrupt = (ledger.count > max_id) | jnp.any(proposed_a1 > max_id) | jnp.any(
+        proposed_a2 > max_id
+    )
+
+    def _corrupt_return(_):
+        # Bounds violations are semantic CORRUPT; return zero ids without mutation.
+        zero_ids = jnp.zeros_like(proposed_ops)
+        new_ledger = ledger._replace(corrupt=jnp.array(True, dtype=jnp.bool_))
+        return zero_ids, new_ledger
+
+    def _do(_):
+        return _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2)
+
+    return lax.cond(bounds_corrupt, _corrupt_return, _do, operand=None)
 
 
 @jit
@@ -2076,6 +2100,16 @@ class PrismVM:
         op = int(self.manifest.opcode[ptr])
         if op == OP_ZERO: return "zero"
         if op == OP_SUC:  return f"(suc {self.decode(int(self.manifest.arg1[ptr]))})"
+        if op == OP_ADD:
+            return (
+                f"(add {self.decode(int(self.manifest.arg1[ptr]))} "
+                f"{self.decode(int(self.manifest.arg2[ptr]))})"
+            )
+        if op == OP_MUL:
+            return (
+                f"(mul {self.decode(int(self.manifest.arg1[ptr]))} "
+                f"{self.decode(int(self.manifest.arg2[ptr]))})"
+            )
         return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
 
 
@@ -2164,6 +2198,16 @@ class PrismVM_BSP:
         op = int(self.ledger.opcode[ptr])
         if op == OP_ZERO: return "zero"
         if op == OP_SUC:  return f"(suc {self.decode(int(self.ledger.arg1[ptr]))})"
+        if op == OP_ADD:
+            return (
+                f"(add {self.decode(int(self.ledger.arg1[ptr]))} "
+                f"{self.decode(int(self.ledger.arg2[ptr]))})"
+            )
+        if op == OP_MUL:
+            return (
+                f"(mul {self.decode(int(self.ledger.arg1[ptr]))} "
+                f"{self.decode(int(self.ledger.arg2[ptr]))})"
+            )
         return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
 
 
