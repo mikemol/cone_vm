@@ -111,8 +111,8 @@ def _guard_gather_index(idx, size, label):
 
 def safe_gather_1d(arr, idx, label="safe_gather_1d"):
     # Guarded gather: raise on invalid indices, clamp to avoid backend-specific OOB.
-    # NOTE: non-test runs clamp silently; stricter enforcement is tracked in
-    # IMPLEMENTATION_PLAN.md.
+    # NOTE: non-test runs do a raw gather; deterministic clamping/strictness
+    # is deferred to IMPLEMENTATION_PLAN.md.
     if _GATHER_GUARD and _HAS_DEBUG_CALLBACK:
         size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
         idx_i = jnp.asarray(idx, dtype=jnp.int32)
@@ -123,6 +123,7 @@ def safe_gather_1d(arr, idx, label="safe_gather_1d"):
 
 
 _BINCOUT_HAS_LENGTH = "length" in inspect.signature(jnp.bincount).parameters
+# NOTE: legacy name; rename to _BINCOUNT_HAS_LENGTH is deferred (see plan).
 
 
 def _bincount_256(x, weights):
@@ -571,6 +572,8 @@ def _apply_stratum_q(ids, stratum, canon_ids, label):
     if canon_ids.shape[0] == 0:
         return ids
     start = jnp.asarray(stratum.start, dtype=jnp.int32)
+    # NOTE: assumes canon_ids length matches stratum.count for this commit path;
+    # if stratum batching changes, use stratum.count and add a guard (see plan).
     count = jnp.asarray(canon_ids.shape[0], dtype=jnp.int32)
     in_range = (ids >= start) & (ids < start + count)
     idx = jnp.where(in_range, ids - start, jnp.int32(0))
@@ -756,6 +759,8 @@ def _canonicalize_nodes(ops, a1, a2):
 
 def _coord_norm_id_jax(ledger, coord_id):
     # Debug-only probe to detect vmap scope; see tests/test_coord_norm_probe.py.
+    # NOTE: repeated lookups per step are an m1/m4 tradeoff; batching is
+    # tracked in IMPLEMENTATION_PLAN.md.
     if _guards_enabled():
         jax.debug.callback(_coord_norm_probe_tick, jnp.int32(1))
     leaf_zero_id, leaf_zero_found = _lookup_node_id(
@@ -1172,9 +1177,13 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     is_new = is_diff & (~found_match) & (~(base_oom | base_corrupt))
     requested_new = jnp.sum(is_new.astype(jnp.int32))
     overflow = (count + requested_new) > max_count
+    # NOTE: overflow relies on requested_new being accurate; add a secondary
+    # guard on num_new if is_new logic changes (see IMPLEMENTATION_PLAN.md).
 
     def _overflow(_):
         zero_ids = jnp.zeros_like(proposed_ops)
+        # NOTE: overflow is treated as CORRUPT in m1 because the semantic id
+        # cap matches capacity; a distinct OOM path is deferred to the plan.
         new_ledger = ledger._replace(corrupt=jnp.array(True, dtype=jnp.bool_))
         return zero_ids, new_ledger
 
@@ -1430,6 +1439,8 @@ def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
     max_count = jnp.int32(MAX_COUNT)
     # Reject negative ids/opcodes to avoid key aliasing from fixed-width packing.
     op_oob = jnp.any((proposed_ops < 0) | (proposed_ops > jnp.int32(255)))
+    # NOTE: bounds checks scan full proposal buffers; callers must zero disabled
+    # slots. Masked bounds checking is deferred to IMPLEMENTATION_PLAN.md.
     bounds_corrupt = (
         (ledger.count > max_count)
         | (ledger.count < 0)
@@ -1484,6 +1495,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
 def _active_prefix_count(arena):
     size = arena.rank.shape[0]
     count = int(arena.count)
+    # NOTE: clamp to size hides overflow; explicit guard is deferred to plan.
     return size if count > size else count
 
 def _apply_perm_and_swizzle(arena, perm):
@@ -1860,6 +1872,7 @@ def op_interact(arena):
 
     valid = idxs >= 0
     idxs2 = jnp.where(valid, idxs, cap)
+    # idxs2 uses cap as a drop sentinel for _scatter_drop (see helper note).
 
     final_ops = _scatter_drop(
         new_ops,
