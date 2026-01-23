@@ -29,6 +29,13 @@ OP_NAMES = {
 ManifestPtr = NewType("ManifestPtr", int)
 LedgerId = NewType("LedgerId", int)
 ArenaPtr = NewType("ArenaPtr", int)
+# Host-only scalar markers for sync boundaries.
+HostInt = NewType("HostInt", int)
+HostBool = NewType("HostBool", bool)
+# Stratum phase markers for device id arrays.
+ProvisionalIds = NewType("ProvisionalIds", jnp.ndarray)
+CommittedIds = NewType("CommittedIds", jnp.ndarray)
+QMap = Callable[[ProvisionalIds], CommittedIds]
 
 
 def _manifest_ptr(value: int) -> ManifestPtr:
@@ -41,6 +48,22 @@ def _ledger_id(value: int) -> LedgerId:
 
 def _arena_ptr(value: int) -> ArenaPtr:
     return ArenaPtr(int(value))
+
+
+def _host_int(value) -> HostInt:
+    return HostInt(int(value))
+
+
+def _host_bool(value) -> HostBool:
+    return HostBool(bool(value))
+
+
+def _provisional_ids(value: jnp.ndarray) -> ProvisionalIds:
+    return ProvisionalIds(value)
+
+
+def _committed_ids(value: jnp.ndarray) -> CommittedIds:
+    return CommittedIds(value)
 
 # NOTE: JAX op dtype normalization (int32) is assumed; tighten if drift appears
 # (see IMPLEMENTATION_PLAN.md).
@@ -446,11 +469,11 @@ def init_ledger():
     )
 
 
-def ledger_has_corrupt(ledger):
+def ledger_has_corrupt(ledger) -> HostBool:
     # Host helper for deterministic corrupt checks in tests/debug.
     flag = ledger.corrupt if hasattr(ledger, "corrupt") else ledger.oom
     # SYNC: device_get forces host sync for deterministic checks (m1).
-    return bool(jax.device_get(flag))
+    return _host_bool(jax.device_get(flag))
 
 def emit_candidates(ledger, frontier_ids):
     num_frontier = frontier_ids.shape[0]
@@ -598,15 +621,20 @@ def validate_stratum_no_within_refs_jax(ledger, stratum):
     ok_a2 = jnp.all(jnp.where(mask, a2 < start, True))
     return ok_a1 & ok_a2
 
-def validate_stratum_no_within_refs(ledger, stratum):
+def validate_stratum_no_within_refs(ledger, stratum) -> HostBool:
     # SYNC: host bool() reads device result for validation (m1).
-    return bool(validate_stratum_no_within_refs_jax(ledger, stratum))
+    return _host_bool(validate_stratum_no_within_refs_jax(ledger, stratum))
 
-def _identity_q(ids):
-    return ids
+def _identity_q(ids: ProvisionalIds) -> CommittedIds:
+    return _committed_ids(ids)
 
 
-def _apply_stratum_q(ids, stratum, canon_ids, label):
+def _apply_stratum_q(
+    ids: ProvisionalIds,
+    stratum,
+    canon_ids: CommittedIds,
+    label: str,
+) -> ProvisionalIds:
     if canon_ids.shape[0] == 0:
         return ids
     start = jnp.asarray(stratum.start, dtype=jnp.int32)
@@ -616,34 +644,44 @@ def _apply_stratum_q(ids, stratum, canon_ids, label):
     in_range = (ids >= start) & (ids < start + count)
     idx = jnp.where(in_range, ids - start, jnp.int32(0))
     mapped = safe_gather_1d(canon_ids, idx, label)
-    return jnp.where(in_range, mapped, ids)
+    return _provisional_ids(jnp.where(in_range, mapped, ids))
 
 
-def commit_stratum(ledger, stratum, prior_q=None, validate=False):
+def commit_stratum(
+    ledger,
+    stratum,
+    prior_q: QMap | None = None,
+    validate: bool = False,
+) -> Tuple[Ledger, CommittedIds, QMap]:
     if validate and not validate_stratum_no_within_refs(ledger, stratum):
         raise ValueError("Stratum contains within-tier references")
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
-    q_prev = prior_q or _identity_q
+    q_prev: QMap = prior_q or _identity_q
     # SYNC: host int() pulls device scalar for host-side control flow (m1).
     count = int(jnp.maximum(stratum.count, 0))
     if count == 0:
-        canon_ids = jnp.zeros((0,), dtype=jnp.int32)
+        canon_ids = _committed_ids(jnp.zeros((0,), dtype=jnp.int32))
         return ledger, canon_ids, q_prev
     start = jnp.asarray(stratum.start, dtype=jnp.int32)
     ids = start + jnp.arange(count, dtype=jnp.int32)
     ops = ledger.opcode[ids]
     a1 = q_prev(ledger.arg1[ids])
     a2 = q_prev(ledger.arg2[ids])
-    canon_ids, ledger = intern_nodes(ledger, ops, a1, a2)
+    canon_ids_raw, ledger = intern_nodes(ledger, ops, a1, a2)
+    canon_ids = _committed_ids(canon_ids_raw)
 
-    def q_map(ids_in):
+    def q_map(ids_in: ProvisionalIds) -> CommittedIds:
         mapped = _apply_stratum_q(ids_in, stratum, canon_ids, "commit_stratum.q")
         return q_prev(mapped)
 
     return ledger, canon_ids, q_map
 
-def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
+def cycle_candidates(
+    ledger,
+    frontier_ids: CommittedIds,
+    validate_stratum: bool = False,
+) -> Tuple[Ledger, CommittedIds, Tuple[Stratum, Stratum, Stratum]]:
     if not _cnf2_enabled():
         # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
         # See IMPLEMENTATION_PLAN.md (m2 CNF-2 pipeline).
@@ -766,7 +804,7 @@ def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     ledger2, _, q_map = commit_stratum(
         ledger2, stratum2, prior_q=q_map, validate=validate_stratum
     )
-    next_frontier = q_map(next_frontier)
+    next_frontier = q_map(_provisional_ids(next_frontier))
     return ledger2, next_frontier, (stratum0, stratum1, stratum2)
 
 @jit
@@ -790,7 +828,7 @@ def _canonicalize_nodes(ops, a1, a2):
     is_null = ops == OP_NULL
     is_coord_leaf = (ops == OP_COORD_ZERO) | (ops == OP_COORD_ONE)
     zero_mask = is_null | is_coord_leaf
-    _guard_zero_args(zero_mask, a1, a2, "canonicalize.zero_args")
+    _guard_zero_args(is_coord_leaf, a1, a2, "canonicalize.coord_leaf_args")
     a1 = jnp.where(zero_mask, jnp.int32(0), a1)
     a2 = jnp.where(zero_mask, jnp.int32(0), a2)
     # NOTE: OP_COORD_PAIR is treated as ordered; no commutative swap here.
@@ -1546,12 +1584,12 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
 
     return lax.cond(stop, _skip, _do, operand=None)
 
-def _active_prefix_count(arena):
+def _active_prefix_count(arena) -> HostInt:
     size = arena.rank.shape[0]
     # SYNC: host reads device scalar for active count (m1).
-    count = int(arena.count)
+    count = _host_int(arena.count)
     # NOTE: clamp to size hides overflow; explicit guard is deferred to plan.
-    return size if count > size else count
+    return _host_int(size) if int(count) > size else count
 
 def _apply_perm_and_swizzle(arena, perm):
     # BSP_s renorm: layout-only; must commute with q/denote.
@@ -2556,12 +2594,12 @@ def make_vm(mode="baseline"):
         return PrismVM_BSP()
     return PrismVM()
 
-def _rank_counts(arena):
+def _rank_counts(arena) -> Tuple[HostInt, HostInt, HostInt, HostInt]:
     # SYNC: host reads device counters for rank summary (m1).
-    hot = int(jnp.sum(arena.rank == RANK_HOT))
-    warm = int(jnp.sum(arena.rank == RANK_WARM))
-    cold = int(jnp.sum(arena.rank == RANK_COLD))
-    free = int(jnp.sum(arena.rank == RANK_FREE))
+    hot = _host_int(jnp.sum(arena.rank == RANK_HOT))
+    warm = _host_int(jnp.sum(arena.rank == RANK_WARM))
+    cold = _host_int(jnp.sum(arena.rank == RANK_COLD))
+    free = _host_int(jnp.sum(arena.rank == RANK_FREE))
     return hot, warm, cold, free
 
 # --- 5. Telemetric REPL ---
@@ -2631,7 +2669,7 @@ def run_program_lines_bsp(
             continue
         tokens = re.findall(r"\(|\)|[a-z]+", inp)
         root_ptr = vm.parse(tokens)
-        frontier = jnp.array([int(root_ptr)], dtype=jnp.int32)
+        frontier = _committed_ids(jnp.array([int(root_ptr)], dtype=jnp.int32))
         for _ in range(max(1, cycles)):
             if bsp_mode == "intrinsic":
                 vm.ledger, frontier = cycle_intrinsic(vm.ledger, frontier)
