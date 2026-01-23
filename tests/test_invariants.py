@@ -95,10 +95,10 @@ def test_ledger_capacity_guard():
         jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32),
         jnp.array([0, pv.ZERO_PTR], dtype=jnp.int32),
     )
-    assert bool(new_ledger.oom)
-    assert not bool(new_ledger.corrupt)
-    assert int(new_ledger.count) == pv.MAX_NODES
-    assert int(ids[0]) != 0 or int(ids[1]) != 0
+    assert bool(new_ledger.corrupt)
+    assert not bool(new_ledger.oom)
+    assert int(new_ledger.count) == int(ledger.count)
+    assert int(jnp.sum(ids)) == 0
 
 
 @pytest.mark.m1

@@ -80,6 +80,45 @@ def test_intern_corrupt_flag_trips_on_a2_overflow():
     assert int(ids[0]) == 0
 
 
+def test_null_is_not_internable():
+    ledger = pv.init_ledger()
+    pre_count = int(ledger.count)
+    ids, new_ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_NULL], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([pv.MAX_ID], dtype=jnp.int32),
+    )
+    new_ledger.count.block_until_ready()
+    assert int(ids[0]) == 0
+    assert int(new_ledger.count) == pre_count
+    assert not bool(new_ledger.corrupt)
+    assert not bool(new_ledger.oom)
+
+
+def test_corrupt_is_sticky_and_non_mutating():
+    ledger = pv.init_ledger()
+    ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.MAX_ID + 1], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    assert bool(ledger.corrupt)
+    assert int(ids[0]) == 0
+    pre_count = int(ledger.count)
+    ids2, ledger2 = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    ledger2.count.block_until_ready()
+    assert bool(ledger2.corrupt)
+    assert int(ledger2.count) == pre_count
+    assert int(jnp.sum(ids2)) == 0
+
+
 @pytest.mark.parametrize("bad_a1, bad_a2", [(-1, 0), (0, -1)])
 def test_intern_corrupt_flag_trips_on_negative_child_id(bad_a1, bad_a2):
     ledger = pv.init_ledger()
@@ -131,6 +170,17 @@ def test_key_width_no_alias():
     ops = jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32)
     a1 = jnp.array([1, 1 + 256], dtype=jnp.int32)
     a2 = jnp.array([0, 0], dtype=jnp.int32)
+    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    assert int(ids[0]) != int(ids[1])
+    assert int(ledger.count) == 4
+
+
+def test_key_width_no_alias_under_canonicalize():
+    assert pv.MAX_ID >= 0x102
+    ledger = pv.init_ledger()
+    ops = jnp.array([pv.OP_ADD, pv.OP_ADD], dtype=jnp.int32)
+    a1 = jnp.array([1, 1], dtype=jnp.int32)
+    a2 = jnp.array([2, 2 + 256], dtype=jnp.int32)
     ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
     assert int(ids[0]) != int(ids[1])
     assert int(ledger.count) == 4

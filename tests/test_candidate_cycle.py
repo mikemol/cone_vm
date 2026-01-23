@@ -89,6 +89,7 @@ def test_cycle_candidates_mul_zero():
     assert int(stratum2.count) == 0
 
 
+@pytest.mark.m3
 def test_cycle_candidates_add_suc():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
@@ -129,6 +130,7 @@ def test_cycle_candidates_add_suc():
     assert int(stratum2.count) == 0
 
 
+@pytest.mark.m3
 def test_cycle_candidates_add_suc_right():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
@@ -169,6 +171,7 @@ def test_cycle_candidates_add_suc_right():
     assert int(stratum2.count) == 0
 
 
+@pytest.mark.m3
 def test_cycle_candidates_mul_suc():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
@@ -212,6 +215,7 @@ def test_cycle_candidates_mul_suc():
     assert int(stratum2.count) == 0
 
 
+@pytest.mark.m3
 def test_cycle_candidates_mul_suc_right():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
