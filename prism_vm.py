@@ -8,6 +8,7 @@ import re
 import time
 
 # --- 1. Ontology (Opcodes) ---
+# id=0/1 are semantic reserves (NULL/ZERO) per univalence hard-cap contract.
 OP_NULL = 0
 OP_ZERO = 1
 OP_SUC  = 2
@@ -17,7 +18,7 @@ OP_SORT = 99
 OP_COORD_ZERO = 20
 OP_COORD_ONE = 21
 OP_COORD_PAIR = 22
-ZERO_PTR = 1
+ZERO_PTR = 1  # Must stay aligned with OP_ZERO (identity semantics).
 
 OP_NAMES = {
     0: "NULL", 1: "zero", 2: "suc",
@@ -88,16 +89,20 @@ def _scatter_drop(target, indices, values, label):
 def _guard_gather_index(idx, size, label):
     if not _GATHER_GUARD or not _HAS_DEBUG_CALLBACK:
         return
-    bad = (idx < 0) | (idx >= size)
+    if idx.size == 0:
+        return
+    min_idx = jnp.min(idx)
+    max_idx = jnp.max(idx)
+    bad = (min_idx < 0) | (max_idx >= size)
 
-    def _raise(bad_val, idx_val, size_val):
+    def _raise(bad_val, min_val, max_val, size_val):
         if bad_val:
             raise RuntimeError(
                 "gather index out of bounds in "
-                f"{label} (idx={int(idx_val)}, size={int(size_val)})"
+                f"{label} (min={int(min_val)}, max={int(max_val)}, size={int(size_val)})"
             )
 
-    jax.debug.callback(_raise, bad, idx, size)
+    jax.debug.callback(_raise, bad, min_idx, max_idx, size)
 
 
 def safe_gather_1d(arr, idx, label="safe_gather_1d"):
@@ -122,6 +127,49 @@ def _bincount_256(x, weights):
     return out.at[x].add(weights)
 
 
+def _parse_milestone_value(value):
+    if not value:
+        return None
+    value = value.strip().lower()
+    if value.startswith("m"):
+        value = value[1:]
+    if value.isdigit():
+        return int(value)
+    return None
+
+
+def _read_pytest_milestone():
+    if not _TEST_GUARDS:
+        return None
+    path = os.path.join(os.path.dirname(__file__), ".pytest-milestone")
+    try:
+        with open(path) as handle:
+            for line in handle:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    if key.strip() == "PRISM_MILESTONE":
+                        return _parse_milestone_value(value)
+                else:
+                    return _parse_milestone_value(line)
+    except FileNotFoundError:
+        return None
+    return None
+
+
+def _cnf2_enabled():
+    # CNF-2 pipeline is staged for m2+; guard uses env/milestone in tests.
+    value = os.environ.get("PRISM_ENABLE_CNF2", "").strip().lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
+    if milestone is None:
+        milestone = _read_pytest_milestone()
+    return milestone is not None and milestone >= 2
+
+
 def _guards_enabled():
     return _TEST_GUARDS and _HAS_DEBUG_CALLBACK
 
@@ -138,6 +186,19 @@ def _guard_max(value, max_value, label):
             )
 
     jax.debug.callback(_raise, bad, value, max_value)
+
+
+def _pop_token(tokens):
+    if not tokens:
+        raise ValueError("Unexpected end of input")
+    return tokens.pop(0)
+
+
+def _expect_token(tokens, expected):
+    token = _pop_token(tokens)
+    if token != expected:
+        raise ValueError(f"Expected {expected!r}, got {token!r}")
+    return token
 
 
 def _guard_slot0_perm(perm, inv_perm, label):
@@ -444,10 +505,13 @@ def intern_candidates(ledger, candidates):
 
 @jit
 def validate_stratum_no_within_refs_jax(ledger, stratum):
+    # Strict strata rule: new nodes may only reference ids < stratum.start (m2 gate).
     start = stratum.start
     count = jnp.maximum(stratum.count, 0)
     ids = jnp.arange(ledger.arg1.shape[0], dtype=jnp.int32)
-    mask = (ids >= start) & (ids < start + count)
+    # Mask to live region only; static shape keeps JIT happy while ignoring junk.
+    live = ids < ledger.count.astype(jnp.int32)
+    mask = live & (ids >= start) & (ids < start + count)
     a1 = ledger.arg1[ids]
     a2 = ledger.arg2[ids]
     ok_a1 = jnp.all(jnp.where(mask, a1 < start, True))
@@ -458,6 +522,9 @@ def validate_stratum_no_within_refs(ledger, stratum):
     return bool(validate_stratum_no_within_refs_jax(ledger, stratum))
 
 def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
+    if not _cnf2_enabled():
+        # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
+        raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
     num_frontier = frontier_ids.shape[0]
     if num_frontier == 0:
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
@@ -507,6 +574,7 @@ def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     val_x = ledger.arg1[suc_node]
     val_y = jnp.where(suc_on_a1, r_a2, r_a1)
 
+    # Slot1 is the continuation slot in CNF-2; enabled only in m2+ staging.
     slot1_enabled = is_add_suc | is_mul_suc
     slot1_ops = jnp.zeros_like(r_ops)
     slot1_a1 = jnp.zeros_like(r_a1)
@@ -660,6 +728,7 @@ def _coord_promote_leaf(ledger, leaf_id):
 
 
 def coord_norm(ledger, coord_id):
+    # Host-only reference path; device hot paths should use jitted batch ops.
     coord_id = int(coord_id)
     op = int(ledger.opcode[coord_id])
     if op in (OP_COORD_ZERO, OP_COORD_ONE):
@@ -680,6 +749,7 @@ def coord_norm(ledger, coord_id):
 
 
 def coord_xor(ledger, left_id, right_id):
+    # Host-only reference path; device hot paths should use jitted batch ops.
     left_id = int(left_id)
     right_id = int(right_id)
     if left_id == right_id:
@@ -1280,8 +1350,14 @@ def _apply_perm_and_swizzle(arena, perm):
     new_arg1 = arena.arg1[perm]
     new_arg2 = arena.arg2[perm]
     new_rank = arena.rank[perm]
-    swizzled_arg1 = jnp.where(new_arg1 != 0, inv_perm[new_arg1], 0)
-    swizzled_arg2 = jnp.where(new_arg2 != 0, inv_perm[new_arg2], 0)
+    # Guard pointer swizzles in test mode; NULL stays pinned at 0.
+    swizzled_arg1 = jnp.where(
+        new_arg1 != 0, safe_gather_1d(inv_perm, new_arg1, "swizzle.arg1"), 0
+    )
+    swizzled_arg2 = jnp.where(
+        new_arg2 != 0, safe_gather_1d(inv_perm, new_arg2, "swizzle.arg2"), 0
+    )
+    # Swizzle is renormalization only; denotation must not change (plan).
     _guard_slot0_perm(perm, inv_perm, "swizzle.perm")
     _guard_null_row(new_ops, swizzled_arg1, swizzled_arg2, "swizzle.row0")
     return (
@@ -1595,14 +1671,17 @@ def op_interact(arena):
     cap = jnp.int32(ops.shape[0])
     is_hot = arena.rank == RANK_HOT
     is_add = ops == OP_ADD
-    op_x = ops[a1]
+    # Guard pointer gathers in test mode; avoid touching inactive garbage rows.
+    a1_for_op = jnp.where(is_hot & is_add, a1, jnp.int32(0))
+    op_x = safe_gather_1d(ops, a1_for_op, "op_interact.op_x")
     mask_zero = is_hot & is_add & (op_x == OP_ZERO)
     mask_suc = is_hot & is_add & (op_x == OP_SUC) & (~arena.oom)
 
     # First: local rewrites that don't allocate.
-    y_op = ops[a2]
-    y_a1 = a1[a2]
-    y_a2 = a2[a2]
+    a2_for_zero = jnp.where(mask_zero, a2, jnp.int32(0))
+    y_op = safe_gather_1d(ops, a2_for_zero, "op_interact.y_op")
+    y_a1 = safe_gather_1d(a1, a2_for_zero, "op_interact.y_a1")
+    y_a2 = safe_gather_1d(a2, a2_for_zero, "op_interact.y_a2")
     new_ops = jnp.where(mask_zero, y_op, ops)
     new_a1 = jnp.where(mask_zero, y_a1, a1)
     new_a2 = jnp.where(mask_zero, y_a2, a2)
@@ -1624,10 +1703,11 @@ def op_interact(arena):
 
     # Scatter-create the spawned add nodes only where mask_suc is true.
     idxs = jnp.where(spawn_mask, new_add_idx, jnp.int32(-1))
-    grandchild_x = a1[a1]
+    a1_for_spawn = jnp.where(spawn_mask, a1, jnp.int32(0))
+    grandchild_x = safe_gather_1d(a1, a1_for_spawn, "op_interact.grandchild_x")
     payload_op = jnp.full_like(idxs, OP_ADD)
-    payload_a1_raw = grandchild_x
-    payload_a2_raw = a2
+    payload_a1_raw = jnp.where(spawn_mask, grandchild_x, jnp.int32(0))
+    payload_a2_raw = jnp.where(spawn_mask, a2, jnp.int32(0))
     payload_swap = payload_a2_raw < payload_a1_raw
     payload_a1 = jnp.where(payload_swap, payload_a2_raw, payload_a1_raw)
     payload_a2 = jnp.where(payload_swap, payload_a1_raw, payload_a2_raw)
@@ -1664,6 +1744,7 @@ def op_interact(arena):
 
 @jit
 def cycle_intrinsic(ledger, frontier_ids):
+    # m1 evaluator: intrinsic rewrite steps on Ledger (CNF-2 gated off).
     def _peel_one(ptr):
         def cond(state):
             curr, _ = state
@@ -1767,7 +1848,7 @@ def cycle(
     l1_block_size=None,
     do_global=False,
 ):
-    """Run one BSP cycle; keep root_ptr as a JAX scalar to avoid host sync."""
+    """Run one BSP cycle; sorting/scheduling is renormalization only."""
     arena = op_rank(arena)
     root_arr = jnp.asarray(root_ptr, dtype=jnp.int32)
     if do_sort:
@@ -1794,7 +1875,12 @@ def cycle(
             arena, inv_perm = op_sort_and_swizzle_morton_with_perm(arena, morton_arr)
         else:
             arena, inv_perm = op_sort_and_swizzle_with_perm(arena)
-        root_arr = jnp.where(root_arr != 0, inv_perm[root_arr], 0)
+        # Root remap is a pointer gather; guard in test mode.
+        root_arr = jnp.where(
+            root_arr != 0,
+            safe_gather_1d(inv_perm, root_arr, "cycle.root_remap"),
+            0,
+        )
     arena = op_interact(arena)
     return arena, root_arr
 
@@ -1974,6 +2060,7 @@ def dispatch_kernel(manifest, ptr):
 class PrismVM:
     def __init__(self):
         print("⚡ Prism IR: Initializing Host Context...")
+        # Baseline oracle (Manifest + host cache) kept for cross-engine checks.
         self.manifest = init_manifest()
         self.active_count_host = int(self.manifest.active_count)
         self.refresh_cache_on_eval = True
@@ -2082,7 +2169,8 @@ class PrismVM:
 
     # --- PARSING & DISPLAY ---
     def parse(self, tokens):
-        token = tokens.pop(0)
+        # Explicit token pops keep parse errors readable for malformed input.
+        token = _pop_token(tokens)
         if token == 'zero': return self.cons(OP_ZERO)
         if token == 'suc':  return self.cons(OP_SUC, self.parse(tokens))
         if token in ['add', 'mul']:
@@ -2092,7 +2180,7 @@ class PrismVM:
             return self.cons(op, a1, a2)
         if token == '(': 
             val = self.parse(tokens)
-            tokens.pop(0)
+            _expect_token(tokens, ')')
             return val
         raise ValueError(f"Unknown: {token}")
 
@@ -2134,7 +2222,7 @@ class PrismVM_BSP_Legacy:
         return idx
 
     def parse(self, tokens):
-        token = tokens.pop(0)
+        token = _pop_token(tokens)
         if token == "zero": return self._alloc(OP_ZERO, 0, 0)
         if token == "suc":  return self._alloc(OP_SUC, self.parse(tokens), 0)
         if token in ["add", "mul"]:
@@ -2144,7 +2232,7 @@ class PrismVM_BSP_Legacy:
             return self._alloc(op, a1, a2)
         if token == "(":
             val = self.parse(tokens)
-            tokens.pop(0)
+            _expect_token(tokens, ")")
             return val
         raise ValueError(f"Unknown: {token}")
 
@@ -2162,6 +2250,7 @@ class PrismVM_BSP_Legacy:
 class PrismVM_BSP:
     def __init__(self):
         print("⚡ Prism IR: Initializing BSP Ledger...")
+        # Canonical Ledger path (univalence + deterministic interning).
         self.ledger = init_ledger()
 
     def _intern(self, op, a1=0, a2=0):
@@ -2180,7 +2269,7 @@ class PrismVM_BSP:
         return int(ids[0])
 
     def parse(self, tokens):
-        token = tokens.pop(0)
+        token = _pop_token(tokens)
         if token == "zero": return self._intern(OP_ZERO, 0, 0)
         if token == "suc":  return self._intern(OP_SUC, self.parse(tokens), 0)
         if token in ["add", "mul"]:
@@ -2190,7 +2279,7 @@ class PrismVM_BSP:
             return self._intern(op, a1, a2)
         if token == "(":
             val = self.parse(tokens)
-            tokens.pop(0)
+            _expect_token(tokens, ")")
             return val
         raise ValueError(f"Unknown: {token}")
 
