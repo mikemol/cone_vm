@@ -164,13 +164,12 @@ def safe_gather_1d(arr, idx, label="safe_gather_1d"):
     return arr[idx]
 
 
-_BINCOUT_HAS_LENGTH = "length" in inspect.signature(jnp.bincount).parameters
-# NOTE: legacy name; rename to _BINCOUNT_HAS_LENGTH is deferred (see plan).
+_BINCOUNT_HAS_LENGTH = "length" in inspect.signature(jnp.bincount).parameters
 
 
 def _bincount_256(x, weights):
     # Fixed-size bincount keeps JIT shapes static across JAX versions.
-    if _BINCOUT_HAS_LENGTH:
+    if _BINCOUNT_HAS_LENGTH:
         return jnp.bincount(x, weights=weights, minlength=256, length=256)
     out = jnp.zeros(256, dtype=weights.dtype)
     return out.at[x].add(weights)

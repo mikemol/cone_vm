@@ -678,7 +678,6 @@ tracking against the roadmap.
 - `_scatter_drop` uses sentinel drop semantics; add a strict variant when ready.
 - `safe_gather_1d` runs raw gathers outside test mode; add deterministic clamp
   or strictness when performance allows.
-- Rename `_BINCOUT_HAS_LENGTH` to `_BINCOUNT_HAS_LENGTH`.
 - Add an explicit zero-row (id=1) invariant guard.
 - `init_ledger` relies on `_pack_key` being defined later; reorder helpers if
   init moves to import time.
