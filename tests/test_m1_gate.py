@@ -7,12 +7,6 @@ from tests import harness
 pytestmark = pytest.mark.m1
 
 
-def _ledger_corrupt_flag(ledger):
-    if hasattr(ledger, "corrupt"):
-        return bool(ledger.corrupt)
-    return bool(ledger.oom)
-
-
 def test_add_zero_equivalence_baseline_vs_ledger():
     exprs = [
         "(add zero (suc zero))",
@@ -36,6 +30,7 @@ def test_intern_deterministic_ids_single_engine():
 def test_univalence_no_alias_guard():
     assert hasattr(pv, "MAX_ID"), "MAX_ID must be defined for hard-cap mode"
     assert pv.MAX_NODES == pv.MAX_ID + 1
+    assert pv.MAX_COUNT == pv.MAX_ID + 1
     assert pv.MAX_ID < (1 << 16)
 
 
@@ -49,7 +44,7 @@ def test_intern_corrupt_flag_trips():
         jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
         jnp.array([0], dtype=jnp.int32),
     )
-    assert _ledger_corrupt_flag(new_ledger)
+    assert pv.ledger_has_corrupt(new_ledger)
     assert not bool(new_ledger.oom)
     assert int(ids[0]) == 0
 
@@ -62,7 +57,7 @@ def test_intern_corrupt_flag_trips_on_a1_overflow():
         jnp.array([pv.MAX_ID + 1], dtype=jnp.int32),
         jnp.array([0], dtype=jnp.int32),
     )
-    assert bool(new_ledger.corrupt)
+    assert pv.ledger_has_corrupt(new_ledger)
     assert not bool(new_ledger.oom)
     assert int(ids[0]) == 0
 
@@ -75,7 +70,7 @@ def test_intern_corrupt_flag_trips_on_a2_overflow():
         jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
         jnp.array([pv.MAX_ID + 1], dtype=jnp.int32),
     )
-    assert bool(new_ledger.corrupt)
+    assert pv.ledger_has_corrupt(new_ledger)
     assert not bool(new_ledger.oom)
     assert int(ids[0]) == 0
 
@@ -105,7 +100,7 @@ def test_corrupt_is_sticky_and_non_mutating():
         jnp.array([0], dtype=jnp.int32),
     )
     ledger.count.block_until_ready()
-    assert bool(ledger.corrupt)
+    assert pv.ledger_has_corrupt(ledger)
     assert int(ids[0]) == 0
     pre_count = int(ledger.count)
     pre_keys = (
@@ -123,7 +118,7 @@ def test_corrupt_is_sticky_and_non_mutating():
         jnp.array([0], dtype=jnp.int32),
     )
     ledger2.count.block_until_ready()
-    assert bool(ledger2.corrupt)
+    assert pv.ledger_has_corrupt(ledger2)
     assert int(ledger2.count) == pre_count
     assert int(jnp.sum(ids2)) == 0
     post_keys = (

@@ -65,7 +65,7 @@ def normalize_bsp_intrinsic(expr, max_steps=64, vm=None):
     for _ in range(max_steps):
         vm.ledger, frontier = pv.cycle_intrinsic(vm.ledger, frontier)
         vm.ledger.count.block_until_ready()
-        if hasattr(vm.ledger, "corrupt") and bool(vm.ledger.corrupt):
+        if pv.ledger_has_corrupt(vm.ledger):
             raise RuntimeError(
                 "CORRUPT: key encoding alias risk (id width exceeded)"
             )
@@ -114,7 +114,7 @@ def normalize_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False
             vm.ledger, frontier, validate_stratum=validate_stratum
         )
         vm.ledger.count.block_until_ready()
-        if hasattr(vm.ledger, "corrupt") and bool(vm.ledger.corrupt):
+        if pv.ledger_has_corrupt(vm.ledger):
             raise RuntimeError(
                 "CORRUPT: key encoding alias risk (id width exceeded)"
             )

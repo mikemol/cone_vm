@@ -30,6 +30,7 @@ MAX_ROWS = 1024 * 32
 MAX_KEY_NODES = 1 << 16
 MAX_NODES = MAX_KEY_NODES - 1
 MAX_ID = MAX_NODES - 1
+MAX_COUNT = MAX_ID + 1  # Next-free upper bound; legal ids are <= MAX_ID.
 # Hard-cap is semantic (univalence), not just capacity; see IMPLEMENTATION_PLAN.md.
 if MAX_NODES >= MAX_KEY_NODES:
     raise ValueError("MAX_NODES exceeds 16-bit key packing")
@@ -40,7 +41,8 @@ _TEST_GUARDS = os.environ.get("PRISM_TEST_GUARDS", "").strip().lower() in (
     "yes",
     "on",
 )
-# Test-time guards favor correctness over performance (m1 gate in plan).
+# Test-time guards favor correctness over performance (m1 gate).
+# See IMPLEMENTATION_PLAN.md (m1 acceptance gate).
 _SCATTER_GUARD = _TEST_GUARDS or os.environ.get(
     "PRISM_SCATTER_GUARD", ""
 ).strip().lower() in (
@@ -161,6 +163,7 @@ def _read_pytest_milestone():
 
 def _cnf2_enabled():
     # CNF-2 pipeline is staged for m2+; guard uses env/milestone in tests.
+    # See IMPLEMENTATION_PLAN.md (m2 CNF-2 enablement).
     value = os.environ.get("PRISM_ENABLE_CNF2", "").strip().lower()
     if value in ("1", "true", "yes", "on"):
         return True
@@ -172,6 +175,7 @@ def _cnf2_enabled():
 
 def _cnf2_slot1_enabled():
     # Slot1 continuation is staged for m3+ unless explicitly enabled.
+    # See IMPLEMENTATION_PLAN.md (m3 continuation slot).
     value = os.environ.get("PRISM_ENABLE_CNF2_SLOT1", "").strip().lower()
     if value in ("1", "true", "yes", "on"):
         return True
@@ -183,6 +187,7 @@ def _cnf2_slot1_enabled():
 
 def _default_bsp_mode():
     # CNF-2 becomes the default at m2; intrinsic remains the oracle path.
+    # See IMPLEMENTATION_PLAN.md (m1/m2 engine staging).
     return "cnf2" if _cnf2_enabled() else "intrinsic"
 
 
@@ -261,6 +266,7 @@ _coord_norm_probe_count = 0
 
 def coord_norm_probe_reset():
     # Debug-only probe used by m4 tests to detect coord normalization scope.
+    # See IMPLEMENTATION_PLAN.md (m4 coord probes).
     global _coord_norm_probe_count
     _coord_norm_probe_count = 0
 
@@ -397,6 +403,12 @@ def init_ledger():
         corrupt=jnp.array(False, dtype=jnp.bool_),
     )
 
+
+def ledger_has_corrupt(ledger):
+    # Host helper for deterministic corrupt checks in tests/debug.
+    flag = ledger.corrupt if hasattr(ledger, "corrupt") else ledger.oom
+    return bool(jax.device_get(flag))
+
 def emit_candidates(ledger, frontier_ids):
     num_frontier = frontier_ids.shape[0]
     size = num_frontier * 2
@@ -528,6 +540,7 @@ def intern_candidates(ledger, candidates):
 @jit
 def validate_stratum_no_within_refs_jax(ledger, stratum):
     # Strict strata rule: new nodes may only reference ids < stratum.start (m2 gate).
+    # See IMPLEMENTATION_PLAN.md (m2 strata discipline).
     start = stratum.start
     count = jnp.maximum(stratum.count, 0)
     ids = jnp.arange(ledger.arg1.shape[0], dtype=jnp.int32)
@@ -562,6 +575,7 @@ def commit_stratum(ledger, stratum, prior_q=None, validate=False):
     if validate and not validate_stratum_no_within_refs(ledger, stratum):
         raise ValueError("Stratum contains within-tier references")
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
+    # See IMPLEMENTATION_PLAN.md (m2 q boundary).
     q_prev = prior_q or _identity_q
     count = int(jnp.maximum(stratum.count, 0))
     if count == 0:
@@ -583,6 +597,7 @@ def commit_stratum(ledger, stratum, prior_q=None, validate=False):
 def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     if not _cnf2_enabled():
         # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
+        # See IMPLEMENTATION_PLAN.md (m2 CNF-2 pipeline).
         raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
     num_frontier = frontier_ids.shape[0]
     if num_frontier == 0:
@@ -634,6 +649,7 @@ def cycle_candidates(ledger, frontier_ids, validate_stratum=False):
     val_y = jnp.where(suc_on_a1, r_a2, r_a1)
 
     # Slot1 is the continuation slot in CNF-2; enabled only in m3+ staging.
+    # See IMPLEMENTATION_PLAN.md (m3 continuation slot).
     slot1_gate = _cnf2_slot1_enabled()
     slot1_add = is_add_suc & slot1_gate
     slot1_mul = is_mul_suc & slot1_gate
@@ -951,6 +967,13 @@ def _lookup_node_id(ledger, op, a1, a2):
 
 def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     max_key = jnp.uint8(0xFF)
+    # Interning pipeline (vectorized):
+    # - Key-safe normalization only (coord pairs); no semantic rewrites.
+    # - Pack/sort keys to dedupe proposals and batch-search ledger buckets.
+    # - Allocate new ids and merge sorted key arrays into the ledger.
+    # Performance note: interning runs on fixed-shape buffers for JIT stability,
+    # so some passes touch MAX_NODES even when count is small (m1 tradeoff).
+    # See IMPLEMENTATION_PLAN.md (m4) for the mitigation roadmap.
     # CORRUPT is semantic (alias risk); OOM is capacity.
     base_corrupt = ledger.corrupt
     base_oom = ledger.oom
@@ -960,7 +983,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     is_coord_pair = proposed_ops == OP_COORD_PAIR
 
     has_coord = jnp.any(is_coord_pair)
-    # CD_r/CD_a: normalize coord pairs before packing keys.
+    # CD_r/CD_a: normalize coord pairs before packing keys for stable lookup.
 
     def _norm(args):
         proposed_a1, proposed_a2 = args
@@ -980,6 +1003,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
             return lax.cond(do_norm, _do, _no, operand=None)
 
         # Normalize only the coord-pair subset to avoid global vmap overhead (m4).
+        # See IMPLEMENTATION_PLAN.md (m4 coord batching).
         norm_a1 = jax.vmap(_maybe_norm)(coord_a1, coord_valid)
         norm_a2 = jax.vmap(_maybe_norm)(coord_a2, coord_valid)
         scatter_idx = jnp.where(
@@ -1000,6 +1024,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         has_coord, _norm, _no_norm, (proposed_a1, proposed_a2)
     )
 
+    # Sort proposals by packed key so duplicates collapse deterministically.
     P_b0, P_b1, P_b2, P_b3, P_b4 = _pack_key(
         proposed_ops, proposed_a1, proposed_a2
     )
@@ -1015,6 +1040,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     s_a2 = proposed_a2[perm]
     new_entry_len = s_b0.shape[0]
 
+    # Mark leader entries for each unique key in sorted order.
     is_diff = jnp.concatenate([
         jnp.array([True]),
         (s_b0[1:] != s_b0[:-1])
@@ -1041,12 +1067,12 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     L_ids = ledger.ids_sorted
 
     count = ledger.count.astype(jnp.int32)
-    max_nodes = jnp.int32(MAX_NODES)
-    max_id = jnp.int32(MAX_ID)
-    available = jnp.maximum(max_nodes - count, 0)
+    max_count = jnp.int32(MAX_COUNT)
+    available = jnp.maximum(max_count - count, 0)
     available = jnp.where(base_oom | base_corrupt, jnp.int32(0), available)
     idx_all = jnp.arange(L_b0.shape[0], dtype=jnp.int32)
     valid_all = idx_all < count
+    # Bucket existing keys by opcode byte to narrow search ranges.
     op_counts = _bincount_256(
         L_b0.astype(jnp.int32),
         valid_all.astype(jnp.int32),
@@ -1130,7 +1156,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
 
     is_new = is_diff & (~found_match) & (~(base_oom | base_corrupt))
     requested_new = jnp.sum(is_new.astype(jnp.int32))
-    overflow = (count + requested_new) > max_id
+    overflow = (count + requested_new) > max_count
 
     def _overflow(_):
         zero_ids = jnp.zeros_like(proposed_ops)
@@ -1138,6 +1164,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         return zero_ids, new_ledger
 
     def _allocate(_):
+        # Allocate new ids (subject to capacity) and write node payloads.
         spawn = is_new.astype(jnp.int32)
         prefix = jnp.cumsum(spawn)
         spawn = spawn * (prefix <= available).astype(jnp.int32)
@@ -1188,7 +1215,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         new_count = ledger.count + num_new
         new_oom = base_oom
         new_corrupt = base_corrupt
-        _guard_max(new_count, max_id, "ledger.count")
+        _guard_max(new_count, max_count, "ledger.count")
 
         new_pos = jnp.where(is_new_mask, offsets, jnp.int32(-1))
         valid_new = new_pos >= 0
@@ -1238,6 +1265,8 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
             "intern_nodes.new_entry_ids",
         )
 
+        # Merge sorted new keys into the ledger's sorted key arrays.
+        # _merge_sorted_keys is defined below; it's bound before lax.cond runs.
         (
             new_keys_b0_sorted,
             new_keys_b1_sorted,
@@ -1278,6 +1307,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         )
         return final_ids, new_ledger
 
+    # Local helper kept below _allocate for locality; name is resolved at call time.
     def _merge_sorted_keys(
         old_b0,
         old_b1,
@@ -1381,10 +1411,11 @@ def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
     )
     is_null = proposed_ops == OP_NULL
     max_id = jnp.int32(MAX_ID)
+    max_count = jnp.int32(MAX_COUNT)
     # Reject negative ids/opcodes to avoid key aliasing from fixed-width packing.
     op_oob = jnp.any((proposed_ops < 0) | (proposed_ops > jnp.int32(255)))
     bounds_corrupt = (
-        (ledger.count > max_id)
+        (ledger.count > max_count)
         | (ledger.count < 0)
         | jnp.any(proposed_a1 > max_id)
         | jnp.any(proposed_a2 > max_id)
@@ -1425,6 +1456,7 @@ def intern_nodes(ledger, proposed_ops, proposed_a1, proposed_a2):
     stop = ledger.oom | ledger.corrupt
 
     # Once invalid, interning must not allocate or mutate state (m1 guardrail).
+    # See IMPLEMENTATION_PLAN.md (m1 guardrails).
     def _skip(_):
         return jnp.zeros_like(proposed_ops), ledger
 
@@ -1455,6 +1487,7 @@ def _apply_perm_and_swizzle(arena, perm):
     swizzled_arg1 = jnp.where(new_arg1 != 0, g1, 0)
     swizzled_arg2 = jnp.where(new_arg2 != 0, g2, 0)
     # Swizzle is renormalization only; denotation must not change (plan).
+    # See IMPLEMENTATION_PLAN.md (m3 denotation invariance).
     _guard_slot0_perm(perm, inv_perm, "swizzle.perm")
     _guard_null_row(new_ops, swizzled_arg1, swizzled_arg2, "swizzle.row0")
     return (
@@ -1842,6 +1875,7 @@ def op_interact(arena):
 @jit
 def cycle_intrinsic(ledger, frontier_ids):
     # m1 evaluator: intrinsic rewrite steps on Ledger (CNF-2 gated off).
+    # See IMPLEMENTATION_PLAN.md (m1 intrinsic evaluator).
     def _peel_one(ptr):
         def cond(state):
             curr, _ = state
@@ -1946,6 +1980,7 @@ def cycle(
     do_global=False,
 ):
     """Run one BSP cycle; sorting/scheduling is renormalization only."""
+    # See IMPLEMENTATION_PLAN.md (m3 denotation invariance).
     arena = op_rank(arena)
     root_arr = jnp.asarray(root_ptr, dtype=jnp.int32)
     if do_sort:
@@ -2460,6 +2495,7 @@ def run_program_lines_bsp(
     bsp_mode = _normalize_bsp_mode(bsp_mode)
     if bsp_mode == "cnf2" and not _cnf2_enabled():
         # Keep intrinsic as the m1 evaluator until the m2 gate is active.
+        # See IMPLEMENTATION_PLAN.md (m1/m2 BSP gating).
         raise ValueError("bsp_mode='cnf2' disabled until m2")
     if bsp_mode not in ("intrinsic", "cnf2"):
         raise ValueError(f"Unknown bsp_mode={bsp_mode!r}")

@@ -656,6 +656,11 @@ Performance checks:
 
 ## Risks and Mitigations
 - **JAX scatter costs**: minimize scatter writes, batch with prefix sums.
+- **Full-array ledger scans**: fixed-shape interning touches `MAX_NODES`-sized
+  buffers even when `count` is small (intentional for JIT stability in m1).
+  m4 mitigations: introduce a smaller `MAX_CAPACITY` for production runs,
+  maintain per-op counts incrementally to avoid full `_bincount_256`, and/or
+  stage prefix-only scans via dynamic slice + pad.
 - **Pointer invalidation**: treat root pointer as part of state, remap every
   sort, and verify in tests.
 - **Capacity overflow**: add a guard that halts or triggers a sort/compaction.
