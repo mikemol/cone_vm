@@ -1297,8 +1297,16 @@ def _intern_nodes_impl(ledger, proposed_ops, proposed_a1, proposed_a2):
         proposed_ops, proposed_a1, proposed_a2
     )
     max_id = jnp.int32(MAX_ID)
-    bounds_corrupt = (ledger.count > max_id) | jnp.any(proposed_a1 > max_id) | jnp.any(
-        proposed_a2 > max_id
+    # Reject negative ids/opcodes to avoid key aliasing from fixed-width packing.
+    op_oob = jnp.any((proposed_ops < 0) | (proposed_ops > jnp.int32(255)))
+    bounds_corrupt = (
+        (ledger.count > max_id)
+        | (ledger.count < 0)
+        | jnp.any(proposed_a1 > max_id)
+        | jnp.any(proposed_a2 > max_id)
+        | jnp.any(proposed_a1 < 0)
+        | jnp.any(proposed_a2 < 0)
+        | op_oob
     )
 
     def _corrupt_return(_):
@@ -1878,11 +1886,9 @@ def cycle(
         else:
             arena, inv_perm = op_sort_and_swizzle_with_perm(arena)
         # Root remap is a pointer gather; guard in test mode.
-        root_arr = jnp.where(
-            root_arr != 0,
-            safe_gather_1d(inv_perm, root_arr, "cycle.root_remap"),
-            0,
-        )
+        root_idx = jnp.where(root_arr != 0, root_arr, jnp.int32(0))
+        root_g = safe_gather_1d(inv_perm, root_idx, "cycle.root_remap")
+        root_arr = jnp.where(root_arr != 0, root_g, 0)
     arena = op_interact(arena)
     return arena, root_arr
 

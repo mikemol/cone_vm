@@ -80,6 +80,34 @@ def test_intern_corrupt_flag_trips_on_a2_overflow():
     assert int(ids[0]) == 0
 
 
+@pytest.mark.parametrize("bad_a1, bad_a2", [(-1, 0), (0, -1)])
+def test_intern_corrupt_flag_trips_on_negative_child_id(bad_a1, bad_a2):
+    ledger = pv.init_ledger()
+    ids, new_ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([bad_a1], dtype=jnp.int32),
+        jnp.array([bad_a2], dtype=jnp.int32),
+    )
+    assert bool(new_ledger.corrupt)
+    assert not bool(new_ledger.oom)
+    assert int(ids[0]) == 0
+
+
+@pytest.mark.parametrize("bad_op", [-1, 256])
+def test_intern_corrupt_flag_trips_on_opcode_out_of_range(bad_op):
+    ledger = pv.init_ledger()
+    ids, new_ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([bad_op], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    assert bool(new_ledger.corrupt)
+    assert not bool(new_ledger.oom)
+    assert int(ids[0]) == 0
+
+
 def test_intern_raises_on_corrupt_host():
     vm = pv.PrismVM_BSP()
     vm.ledger = vm.ledger._replace(count=jnp.array(pv.MAX_ID + 1, dtype=jnp.int32))
