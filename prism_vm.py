@@ -1350,13 +1350,15 @@ def _apply_perm_and_swizzle(arena, perm):
     new_arg1 = arena.arg1[perm]
     new_arg2 = arena.arg2[perm]
     new_rank = arena.rank[perm]
-    # Guard pointer swizzles in test mode; NULL stays pinned at 0.
-    swizzled_arg1 = jnp.where(
-        new_arg1 != 0, safe_gather_1d(inv_perm, new_arg1, "swizzle.arg1"), 0
-    )
-    swizzled_arg2 = jnp.where(
-        new_arg2 != 0, safe_gather_1d(inv_perm, new_arg2, "swizzle.arg2"), 0
-    )
+    # Guard pointer swizzles in test mode; mask to live region; NULL stays pinned at 0.
+    ids = jnp.arange(new_arg1.shape[0], dtype=jnp.int32)
+    live = ids < arena.count.astype(jnp.int32)
+    idx1 = jnp.where(live, new_arg1, jnp.int32(0))
+    idx2 = jnp.where(live, new_arg2, jnp.int32(0))
+    g1 = safe_gather_1d(inv_perm, idx1, "swizzle.arg1")
+    g2 = safe_gather_1d(inv_perm, idx2, "swizzle.arg2")
+    swizzled_arg1 = jnp.where(new_arg1 != 0, g1, 0)
+    swizzled_arg2 = jnp.where(new_arg2 != 0, g2, 0)
     # Swizzle is renormalization only; denotation must not change (plan).
     _guard_slot0_perm(perm, inv_perm, "swizzle.perm")
     _guard_null_row(new_ops, swizzled_arg1, swizzled_arg2, "swizzle.row0")
