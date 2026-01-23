@@ -3,8 +3,10 @@
 This plan implements the features described in `in/in-4.md` through
 `in/in-7.md`, plus the CNF-2 and canonical interning semantics in
 `in/in-9.md` through `in/in-14.md`, the milestone-gated testing workflow in
-`in/in-15.md`, and the homomorphic collapse contract in `in/in-16.md`, as a
-concrete evolution of the current `prism_vm.py` implementation.
+`in/in-15.md`, the homomorphic collapse contract in `in/in-16.md`, and the
+conceptual contract in `in/in-17.md`, as a concrete evolution of the current
+`prism_vm.py` implementation. The commutation glossary in `in/glossary.md`
+is normative for ambiguous terms and test obligations.
 
 Each `in/in-*.md` note now includes a short NOTE header indicating whether it
 has been refined, consolidated, or obsoleted. See `audit_in_versions.md` for
@@ -45,10 +47,20 @@ locality begins at m4+.
 Ledger denotation is the spec; ID equality is engine-local until baseline
 migrates to the Ledger interner.
 
+## Foundational Commitments (Active Now)
+These are already in effect in code/tests and are treated as non-negotiable.
+- Canonical identity is ledger interning; interning is semantic compression
+  (no reclamation of unique structure).
+- Univalence is enforced by full key-byte equality and a semantic id cap.
+- CORRUPT is a hard semantic error (alias risk); OOM is a resource boundary.
+- Sorting/swizzling and scheduling are renormalization only and must not
+  affect denotation after `q`.
+
 ## Semantic Commitments (Staged)
 - CNF-2 symmetric rewrite semantics are the target for BSP. Every rewrite site
   emits exactly two candidate slots (enabled or disabled).
 - Keep candidate slot 1 disabled until continuation/strata support lands.
+- m1 uses the intrinsic cycle path; CNF-2 pipeline is gated off until m2.
 - Univalence is enforced by full-key equality (hash as hint only) and
   no truncation aliasing in key encoding.
 - CD coordinates are interned CNF-2 objects (`OP_COORD_*`), and coordinate
@@ -64,6 +76,11 @@ migrates to the Ledger interner.
     change denotation (same canonical ids/decoded normal forms).
 - Baseline `PrismVM` is a regression implementation through m3; comparisons are
   on decoded normal forms and termination behavior, not raw ids.
+
+## Staged Commitments (Not Yet Enforced)
+- No-copy sharing and alpha-equivalence collapse (see placeholder tests).
+- Binding without names (structural or coordinate-based encoding).
+- Damage/locality instrumentation as a performance-only concern (m4+).
 
 ## Univalence Contract (Fixed-Width, No-Ambiguity Semantics)
 
@@ -243,8 +260,8 @@ For each step below:
   pytest coverage for black-box validation.
 - Commit tests first, then implement, then commit again.
 
-Sections **0-1** are Ledger-only (m1). Section **2** introduces evaluator
-strata plus the `q` boundary (m2). Sections **4-9** supply scheduler variants
+Section **0** is Ledger-only (m1). Sections **1-2** land in m2 to introduce the
+CNF-2 pipeline and the `q` boundary. Sections **4-9** supply scheduler variants
 needed for m3 denotation invariance; performance-grade locality remains m4+.
 
 ### 0) Canonical Interner + Univalence (Ledger-first)
@@ -254,9 +271,15 @@ Tests (before implementation):
 - Pytest: `test_ledger_full_key_equality` (expected: hash collision does not merge distinct nodes).
 - Pytest: `test_key_width_no_alias` (null: distinct child ids never alias in key encoding).
 - Pytest: `test_intern_corrupt_flag_trips` (expected: corrupt flag is set and host raises).
+- Pytest: `test_intern_nodes_early_out_on_oom_returns_zero_ids` (null: no mutation when invalid).
+- Pytest: `test_intern_nodes_early_out_on_corrupt_returns_zero_ids` (null: no mutation when invalid).
 - Pytest: `test_gather_guard_negative_index_raises` (expected: guarded gather trips on idx < 0).
 - Pytest: `test_gather_guard_oob_raises` (expected: guarded gather trips on idx >= size).
 - Pytest: `test_gather_guard_valid_indices_noop` (null: valid gather remains intact).
+- Pytest: `test_scatter_guard_negative_index_raises` (expected: guarded scatter trips on idx < 0).
+- Pytest: `test_scatter_guard_oob_raises` (expected: guarded scatter trips on idx > size).
+- Pytest: `test_scatter_guard_allows_sentinel_drop` (null: sentinel index is allowed).
+- Pytest: `test_scatter_guard_valid_index_writes` (expected: valid scatter writes).
 - Program: `tests/ledger_univalence.txt` (expected: deterministic canonical ids).
 - Program null: `tests/ledger_noop.txt` (expected: no changes).
 
@@ -275,7 +298,22 @@ Tasks:
 - Add a reference interner contract test suite that validates injectivity and
   full-key equality across interner backends.
 
-### 1) CNF-2 Candidate Pipeline (Rewrite -> Compact -> Intern)
+### 0b) Foundational Semantics: No-copy + Alpha-Equivalence (Staged)
+Objective: pin down sharing and binding semantics early, even before lambda
+encoding is fully implemented.
+
+Tests (before implementation):
+- Pytest: `test_no_copy_sharing` (expected: repeated use does not allocate duplicates; xfail until lambda encoding exists).
+- Pytest: `test_alpha_equivalence_collapses` (expected: `lambda x. x` == `lambda y. y`; xfail until lambda encoding exists).
+- Program: `tests/no_copy.txt` (expected: reuse does not grow structure; placeholder).
+- Program: `tests/alpha_equiv.txt` (expected: alpha-equivalent forms match; placeholder).
+
+Tasks:
+- Add placeholder tests with clear xfail reasons tied to lambda encoding.
+- Define a minimal lambda encoding surface (even if stubbed) to route the tests.
+- Flip xfail to pass when the encoding lands.
+
+### 1) CNF-2 Candidate Pipeline (Rewrite -> Compact -> Intern) (m2)
 Objective: enforce fixed-arity rewrite semantics and explicit strata discipline.
 
 Tests (before implementation):
@@ -331,8 +369,8 @@ Tests (before implementation):
 - Pytest: `test_coord_xor_parity_cancel` (expected: parity cancellation is idempotent).
 - Pytest: `test_coord_norm_idempotent` (expected: canonicalization is stable).
 - Pytest: `test_coord_norm_confluent_small` (expected: small expressions converge).
-- Pytest: `test_coord_norm_probe_only_runs_for_pairs` (expected: probe counts only coord pairs; xfail until batching refactor).
-- Pytest: `test_coord_norm_probe_skips_non_coord_batch` (null: probe stays zero; xfail until batching refactor).
+- Pytest: `test_coord_norm_probe_only_runs_for_pairs` (expected: probe counts only coord pairs).
+- Pytest: `test_coord_norm_probe_skips_non_coord_batch` (null: probe stays zero).
 - Pytest: `test_coord_xor_batch_uses_single_intern_call` (expected: batch path bounds interning; xfail until batching refactor).
 - Pytest: `test_coord_norm_batch_matches_host` (expected: batch path matches host; xfail until batching refactor).
 - Program: `tests/coord_basic.txt` (expected: canonical ids for coordinates).
@@ -349,6 +387,22 @@ Tasks:
   1. Build coordinate CNF-2 objects.
   2. Normalize parity/XOR to a canonical coordinate object.
   3. Only then pack keys and intern any coordinate-carrying node.
+
+### 3b) Damage / Locality Instrumentation (m4+)
+Objective: add performance-only instrumentation for damage/locality without
+affecting denotation.
+
+Tests (before implementation):
+- Pytest: `test_damage_metrics_no_semantic_effect` (expected: enabling metrics does not change denotation).
+- Pytest: `test_damage_metrics_disabled_noop` (null: metrics remain zero/empty when disabled).
+- Program: `tests/damage_metrics.txt` (expected: metrics are emitted under debug flag).
+- Program null: `tests/damage_metrics_off.txt` (expected: no metrics emitted).
+
+Tasks:
+- Add per-cycle metrics (delta canonical nodes, reuse rate, damage rate).
+- Define "damage" in terms of locality boundary crossings (tile/halo or block).
+- Gate instrumentation behind a debug flag; treat it as a pure read-only pass.
+- Add a small metrics summary to telemetry without altering scheduling.
 
 ### 4) Data Model: Arena vs Manifest
 Objective: introduce the fluid arena state and keep it isolated from the
@@ -503,11 +557,12 @@ Tasks:
 - Provide debug hooks to compare results with the baseline VM.
 
 ## Milestones (Contract-Aligned)
-- **m1: Ledger CNF-2 core + deterministic keys**
+- **m1: Ledger intrinsic core + deterministic keys**
   - Ledger interning is the reference path (`cycle_intrinsic + intern_nodes`).
   - Full-key equality and hard-cap univalence are enforced.
   - Milestone-gated tests are part of the deliverable (see `in/in-15.md`).
 - **m2: Strata boundary + total `q` projection**
+  - CNF-2 fixed-arity pipeline is enabled (slot1 disabled).
   - Evaluator emits strata; no within-tier references.
   - `commit_stratum`: validate → project `q` → intern → swizzle ids.
 - **m3: Canonical rewrites + denotation invariance harness**
@@ -526,7 +581,7 @@ Tasks:
 - **m1 gate:** univalence + no aliasing + baseline equivalence on small suite.
 - **m2 gate:** strata validator passes + `q` projection total on emitted strata.
 - **m3 gate:** denotation invariance across unsorted/rank/morton/block schedulers.
-- **m4 gate:** coordinate normalization idempotence + parity cancellation.
+- **m4 gate:** coordinate normalization idempotence + parity cancellation + instrumentation is denotation-invariant.
 - **m5 gate:** full-suite denotation invariance + univalence stress tests.
 
 ## Invariant Checklist (m1–m5)
@@ -534,7 +589,8 @@ m1:
 - Key-byte univalence holds under hard-cap mode (`MAX_ID` checks + corrupt trap).
 - Deterministic interning for identical inputs within a single engine.
 - Baseline vs ledger equivalence on small add-zero suite.
-- Guarded gathers reject out-of-range indices under test guards.
+- Guarded gathers and scatters reject out-of-range indices under test guards.
+- Interning early-outs when `oom` or `corrupt` is set.
 m2:
 - CNF-2 emission is fixed-arity (2 slots per site) with slot1 disabled.
 - Compaction never interns disabled payloads.
@@ -545,6 +601,7 @@ m3:
 m4:
 - Coordinate normalization is idempotent and confluent on small inputs.
 - Coordinate lifting limited to `OP_ADD`.
+- Damage/locality instrumentation does not change denotation when enabled.
 m5:
 - Arena scheduling (rank/sort/morton on/off) preserves denotation end-to-end.
 
@@ -553,7 +610,7 @@ m5:
 2. Add tests `test_univalence_no_alias_guard`, `test_add_zero_equivalence_baseline_vs_ledger` (both operand orders), and `test_intern_deterministic_ids_single_engine`.
 3. Implement key-width fix and hard-trap on `count > 65534`.
 4. Ensure `cycle_intrinsic` reduces the add-zero cases.
-5. Only then introduce CNF-2 pipeline tests (m3).
+5. Only then introduce CNF-2 pipeline tests (m2).
 
 ## Testing Plan
 ### Milestone Test Selection
@@ -571,7 +628,9 @@ Unit tests (ordered by dependency):
 - Strata discipline: newly created nodes only reference prior strata.
 - Lossless univalence/dedup (interning returns canonical ids).
 - Key-width aliasing guard (full-key equality, no truncation merges).
-- Gather guard rejects out-of-range indices (test-guard mode).
+- Gather/scatter guards reject out-of-range indices (test-guard mode).
+- No-copy sharing (xfail until lambda encoding exists).
+- Alpha-equivalence collapse (xfail until lambda encoding exists).
 - Coordinate parity normalization (pointer equality for canonical coordinates).
 - CNF-2 fixed arity: two candidate slots per rewrite site.
 - 2:1 denotation invariance once swizzle is mandatory.
@@ -593,6 +652,7 @@ Integration tests:
 Performance checks:
 - Cycle time (rank/sort/swizzle/interact).
 - Allocation pressure vs capacity.
+- Damage/locality metrics (when enabled).
 
 ## Risks and Mitigations
 - **JAX scatter costs**: minimize scatter writes, batch with prefix sums.

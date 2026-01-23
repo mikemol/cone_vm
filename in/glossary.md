@@ -327,6 +327,178 @@ denote(P) == denote(compile(P))
 
 ---
 
+## 10. Garbage Collection / Interning (Semantic Compression)
+
+### Meanings in Play
+
+* **GCᵣ**: runtime reclamation (tracing/sweeping)
+* **GCᵢ**: interning/dedup as semantic compression
+
+### Axes
+
+* Resource management vs Semantic identity
+
+### Desired Commutation
+
+```
+pretty(denote(rebuild_from_roots(L))) == pretty(denote(L))
+```
+
+### Failure Mode
+
+* Canonical IDs are reclaimed or reassigned
+* "GC" used to mask semantic aliasing
+* Rebuild changes denotation
+
+### Normative Rule
+
+> Interning is semantic compression; optional rebuilds are allowed only as
+> renormalization that preserves denotation.
+
+---
+
+## 11. Damage / Locality
+
+### Meanings in Play
+
+* **Damageₛ**: spatial boundary crossing (tile/halo escalation)
+* **Damageₑ**: semantic rewrite impact
+
+### Axes
+
+* Locality vs Meaning
+
+### Desired Commutation
+
+```
+denote( damage_escalate ∘ local_step (P) ) = denote( local_step (P) )
+```
+
+### Failure Mode
+
+* Damage sets influence identity creation
+* Locality changes which rewrites fire
+
+### Normative Rule
+
+> Damage is a performance signal only; it must be erased by `q` and never
+> affect denotation.
+
+---
+
+## 12. Renormalization / Sorting
+
+### Meanings in Play
+
+* **Renormˢ**: layout reorder (sort/swizzle)
+* **Normalizeᵣ**: semantic reduction (already defined above)
+
+### Axes
+
+* Layout vs Semantics
+
+### Desired Commutation
+
+```
+denote( renorm(P) ) = denote(P)
+```
+
+### Failure Mode
+
+* Sorting changes keys or rewrite outcomes
+* Root pointer/remap errors leak into meaning
+
+### Normative Rule
+
+> Sorting/swizzling are renormalization passes only; preserve edges and NULL,
+> and validate invariance after `q`.
+
+---
+
+## 13. OOM / CORRUPT
+
+### Meanings in Play
+
+* **OOM**: resource exhaustion (capacity)
+* **CORRUPT**: semantic undefinedness (alias risk)
+
+### Axes
+
+* Resource limits vs Semantic validity
+
+### Desired Commutation
+
+```
+denote(P) is undefined iff CORRUPT
+```
+
+### Failure Mode
+
+* Key-width overflow treated as OOM
+* Execution proceeds after alias risk
+
+### Normative Rule
+
+> CORRUPT is a hard semantic error; OOM is an admissible resource boundary.
+
+---
+
+## 14. Duplication / Sharing (No-copy)
+
+### Meanings in Play
+
+* **Copy**: allocate new structure
+* **Share**: reuse canonical identity in multiple contexts
+
+### Axes
+
+* Operational steps vs Semantic identity
+
+### Desired Commutation
+
+```
+use(x, x) should not allocate a duplicate of x
+```
+
+### Failure Mode
+
+* Primitive copy creates new nodes for existing structure
+* Superlinear growth from repeated use
+
+### Normative Rule
+
+> Duplication is expressed by sharing canonical IDs; no-copy is an operational axiom.
+
+---
+
+## 15. Binding / Names (Alpha-Equivalence)
+
+### Meanings in Play
+
+* **Nominal**: names and lookup
+* **Structural**: wiring or coordinates
+
+### Axes
+
+* Names vs Structure
+
+### Desired Commutation
+
+```
+compile(λx. x) == compile(λy. y)
+```
+
+### Failure Mode
+
+* Names leak into keys or identity
+* Alpha-equivalent terms intern differently
+
+### Normative Rule
+
+> Binding is structural; alpha-equivalence must collapse before interning.
+
+---
+
 # Meta-Rule: How to Use This Going Forward
 
 Whenever a term or acronym is reused:
