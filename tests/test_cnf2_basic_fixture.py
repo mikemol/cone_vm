@@ -4,7 +4,7 @@ import pytest
 
 from tests import harness
 
-pytestmark = pytest.mark.m3
+pytestmark = pytest.mark.m2
 
 
 def _load_expressions():

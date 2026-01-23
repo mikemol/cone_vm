@@ -3,7 +3,7 @@ import pytest
 
 import prism_vm as pv
 
-pytestmark = pytest.mark.m3
+pytestmark = pytest.mark.m2
 
 
 def _require_candidate_api():
@@ -222,6 +222,7 @@ def test_candidate_emit_mul_suc_right_values():
     assert int(candidates.arg2[0]) == int(base_id)
 
 
+@pytest.mark.m3
 def test_candidate_slot1_disabled_for_all_frontier_nodes():
     _require_candidate_api()
     ledger = pv.init_ledger()

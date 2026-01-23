@@ -170,6 +170,17 @@ def _cnf2_enabled():
     return milestone is not None and milestone >= 2
 
 
+def _default_bsp_mode():
+    # CNF-2 becomes the default at m2; intrinsic remains the oracle path.
+    return "cnf2" if _cnf2_enabled() else "intrinsic"
+
+
+def _normalize_bsp_mode(bsp_mode):
+    if bsp_mode in (None, "", "auto"):
+        return _default_bsp_mode()
+    return bsp_mode
+
+
 def _guards_enabled():
     return _TEST_GUARDS and _HAS_DEBUG_CALLBACK
 
@@ -2364,14 +2375,17 @@ def run_program_lines_bsp(
     l2_block_size=None,
     l1_block_size=None,
     do_global=False,
-    bsp_mode="intrinsic",
+    bsp_mode="auto",
     validate_stratum=False,
 ):
     if vm is None:
         vm = PrismVM_BSP()
-    if bsp_mode != "intrinsic":
-        # CNF2 pipeline is disabled until m2 to keep intrinsic as the m1 evaluator.
+    bsp_mode = _normalize_bsp_mode(bsp_mode)
+    if bsp_mode == "cnf2" and not _cnf2_enabled():
+        # Keep intrinsic as the m1 evaluator until the m2 gate is active.
         raise ValueError("bsp_mode='cnf2' disabled until m2")
+    if bsp_mode not in ("intrinsic", "cnf2"):
+        raise ValueError(f"Unknown bsp_mode={bsp_mode!r}")
     for inp in lines:
         inp = inp.strip()
         if not inp or inp.startswith("#"):
@@ -2380,7 +2394,12 @@ def run_program_lines_bsp(
         root_ptr = vm.parse(tokens)
         frontier = jnp.array([root_ptr], dtype=jnp.int32)
         for _ in range(max(1, cycles)):
-            vm.ledger, frontier = cycle_intrinsic(vm.ledger, frontier)
+            if bsp_mode == "intrinsic":
+                vm.ledger, frontier = cycle_intrinsic(vm.ledger, frontier)
+            else:
+                vm.ledger, frontier, _ = cycle_candidates(
+                    vm.ledger, frontier, validate_stratum=validate_stratum
+                )
             vm.ledger.count.block_until_ready()
             if bool(vm.ledger.corrupt):
                 raise RuntimeError(
@@ -2398,12 +2417,14 @@ def repl(
     mode="baseline",
     use_morton=False,
     block_size=None,
-    bsp_mode="intrinsic",
+    bsp_mode="auto",
     validate_stratum=False,
 ):
     if mode == "bsp":
         vm = PrismVM_BSP()
-        print("\n🔮 Prism IR Shell (BSP Ledger)")
+        bsp_mode = _normalize_bsp_mode(bsp_mode)
+        mode_label = "CNF-2" if bsp_mode == "cnf2" else "Intrinsic"
+        print(f"\n🔮 Prism IR Shell (BSP Ledger, {mode_label})")
         print("   Try: (add (suc zero) (suc zero))")
     else:
         vm = PrismVM()
@@ -2433,7 +2454,7 @@ if __name__ == "__main__":
     import sys
     args = sys.argv[1:]
     mode = "baseline"
-    bsp_mode = "intrinsic"
+    bsp_mode = "auto"
     validate_stratum = False
     cycles = 1
     do_sort = True
