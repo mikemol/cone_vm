@@ -2,14 +2,17 @@ import re
 from pathlib import Path
 
 
-COMMUTES_RE = re.compile(r"# COMMUTES: .*\\[test: ([^\\]]+)\\]")
+COMMUTES_RE = re.compile(r"# COMMUTES: .*\[test: ([^\]]+)\]")
 
 
 def test_commutes_tags_reference_existing_tests():
     repo_root = Path(__file__).resolve().parents[1]
+    self_path = Path(__file__).resolve()
     tags = []
     for path in repo_root.rglob("*.py"):
         if ".venv" in path.parts or "__pycache__" in path.parts:
+            continue
+        if path == self_path:
             continue
         text = path.read_text(encoding="utf-8")
         for match in COMMUTES_RE.finditer(text):
@@ -23,5 +26,5 @@ def test_commutes_tags_reference_existing_tests():
         test_path = repo_root / file_part
         assert test_path.exists(), f"COMMUTES tag references missing file {node}"
         content = test_path.read_text(encoding="utf-8")
-        pattern = rf"def {re.escape(test_name)}\\b"
+        pattern = rf"def {re.escape(test_name)}\b"
         assert re.search(pattern, content), f"COMMUTES tag references missing test {node}"

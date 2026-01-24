@@ -370,3 +370,37 @@ def test_cycle_candidates_validate_stratum_random_frontier():
         assert int(stratum0.start) <= int(ledger.count)
         assert int(stratum1.start) <= int(ledger.count)
         assert int(stratum2.start) <= int(ledger.count)
+
+
+def test_cycle_candidates_validate_stratum_trips_on_within_refs(monkeypatch):
+    _require_cycle_candidates()
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    suc_id = suc_ids[0]
+    add_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([suc_id], dtype=jnp.int32),
+        jnp.array([suc_id], dtype=jnp.int32),
+    )
+    frontier = pv._committed_ids(jnp.array([add_ids[0]], dtype=jnp.int32))
+    real_intern = pv.intern_nodes
+
+    def bad_intern(ledger_in, batch_or_ops, a1=None, a2=None):
+        ids, new_ledger = real_intern(ledger_in, batch_or_ops, a1, a2)
+        start = int(ledger_in.count)
+        end = int(new_ledger.count)
+        if end > start:
+            idx = jnp.arange(start, end, dtype=jnp.int32)
+            new_arg1 = new_ledger.arg1.at[idx].set(idx)
+            new_ledger = new_ledger._replace(arg1=new_arg1)
+        return ids, new_ledger
+
+    monkeypatch.setattr(pv, "intern_nodes", bad_intern)
+    with pytest.raises(ValueError, match="Stratum contains within-tier references"):
+        pv.cycle_candidates(ledger, frontier, validate_stratum=True)

@@ -62,3 +62,51 @@ def test_commit_stratum_applies_prior_q_to_children():
     assert int(canon_ids.a[0]) == int(add_zero)
     mapped = q_map(pv._provisional_ids(jnp.array([add_id], dtype=jnp.int32)))
     assert int(mapped.a[0]) == int(add_zero)
+
+
+def test_commit_stratum_count_mismatch_fails(monkeypatch):
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    node_id = suc_ids[0]
+    stratum = pv.Stratum(start=jnp.int32(node_id), count=jnp.int32(1))
+    real_intern = pv.intern_nodes
+
+    def bad_intern(ledger_in, batch_or_ops, a1=None, a2=None):
+        ids, new_ledger = real_intern(ledger_in, batch_or_ops, a1, a2)
+        return ids[:0], new_ledger
+
+    monkeypatch.setattr(pv, "intern_nodes", bad_intern)
+    with pytest.raises(ValueError, match="Stratum count mismatch"):
+        pv.commit_stratum(ledger, stratum, validate=True)
+
+
+def test_commit_stratum_q_map_totality_on_mixed_ids():
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    node_id = suc_ids[0]
+    node_id_i = int(node_id)
+
+    def prior_q(ids: pv.ProvisionalIds) -> pv.CommittedIds:
+        mapped = jnp.where(ids.a == pv.ZERO_PTR, jnp.int32(node_id_i), ids.a)
+        return pv._committed_ids(mapped)
+
+    stratum = pv.Stratum(start=jnp.int32(node_id_i), count=jnp.int32(1))
+    _, canon_ids, q_map = pv.commit_stratum(
+        ledger, stratum, prior_q=prior_q, validate=True
+    )
+    mixed = jnp.array([0, pv.ZERO_PTR, node_id_i, node_id_i + 1], dtype=jnp.int32)
+    mapped = q_map(pv._provisional_ids(mixed)).a
+    assert int(mapped[0]) == 0
+    assert int(mapped[1]) == node_id_i
+    assert int(mapped[2]) == int(canon_ids.a[0])
+    assert int(mapped[3]) == node_id_i + 1

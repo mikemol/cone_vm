@@ -74,7 +74,7 @@ def test_cnf2_slot_layout_indices():
     _, count, comp_idx = pv.compact_candidates_with_index(candidates)
     size = candidates.enabled.shape[0]
     count_i = int(count)
-    ids_compact = jnp.arange(count_i, dtype=jnp.int32) + 100
+    ids_compact = jnp.arange(size, dtype=jnp.int32) + 100
     ids_full = pv._scatter_compacted_ids(comp_idx, ids_compact, count, size)
 
     enabled_np = jax.device_get(candidates.enabled)
@@ -89,6 +89,85 @@ def test_cnf2_slot_layout_indices():
         else:
             assert int(ids_full_np[pos]) == 0
         assert int(ids_full_np[pos + 1]) == 0
+
+
+def test_candidate_emit_frontier_permutation_invariant():
+    _require_candidate_api()
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0, 0], dtype=jnp.int32),
+    )
+    suc_x_id = suc_ids[0]
+    y_id = suc_ids[1]
+    add_zero_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    add_suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([suc_x_id], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    mul_zero_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_MUL], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    mul_suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_MUL], dtype=jnp.int32),
+        jnp.array([suc_x_id], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    frontier = jnp.array(
+        [
+            add_zero_ids[0],
+            add_suc_ids[0],
+            mul_zero_ids[0],
+            mul_suc_ids[0],
+            suc_x_id,
+        ],
+        dtype=jnp.int32,
+    )
+    perm = jnp.array([2, 0, 4, 1, 3], dtype=jnp.int32)
+    inv_perm = jnp.argsort(perm)
+    frontier_perm = frontier[perm]
+    candidates = pv.emit_candidates(ledger, frontier)
+    candidates_perm = pv.emit_candidates(ledger, frontier_perm)
+
+    def slot0_payloads(cands):
+        enabled = cands.enabled[0::2].astype(jnp.int32)
+        return enabled, cands.opcode[0::2], cands.arg1[0::2], cands.arg2[0::2]
+
+    enabled0, op0, a10, a20 = slot0_payloads(candidates)
+    enabled1, op1, a11, a21 = slot0_payloads(candidates_perm)
+    assert bool(jnp.array_equal(enabled0, enabled1[inv_perm]))
+    assert bool(jnp.array_equal(op0, op1[inv_perm]))
+    assert bool(jnp.array_equal(a10, a11[inv_perm]))
+    assert bool(jnp.array_equal(a20, a21[inv_perm]))
+
+    def slot0_ids(base_ledger, cands, frontier_len):
+        compacted, count, comp_idx = pv.compact_candidates_with_index(cands)
+        enabled = compacted.enabled.astype(jnp.int32)
+        ops = jnp.where(enabled, compacted.opcode, jnp.int32(0))
+        a1 = jnp.where(enabled, compacted.arg1, jnp.int32(0))
+        a2 = jnp.where(enabled, compacted.arg2, jnp.int32(0))
+        ids_compact, _ = pv.intern_nodes(base_ledger, ops, a1, a2)
+        size = cands.enabled.shape[0]
+        ids_full = pv._scatter_compacted_ids(comp_idx, ids_compact, count, size)
+        idx0 = jnp.arange(frontier_len, dtype=jnp.int32) * 2
+        return ids_full[idx0]
+
+    slot0_ids_ref = slot0_ids(ledger, candidates, frontier.shape[0])
+    slot0_ids_perm = slot0_ids(ledger, candidates_perm, frontier.shape[0])
+    assert bool(jnp.array_equal(slot0_ids_ref, slot0_ids_perm[inv_perm]))
 
 
 def test_candidate_compaction_enabled_only():
@@ -289,7 +368,6 @@ def test_candidate_emit_mul_suc_right_values():
     assert int(candidates.arg2[0]) == int(base_id)
 
 
-@pytest.mark.m3
 def test_candidate_slot1_disabled_for_all_frontier_nodes():
     _require_candidate_api()
     ledger = pv.init_ledger()
