@@ -227,7 +227,7 @@ def _api_json(url, token):
 
 
 def check_posture():
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("POLICY_GITHUB_TOKEN")
+    token = os.environ.get("POLICY_GITHUB_TOKEN") or os.environ.get("GITHUB_TOKEN")
     repo = os.environ.get("GITHUB_REPOSITORY")
     if not token:
         _fail(["missing GITHUB_TOKEN or POLICY_GITHUB_TOKEN for posture check"])
