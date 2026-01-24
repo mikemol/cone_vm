@@ -15,7 +15,7 @@ def _small_add_manifest(cap):
     a1 = a1.at[2].set(1)
     ops = ops.at[3].set(pv.OP_ADD)
     a1 = a1.at[3].set(2)
-    a2 = a2.at[3].set(1)
+    a2 = a2.at[3].set(2)
     return pv.Manifest(
         ops,
         a1,
@@ -187,7 +187,7 @@ def test_op_interact_oom():
     a1 = a1.at[2].set(1)
     ops = ops.at[3].set(pv.OP_ADD)
     a1 = a1.at[3].set(2)
-    a2 = a2.at[3].set(1)
+    a2 = a2.at[3].set(2)
     rank = rank.at[3].set(pv.RANK_HOT)
     arena = pv.Arena(
         ops,
@@ -216,7 +216,7 @@ def test_op_interact_canonicalizes_spawned_add():
     a1 = a1.at[2].set(4)
     ops = ops.at[3].set(pv.OP_ADD)
     a1 = a1.at[3].set(2)
-    a2 = a2.at[3].set(1)
+    a2 = a2.at[3].set(2)
     rank = rank.at[3].set(pv.RANK_HOT)
     arena = pv.Arena(
         ops,
@@ -229,7 +229,7 @@ def test_op_interact_canonicalizes_spawned_add():
     new_arena = pv.op_interact(arena)
     add_idx = int(arena.count)
     assert int(new_arena.opcode[add_idx]) == pv.OP_ADD
-    assert int(new_arena.arg1[add_idx]) == 1
+    assert int(new_arena.arg1[add_idx]) == 2
     assert int(new_arena.arg2[add_idx]) == 4
 
 
