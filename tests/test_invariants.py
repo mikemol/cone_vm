@@ -301,23 +301,23 @@ def test_optimize_ptr_zero_rules():
     one = vm.cons(pv.OP_SUC, zero, pv._manifest_ptr(0))
 
     add_left = vm.cons(pv.OP_ADD, zero, one)
-    ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(add_left))
-    assert pv._host_bool_value(optimized)
+    ptr, reason = pv.optimize_ptr(vm.manifest, jnp.int32(add_left))
+    assert pv._host_int_value(reason) == 1
     assert pv._host_int_value(ptr) == int(one)
 
     add_right = vm.cons(pv.OP_ADD, one, zero)
-    ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(add_right))
-    assert pv._host_bool_value(optimized)
+    ptr, reason = pv.optimize_ptr(vm.manifest, jnp.int32(add_right))
+    assert pv._host_int_value(reason) == 1
     assert pv._host_int_value(ptr) == int(one)
 
     mul_left = vm.cons(pv.OP_MUL, zero, one)
-    ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(mul_left))
-    assert pv._host_bool_value(optimized)
+    ptr, reason = pv.optimize_ptr(vm.manifest, jnp.int32(mul_left))
+    assert pv._host_int_value(reason) == 2
     assert pv._host_int_value(ptr) == pv.ZERO_PTR
 
     mul_right = vm.cons(pv.OP_MUL, one, zero)
-    ptr, optimized = pv.optimize_ptr(vm.manifest, jnp.int32(mul_right))
-    assert pv._host_bool_value(optimized)
+    ptr, reason = pv.optimize_ptr(vm.manifest, jnp.int32(mul_right))
+    assert pv._host_int_value(reason) == 2
     assert pv._host_int_value(ptr) == pv.ZERO_PTR
 
 
@@ -334,14 +334,14 @@ def test_trace_cache_refresh_after_eval():
         op = pv._host_int_value(vm.manifest.opcode[idx])
         a1 = pv._host_int_value(vm.manifest.arg1[idx])
         a2 = pv._host_int_value(vm.manifest.arg2[idx])
-        a1, a2 = pv._canonicalize_commutative_host(op, a1, a2)
+        a1, a2 = pv._key_order_commutative_host(op, a1, a2)
         sig = (op, pv._manifest_ptr(a1), pv._manifest_ptr(a2))
         cached = vm.trace_cache.get(sig)
         assert cached is not None
         cached_op = pv._host_int_value(vm.manifest.opcode[int(cached)])
         cached_a1 = pv._host_int_value(vm.manifest.arg1[int(cached)])
         cached_a2 = pv._host_int_value(vm.manifest.arg2[int(cached)])
-        cached_a1, cached_a2 = pv._canonicalize_commutative_host(
+        cached_a1, cached_a2 = pv._key_order_commutative_host(
             cached_op, cached_a1, cached_a2
         )
         assert (cached_op, pv._manifest_ptr(cached_a1), pv._manifest_ptr(cached_a2)) == sig
@@ -368,7 +368,7 @@ def test_baseline_eval_commutative_nodes_are_canonicalized():
         ptr_rev = vm.cons(op, pv._manifest_ptr(a2), pv._manifest_ptr(a1))
         after = pv._host_int_value(vm.manifest.active_count)
         assert after == before
-        c1, c2 = pv._canonicalize_commutative_host(op, a1, a2)
+        c1, c2 = pv._key_order_commutative_host(op, a1, a2)
         assert vm.trace_cache.get((op, pv._manifest_ptr(c1), pv._manifest_ptr(c2))) == ptr_rev
     assert found
 

@@ -455,6 +455,21 @@ def _coord_norm_probe_tick(n):
     global _coord_norm_probe_count
     _coord_norm_probe_count += int(n)
 
+
+def _coord_norm_probe_reset_cb(_):
+    coord_norm_probe_reset()
+
+
+def _coord_norm_probe_assert(has_coord):
+    if not _coord_norm_probe_enabled():
+        return
+    expect = bool(has_coord)
+    count = coord_norm_probe_get()
+    if expect and count <= 0:
+        raise RuntimeError("coord_norm probe missing for coord pair batch")
+    if not expect and count != 0:
+        raise RuntimeError("coord_norm probe fired for non-coord batch")
+
 # --- Rank (2-bit Scheduler) ---
 RANK_HOT = 0
 RANK_WARM = 1  # Reserved for future policies.
@@ -594,6 +609,17 @@ def ledger_has_corrupt(ledger) -> HostBool:
     flag = ledger.corrupt if hasattr(ledger, "corrupt") else ledger.oom
     # SYNC: device_get forces host sync for deterministic checks (m1).
     return _host_bool(jax.device_get(flag))
+
+
+def _host_raise_if_bad(ledger, oom_message="Ledger capacity exceeded", oom_exc=RuntimeError):
+    # SYNC: host check after device-side mutations (m1).
+    ledger.count.block_until_ready()
+    if _host_bool_value(ledger.corrupt):
+        raise RuntimeError(
+            "CORRUPT: key encoding alias risk (id width exceeded)"
+        )
+    if _host_bool_value(ledger.oom):
+        raise oom_exc(oom_message)
 
 def emit_candidates(ledger, frontier_ids):
     num_frontier = frontier_ids.shape[0]
@@ -743,6 +769,7 @@ def _identity_q(ids: ProvisionalIds) -> CommittedIds:
 
 
 def apply_q(q: QMap, ids: ProvisionalIds) -> CommittedIds:
+    # Collapseʰ: homomorphic projection q.
     return q(_provisional_ids(ids))
 
 
@@ -770,6 +797,7 @@ def commit_stratum(
     prior_q: QMap | None = None,
     validate: bool = False,
 ) -> Tuple[Ledger, CommittedIds, QMap]:
+    # Collapseʰ: homomorphic projection q at the stratum boundary.
     if validate and not validate_stratum_no_within_refs(ledger, stratum):
         raise ValueError("Stratum contains within-tier references")
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
@@ -794,6 +822,7 @@ def commit_stratum(
         mapped = _apply_stratum_q(ids_in, stratum, canon_ids, "commit_stratum.q")
         return q_prev(mapped)
 
+    _host_raise_if_bad(ledger, "Ledger capacity exceeded during commit_stratum")
     return ledger, canon_ids, q_map
 
 def cycle_candidates(
@@ -801,6 +830,7 @@ def cycle_candidates(
     frontier_ids: CommittedIds,
     validate_stratum: bool = False,
 ) -> Tuple[Ledger, ProvisionalIds, Tuple[Stratum, Stratum, Stratum], QMap]:
+    # BSPᵗ: temporal superstep / barrier semantics.
     frontier_ids = _committed_ids(frontier_ids)
     if not _cnf2_enabled():
         # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
@@ -936,6 +966,13 @@ def cycle_candidates(
         ledger2, stratum2, prior_q=q_map, validate=validate_stratum
     )
     next_frontier = _provisional_ids(next_frontier)
+    _host_raise_if_bad(ledger2, "Ledger capacity exceeded during cycle_candidates")
+    if _TEST_GUARDS:
+        pre_hash = _ledger_roots_hash_host(ledger2, next_frontier.a)
+        post_ids = apply_q(q_map, next_frontier).a
+        post_hash = _ledger_roots_hash_host(ledger2, post_ids)
+        if pre_hash != post_hash:
+            raise RuntimeError("BSPᵗ projection changed root structure")
     return ledger2, next_frontier, (stratum0, stratum1, stratum2), q_map
 
 @jit
@@ -950,16 +987,16 @@ def _invert_perm(perm):
     inv = jnp.empty_like(perm)
     return inv.at[perm].set(jnp.arange(perm.shape[0], dtype=perm.dtype))
 
-def _canonicalize_commutative_host(op, a1, a2):
+def _key_order_commutative_host(op, a1, a2):
     if op in (OP_ADD, OP_MUL) and a2 < a1:
         return a2, a1
     return a1, a2
 
-def _canonicalize_nodes(ops, a1, a2):
+def _key_safe_normalize_nodes(ops, a1, a2):
     is_null = ops == OP_NULL
     is_coord_leaf = (ops == OP_COORD_ZERO) | (ops == OP_COORD_ONE)
     zero_mask = is_null | is_coord_leaf
-    _guard_zero_args(is_coord_leaf, a1, a2, "canonicalize.coord_leaf_args")
+    _guard_zero_args(is_coord_leaf, a1, a2, "key_safe_normalize.coord_leaf_args")
     a1 = jnp.where(zero_mask, jnp.int32(0), a1)
     a2 = jnp.where(zero_mask, jnp.int32(0), a2)
     # NOTE: OP_COORD_PAIR is treated as ordered; no commutative swap here.
@@ -971,6 +1008,7 @@ def _canonicalize_nodes(ops, a1, a2):
 
 
 def _coord_norm_id_jax(ledger, coord_id):
+    # CDᵣ + Normalize𝚌
     # Debug-only probe to detect vmap scope; see tests/test_coord_norm_probe.py.
     # NOTE: repeated lookups per step are an m1/m4 tradeoff; batching is
     # tracked in IMPLEMENTATION_PLAN.md.
@@ -1064,6 +1102,8 @@ def coord_norm(ledger, coord_id):
 
 
 def coord_xor(ledger, left_id, right_id):
+    # CDᵣ + Normalize𝚌
+    # COMMUTES: CDₐ ⟂ CDᵣ    [test: tests/test_coord_ops.py::test_coord_norm_commutes_with_xor]
     # Host-only reference path; device hot paths should use jitted batch ops.
     # SYNC: host reads device opcode/args for coord xor (m1).
     # NOTE: per-scalar device reads can be a perf cliff; batch if needed
@@ -1220,6 +1260,8 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     is_coord_pair = proposed_ops == OP_COORD_PAIR
 
     has_coord = jnp.any(is_coord_pair)
+    if _guards_enabled() and _coord_norm_probe_enabled():
+        jax.debug.callback(_coord_norm_probe_reset_cb, jnp.int32(0))
     # CD_r/CD_a: normalize coord pairs before packing keys for stable lookup.
 
     def _norm(args):
@@ -1262,7 +1304,10 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     proposed_a1, proposed_a2 = lax.cond(
         has_coord, _norm, _no_norm, (proposed_a1, proposed_a2)
     )
+    if _guards_enabled() and _coord_norm_probe_enabled():
+        jax.debug.callback(_coord_norm_probe_assert, has_coord)
 
+    # Key-safety: Normalize𝚌 before packing.
     # Sort proposals by packed key so duplicates collapse deterministically.
     P_b0, P_b1, P_b2, P_b3, P_b4 = _pack_key(
         proposed_ops, proposed_a1, proposed_a2
@@ -1407,6 +1452,8 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         zero_ids = jnp.zeros_like(proposed_ops)
         # NOTE: overflow is treated as CORRUPT in m1 because the semantic id
         # cap matches capacity; a distinct OOM path is deferred to the plan.
+        # NOTE(m1): capacity == semantic id hard-cap; overflow is CORRUPT.
+        # Planned(m?): split OOM vs CORRUPT once semantic cap decouples from storage.
         new_ledger = ledger._replace(corrupt=jnp.array(True, dtype=jnp.bool_))
         return zero_ids, new_ledger
 
@@ -1665,7 +1712,7 @@ def _intern_nodes_impl(ledger, batch: NodeBatch):
     coord_leaf_nonzero = jnp.any(
         coord_leaf_mask & ((proposed_a1 != 0) | (proposed_a2 != 0))
     )
-    proposed_ops, proposed_a1, proposed_a2 = _canonicalize_nodes(
+    proposed_ops, proposed_a1, proposed_a2 = _key_safe_normalize_nodes(
         proposed_ops, proposed_a1, proposed_a2
     )
     is_null = proposed_ops == OP_NULL
@@ -1707,6 +1754,7 @@ def _intern_nodes_impl(ledger, batch: NodeBatch):
 def intern_nodes(ledger, batch_or_ops, a1=None, a2=None):
     """
     Batch-intern a list of proposed (op,a1,a2) nodes into the canonical Ledger.
+    Canonical identity is via full key-byte equality (Canonicalᵢ).
 
     Args:
       ledger: Ledger
@@ -1747,6 +1795,67 @@ def _active_prefix_count(arena) -> HostInt:
     count = _host_int(arena.count)
     # NOTE: clamp to size hides overflow; explicit guard is deferred to plan.
     return _host_int(size) if int(count) > size else count
+
+
+def _arena_root_hash_host(arena, root_ptr, limit=64):
+    if not _TEST_GUARDS:
+        return 0
+    root_i = _host_int_value(root_ptr)
+    if root_i == 0:
+        return 0
+    count = _host_int_value(arena.count)
+    if count <= 0 or root_i >= count:
+        return 0
+    ops = jax.device_get(arena.opcode[:count])
+    a1 = jax.device_get(arena.arg1[:count])
+    a2 = jax.device_get(arena.arg2[:count])
+    stack = [int(root_i)]
+    seen = set()
+    h = 0
+    while stack and len(seen) < int(limit):
+        idx = stack.pop()
+        if idx <= 0 or idx >= count or idx in seen:
+            continue
+        seen.add(idx)
+        h = (h * 1315423911) ^ (
+            int(ops[idx]) + 0x9E3779B9 + (int(a1[idx]) << 1) + (int(a2[idx]) << 2)
+        )
+        stack.append(int(a1[idx]))
+        stack.append(int(a2[idx]))
+    return int(h) & 0xFFFFFFFF
+
+
+def _ledger_root_hash_host(ledger, root_id, limit=64):
+    if not _TEST_GUARDS:
+        return 0
+    root_i = _host_int_value(root_id)
+    if root_i == 0:
+        return 0
+    count = _host_int_value(ledger.count)
+    if count <= 0 or root_i >= count:
+        return 0
+    ops = jax.device_get(ledger.opcode[:count])
+    a1 = jax.device_get(ledger.arg1[:count])
+    a2 = jax.device_get(ledger.arg2[:count])
+    stack = [int(root_i)]
+    seen = set()
+    h = 0
+    while stack and len(seen) < int(limit):
+        idx = stack.pop()
+        if idx <= 0 or idx >= count or idx in seen:
+            continue
+        seen.add(idx)
+        h = (h * 1315423911) ^ (
+            int(ops[idx]) + 0x9E3779B9 + (int(a1[idx]) << 1) + (int(a2[idx]) << 2)
+        )
+        stack.append(int(a1[idx]))
+        stack.append(int(a2[idx]))
+    return int(h) & 0xFFFFFFFF
+
+
+def _ledger_roots_hash_host(ledger, root_ids, limit=64):
+    roots = jax.device_get(root_ids)
+    return tuple(_ledger_root_hash_host(ledger, int(r), limit) for r in roots)
 
 def _apply_perm_and_swizzle(arena, perm):
     # BSP_s renorm: layout-only; must commute with q/denote.
@@ -1798,6 +1907,7 @@ def _op_sort_and_swizzle_with_perm_prefix(arena, active_count):
     return _apply_perm_and_swizzle(arena, perm)
 
 def op_sort_and_swizzle_with_perm(arena):
+    # BSPˢ: layout/space only.
     active_count = _active_prefix_count(arena)
     active_count_i = int(active_count)
     size = arena.rank.shape[0]
@@ -1806,10 +1916,12 @@ def op_sort_and_swizzle_with_perm(arena):
     return _op_sort_and_swizzle_with_perm_prefix(arena, active_count_i)
 
 def op_sort_and_swizzle(arena):
+    # BSPˢ: layout/space only.
     sorted_arena, _ = op_sort_and_swizzle_with_perm(arena)
     return sorted_arena
 
 def _blocked_perm(arena, block_size, morton=None, active_count=None):
+    # BSPˢ: layout/space only.
     size = int(arena.rank.shape[0])
     if block_size <= 0 or size % block_size != 0:
         raise ValueError("block_size must evenly divide arena size")
@@ -1862,6 +1974,7 @@ def _blocked_perm(arena, block_size, morton=None, active_count=None):
     return perm
 
 def op_sort_and_swizzle_blocked_with_perm(arena, block_size, morton=None):
+    # BSPˢ: layout/space only.
     active_count = _active_prefix_count(arena)
     perm = _blocked_perm(
         arena, block_size, morton=morton, active_count=int(active_count)
@@ -1869,6 +1982,7 @@ def op_sort_and_swizzle_blocked_with_perm(arena, block_size, morton=None):
     return _apply_perm_and_swizzle(arena, perm)
 
 def op_sort_and_swizzle_blocked(arena, block_size, morton=None):
+    # BSPˢ: layout/space only.
     sorted_arena, _ = op_sort_and_swizzle_blocked_with_perm(
         arena, block_size, morton=morton
     )
@@ -1900,6 +2014,7 @@ def _walk_block_sizes(start_block_size, size):
 def op_sort_and_swizzle_hierarchical_with_perm(
     arena, l2_block_size, l1_block_size, morton=None, do_global=False
 ):
+    # BSPˢ: layout/space only.
     size = int(arena.rank.shape[0])
     if l2_block_size <= 0 or l1_block_size <= 0:
         raise ValueError("block sizes must be positive")
@@ -1934,6 +2049,7 @@ def op_sort_and_swizzle_hierarchical_with_perm(
 def op_sort_and_swizzle_hierarchical(
     arena, l2_block_size, l1_block_size, morton=None, do_global=False
 ):
+    # BSPˢ: layout/space only.
     sorted_arena, _ = op_sort_and_swizzle_hierarchical_with_perm(
         arena,
         l2_block_size,
@@ -2031,6 +2147,7 @@ def swizzle_2to1(x, y):
 
 @jit
 def op_morton(arena):
+    # BSPˢ: layout/space only.
     size = arena.opcode.shape[0]
     idx = jnp.arange(size, dtype=jnp.uint32)
     x = idx
@@ -2066,6 +2183,7 @@ def _op_sort_and_swizzle_morton_with_perm_prefix(arena, morton, active_count):
     return _apply_perm_and_swizzle(arena, perm)
 
 def op_sort_and_swizzle_morton_with_perm(arena, morton):
+    # BSPˢ: layout/space only.
     active_count = _active_prefix_count(arena)
     active_count_i = int(active_count)
     size = arena.rank.shape[0]
@@ -2076,6 +2194,7 @@ def op_sort_and_swizzle_morton_with_perm(arena, morton):
     )
 
 def op_sort_and_swizzle_morton(arena, morton):
+    # BSPˢ: layout/space only.
     sorted_arena, _ = op_sort_and_swizzle_morton_with_perm(arena, morton)
     return sorted_arena
 
@@ -2159,7 +2278,7 @@ def op_interact(arena):
     )
 
 @jit
-def cycle_intrinsic(ledger, frontier_ids):
+def _cycle_intrinsic_jax(ledger, frontier_ids):
     # m1 evaluator: intrinsic rewrite steps on Ledger (CNF-2 gated off).
     # See IMPLEMENTATION_PLAN.md (m1 intrinsic evaluator).
     def _skip(_):
@@ -2266,6 +2385,13 @@ def cycle_intrinsic(ledger, frontier_ids):
 
     return lax.cond(ledger.corrupt, _skip, _do, operand=None)
 
+
+def cycle_intrinsic(ledger, frontier_ids):
+    # BSPᵗ: temporal superstep / barrier semantics.
+    ledger, frontier_ids = _cycle_intrinsic_jax(ledger, frontier_ids)
+    _host_raise_if_bad(ledger, "Ledger capacity exceeded during cycle")
+    return ledger, frontier_ids
+
 def cycle(
     arena,
     root_ptr,
@@ -2277,11 +2403,15 @@ def cycle(
     l1_block_size=None,
     do_global=False,
 ):
+    # BSPˢ is renormalization only: must preserve denotation after q (m3).
+    # BSPᵗ controls when identity is created via commit_stratum barriers.
+    # COMMUTES: BSPᵗ ⟂ BSPˢ  [test: tests/test_arena_denotation_invariance.py::test_arena_denotation_invariance_random_suite]
     """Run one BSP cycle; sorting/scheduling is renormalization only."""
     # See IMPLEMENTATION_PLAN.md (m3 denotation invariance).
     arena = op_rank(arena)
     root_arr = jnp.asarray(root_ptr, dtype=jnp.int32)
     if do_sort:
+        pre_hash = _arena_root_hash_host(arena, root_arr)
         morton_arr = None
         if use_morton or morton is not None:
             morton_arr = morton if morton is not None else op_morton(arena)
@@ -2309,6 +2439,8 @@ def cycle(
         root_idx = jnp.where(root_arr != 0, root_arr, jnp.int32(0))
         root_g = safe_gather_1d(inv_perm, root_idx, "cycle.root_remap")
         root_arr = jnp.where(root_arr != 0, root_g, 0)
+        if _TEST_GUARDS and pre_hash != _arena_root_hash_host(arena, root_arr):
+            raise RuntimeError("BSPˢ renormalization changed root structure")
     arena = op_interact(arena)
     return arena, root_arr
 
@@ -2466,15 +2598,20 @@ def optimize_ptr(manifest, ptr):
     add_zero_right = is_add & is_zero_a2
     mul_zero_left = is_mul & is_zero
     mul_zero_right = is_mul & is_zero_a2
-    optimized = add_zero_left | add_zero_right | mul_zero_left | mul_zero_right
     out_ptr = jnp.where(add_zero_left, a2, ptr)
     out_ptr = jnp.where(add_zero_right, a1, out_ptr)
     out_ptr = jnp.where(mul_zero_left | mul_zero_right, jnp.int32(ZERO_PTR), out_ptr)
-    return out_ptr, optimized
+    reason = jnp.where(
+        add_zero_left | add_zero_right,
+        jnp.int32(1),
+        jnp.int32(0),
+    )
+    reason = jnp.where(mul_zero_left | mul_zero_right, jnp.int32(2), reason)
+    return out_ptr, reason
 
 @jit
 def dispatch_kernel(manifest, ptr):
-    opt_ptr, opt_applied = optimize_ptr(manifest, ptr)
+    opt_ptr, opt_reason = optimize_ptr(manifest, ptr)
     op = manifest.opcode[opt_ptr]
     case_index = jnp.where(op == OP_ADD, 1, jnp.where(op == OP_MUL, 2, 0))
     new_manifest, res_ptr = lax.switch(
@@ -2482,7 +2619,7 @@ def dispatch_kernel(manifest, ptr):
         (_dispatch_identity, _dispatch_add, _dispatch_mul),
         (manifest, opt_ptr),
     )
-    return new_manifest, res_ptr, opt_applied
+    return new_manifest, res_ptr, opt_reason
 
 
 # --- 4. Prism VM (Host Logic) ---
@@ -2511,7 +2648,7 @@ class PrismVM:
         """Physical allocation (Device Write)"""
         _require_manifest_ptr(a1, "PrismVM._cons_raw a1")
         _require_manifest_ptr(a2, "PrismVM._cons_raw a2")
-        a1_i, a2_i = _canonicalize_commutative_host(op, int(a1), int(a2))
+        a1_i, a2_i = _key_order_commutative_host(op, int(a1), int(a2))
         cap = int(self.manifest.opcode.shape[0])
         if self.active_count_host >= cap:
             self.manifest = self.manifest._replace(
@@ -2541,7 +2678,7 @@ class PrismVM:
             op_i = int(op)
             a1_i = int(self._canonical_ptr(_manifest_ptr(a1)))
             a2_i = int(self._canonical_ptr(_manifest_ptr(a2)))
-            a1_i, a2_i = _canonicalize_commutative_host(op_i, a1_i, a2_i)
+            a1_i, a2_i = _key_order_commutative_host(op_i, a1_i, a2_i)
             signature = (op_i, _manifest_ptr(a1_i), _manifest_ptr(a2_i))
             if signature not in self.trace_cache:
                 self.trace_cache[signature] = ptr
@@ -2565,7 +2702,7 @@ class PrismVM:
         _require_manifest_ptr(a2, "PrismVM.cons a2")
         a1_i = int(self._canonical_ptr(a1))
         a2_i = int(self._canonical_ptr(a2))
-        a1_i, a2_i = _canonicalize_commutative_host(op, a1_i, a2_i)
+        a1_i, a2_i = _key_order_commutative_host(op, a1_i, a2_i)
         signature = (op, _manifest_ptr(a1_i), _manifest_ptr(a2_i))
         if signature in self.trace_cache:
             return self.trace_cache[signature]
@@ -2583,10 +2720,13 @@ class PrismVM:
         _require_manifest_ptr(ptr, "PrismVM.analyze_and_optimize ptr")
         ptr = self._canonical_ptr(ptr)
         ptr_arr = jnp.array(int(ptr), dtype=jnp.int32)
-        opt_ptr, opt_applied = optimize_ptr(self.manifest, ptr_arr)
+        opt_ptr, opt_reason = optimize_ptr(self.manifest, ptr_arr)
         # SYNC: host reads device flag for optimization signal (m1).
-        if _host_bool_value(opt_applied):
+        opt_reason_i = _host_int_value(opt_reason)
+        if opt_reason_i == 1:
             print("   [!] Static Analysis: Optimized (add zero x) -> x")
+        elif opt_reason_i == 2:
+            print("   [!] Static Analysis: Optimized (mul zero x) -> zero")
         # SYNC: host reads device scalar for optimized ptr (m1).
         return self._canonical_ptr(_manifest_ptr(_host_int_value(opt_ptr)))
 
@@ -2600,7 +2740,7 @@ class PrismVM:
         ptr = self._canonical_ptr(ptr)
         ptr_arr = jnp.array(int(ptr), dtype=jnp.int32)
         prev_count = self.active_count_host
-        new_manifest, res_ptr, opt_applied = dispatch_kernel(self.manifest, ptr_arr)
+        new_manifest, res_ptr, opt_reason = dispatch_kernel(self.manifest, ptr_arr)
         # SYNC: wait for device result before host state update (m1).
         res_ptr.block_until_ready()
         self.manifest = new_manifest
@@ -2612,8 +2752,11 @@ class PrismVM:
         # SYNC: host reads device flags for error/opt reporting (m1).
         if _host_bool_value(self.manifest.oom):
             raise RuntimeError("Manifest capacity exceeded during kernel execution")
-        if _host_bool_value(opt_applied):
+        opt_reason_i = _host_int_value(opt_reason)
+        if opt_reason_i == 1:
             print("   [!] Static Analysis: Optimized (add zero x) -> x")
+        elif opt_reason_i == 2:
+            print("   [!] Static Analysis: Optimized (mul zero x) -> zero")
         # SYNC: host reads device scalar for result ptr (m1).
         return self._canonical_ptr(_manifest_ptr(_host_int_value(res_ptr)))
 
@@ -2671,7 +2814,7 @@ class PrismVM_BSP_Legacy:
             raise ValueError("Arena capacity exceeded")
         _require_arena_ptr(a1, "PrismVM_BSP_Legacy._alloc a1")
         _require_arena_ptr(a2, "PrismVM_BSP_Legacy._alloc a2")
-        a1_i, a2_i = _canonicalize_commutative_host(op, int(a1), int(a2))
+        a1_i, a2_i = _key_order_commutative_host(op, int(a1), int(a2))
         self.arena = self.arena._replace(
             opcode=self.arena.opcode.at[idx].set(op),
             arg1=self.arena.arg1.at[idx].set(a1_i),
@@ -2723,7 +2866,7 @@ class PrismVM_BSP:
     ) -> LedgerId:
         _require_ledger_id(a1, "PrismVM_BSP._intern a1")
         _require_ledger_id(a2, "PrismVM_BSP._intern a2")
-        a1_i, a2_i = _canonicalize_commutative_host(op, int(a1), int(a2))
+        a1_i, a2_i = _key_order_commutative_host(op, int(a1), int(a2))
         ids, self.ledger = intern_nodes(
             self.ledger,
             node_batch(
@@ -2733,12 +2876,11 @@ class PrismVM_BSP:
             ),
         )
         # SYNC: host wait/flag checks for BSP interning (m1).
-        self.ledger.count.block_until_ready()
-        # SYNC: host reads device flags for error checks (m1).
-        if _host_bool_value(self.ledger.corrupt):
-            raise RuntimeError("CORRUPT: key encoding alias risk (id width exceeded)")
-        if _host_bool_value(self.ledger.oom):
-            raise ValueError("Ledger capacity exceeded during interning")
+        _host_raise_if_bad(
+            self.ledger,
+            "Ledger capacity exceeded during interning",
+            oom_exc=ValueError,
+        )
         # SYNC: host reads device id for interned node (m1).
         return _ledger_id(ids[0])
 
@@ -2869,14 +3011,7 @@ def run_program_lines_bsp(
                 )
                 frontier = apply_q(q_map, frontier_prov)
             # SYNC: host wait/flag checks for BSP loop (m1).
-            vm.ledger.count.block_until_ready()
-            # SYNC: host reads device flags for BSP loop errors (m1).
-            if _host_bool_value(vm.ledger.corrupt):
-                raise RuntimeError(
-                    "CORRUPT: key encoding alias risk (id width exceeded)"
-                )
-            if _host_bool_value(vm.ledger.oom):
-                raise RuntimeError("Ledger capacity exceeded during cycle")
+            _host_raise_if_bad(vm.ledger, "Ledger capacity exceeded during cycle")
         root_ptr = frontier.a[0]
         # SYNC: host reads for reporting in BSP loop (m1).
         root_ptr_int = _host_int_value(root_ptr)
