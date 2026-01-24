@@ -110,6 +110,15 @@ Run the suite:
 mise exec -- pytest
 ```
 
+## Policy
+This repo uses a self-hosted runner. Read `POLICY_SEED.md` before changing any
+workflow or CI behavior. Install advisory hooks with:
+```
+scripts/install_policy_hooks.sh
+```
+
+See `CONTRIBUTING.md` for the guardrails and required checks.
+
 ## Milestones
 m1 semantic commitments: Ledger interning uses full key-byte equality, univalence
 hard-cap is enforced (overflow => corrupt), corrupt/oom are sticky stop-paths
