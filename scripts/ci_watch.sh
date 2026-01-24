@@ -80,10 +80,17 @@ if ! command -v gh >/dev/null 2>&1; then
 fi
 
 run_unbuffered() {
+  local env_vars=(
+    PAGER=cat
+    GH_PAGER=cat
+    GIT_PAGER=cat
+    LESS=FRX
+    PYTHONUNBUFFERED=1
+  )
   if command -v stdbuf >/dev/null 2>&1; then
-    stdbuf -o0 -e0 "$@"
+    env "${env_vars[@]}" stdbuf -o0 -e0 "$@"
   else
-    "$@"
+    env "${env_vars[@]}" "$@"
   fi
 }
 
@@ -113,7 +120,7 @@ fi
 echo "Run id: $run_id"
 
 if [[ $do_watch -eq 1 ]]; then
-  run_unbuffered gh run watch "$run_id"
+  run_unbuffered gh run watch "$run_id" --exit-status
 fi
 
 if [[ $do_logs -eq 1 ]]; then
