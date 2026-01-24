@@ -242,8 +242,11 @@ def check_posture():
         perms = _api_json(f"{base}/actions/permissions", token)
     except (HTTPError, URLError) as exc:
         hint = ""
-        if isinstance(exc, HTTPError) and exc.code == 403 and not using_policy_token:
-            hint = " (set POLICY_GITHUB_TOKEN with admin read access)"
+        if isinstance(exc, HTTPError):
+            if exc.code == 401:
+                hint = " (POLICY_GITHUB_TOKEN is invalid or missing required auth)"
+            elif exc.code == 403 and not using_policy_token:
+                hint = " (set POLICY_GITHUB_TOKEN with admin read access)"
         _fail([f"actions permissions query failed: {exc}{hint}"])
     allowed = perms.get("allowed_actions")
     if allowed != "selected":
@@ -253,8 +256,11 @@ def check_posture():
         workflow_perms = _api_json(f"{base}/actions/permissions/workflow", token)
     except (HTTPError, URLError) as exc:
         hint = ""
-        if isinstance(exc, HTTPError) and exc.code == 403 and not using_policy_token:
-            hint = " (set POLICY_GITHUB_TOKEN with admin read access)"
+        if isinstance(exc, HTTPError):
+            if exc.code == 401:
+                hint = " (POLICY_GITHUB_TOKEN is invalid or missing required auth)"
+            elif exc.code == 403 and not using_policy_token:
+                hint = " (set POLICY_GITHUB_TOKEN with admin read access)"
         _fail([f"workflow permissions query failed: {exc}{hint}"])
     default_perms = workflow_perms.get("default_workflow_permissions")
     if default_perms != "read":
@@ -268,8 +274,11 @@ def check_posture():
         )
     except (HTTPError, URLError) as exc:
         hint = ""
-        if isinstance(exc, HTTPError) and exc.code == 403 and not using_policy_token:
-            hint = " (set POLICY_GITHUB_TOKEN with admin read access)"
+        if isinstance(exc, HTTPError):
+            if exc.code == 401:
+                hint = " (POLICY_GITHUB_TOKEN is invalid or missing required auth)"
+            elif exc.code == 403 and not using_policy_token:
+                hint = " (set POLICY_GITHUB_TOKEN with admin read access)"
         _fail([f"selected actions query failed: {exc}{hint}"])
 
     if selected.get("github_owned_allowed") or selected.get("verified_allowed"):
