@@ -84,7 +84,7 @@ echo "token prefix: ${token_prefix}"
 echo "token contains newline: ${token_newline}"
 echo "token sha256 prefix: ${token_fingerprint}"
 
-printf %s "$token" | gh secret set "$secret" -b - -R "$repo"
+printf %s "$token" | gh secret set "$secret" -R "$repo"
 unset token
 
 echo "secret updated: ${secret} (${repo})"
