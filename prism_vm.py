@@ -1013,7 +1013,7 @@ def _coord_norm_id_jax(ledger, coord_id):
     # NOTE: repeated lookups per step are an m1/m4 tradeoff; batching is
     # tracked in IMPLEMENTATION_PLAN.md.
     if _guards_enabled():
-        jax.debug.callback(_coord_norm_probe_tick, jnp.int32(1))
+        jax.debug.callback(_coord_norm_probe_tick, jnp.int32(1), ordered=True)
     leaf_zero_id, leaf_zero_found = _lookup_node_id(
         ledger,
         jnp.int32(OP_COORD_ZERO),
@@ -1261,7 +1261,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
 
     has_coord = jnp.any(is_coord_pair)
     if _guards_enabled() and _coord_norm_probe_enabled():
-        jax.debug.callback(_coord_norm_probe_reset_cb, jnp.int32(0))
+        jax.debug.callback(_coord_norm_probe_reset_cb, jnp.int32(0), ordered=True)
     # CD_r/CD_a: normalize coord pairs before packing keys for stable lookup.
 
     def _norm(args):
@@ -1305,7 +1305,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         has_coord, _norm, _no_norm, (proposed_a1, proposed_a2)
     )
     if _guards_enabled() and _coord_norm_probe_enabled():
-        jax.debug.callback(_coord_norm_probe_assert, has_coord)
+        jax.debug.callback(_coord_norm_probe_assert, has_coord, ordered=True)
 
     # Key-safety: Normalize𝚌 before packing.
     # Sort proposals by packed key so duplicates collapse deterministically.
@@ -1797,6 +1797,35 @@ def _active_prefix_count(arena) -> HostInt:
     return _host_int(size) if int(count) > size else count
 
 
+def _root_struct_hash_host(ops, a1, a2, root_i, count, limit):
+    if root_i <= 0 or root_i >= count:
+        return 0
+    cache = {}
+    visiting = set()
+
+    def _hash(idx):
+        if idx <= 0 or idx >= count:
+            return 0
+        if idx in cache:
+            return cache[idx]
+        if idx in visiting:
+            return 0x9E3779B9
+        if len(cache) >= int(limit):
+            return 0
+        visiting.add(idx)
+        op = int(ops[idx])
+        h1 = _hash(int(a1[idx]))
+        h2 = _hash(int(a2[idx]))
+        if op in (OP_ADD, OP_MUL) and h2 < h1:
+            h1, h2 = h2, h1
+        h = (op * 1315423911) ^ (h1 + 0x9E3779B9) ^ ((h2 << 1) & 0xFFFFFFFF)
+        visiting.remove(idx)
+        cache[idx] = h & 0xFFFFFFFF
+        return cache[idx]
+
+    return int(_hash(int(root_i))) & 0xFFFFFFFF
+
+
 def _arena_root_hash_host(arena, root_ptr, limit=64):
     if not _TEST_GUARDS:
         return 0
@@ -1809,20 +1838,7 @@ def _arena_root_hash_host(arena, root_ptr, limit=64):
     ops = jax.device_get(arena.opcode[:count])
     a1 = jax.device_get(arena.arg1[:count])
     a2 = jax.device_get(arena.arg2[:count])
-    stack = [int(root_i)]
-    seen = set()
-    h = 0
-    while stack and len(seen) < int(limit):
-        idx = stack.pop()
-        if idx <= 0 or idx >= count or idx in seen:
-            continue
-        seen.add(idx)
-        h = (h * 1315423911) ^ (
-            int(ops[idx]) + 0x9E3779B9 + (int(a1[idx]) << 1) + (int(a2[idx]) << 2)
-        )
-        stack.append(int(a1[idx]))
-        stack.append(int(a2[idx]))
-    return int(h) & 0xFFFFFFFF
+    return _root_struct_hash_host(ops, a1, a2, root_i, count, limit)
 
 
 def _ledger_root_hash_host(ledger, root_id, limit=64):
@@ -1837,20 +1853,7 @@ def _ledger_root_hash_host(ledger, root_id, limit=64):
     ops = jax.device_get(ledger.opcode[:count])
     a1 = jax.device_get(ledger.arg1[:count])
     a2 = jax.device_get(ledger.arg2[:count])
-    stack = [int(root_i)]
-    seen = set()
-    h = 0
-    while stack and len(seen) < int(limit):
-        idx = stack.pop()
-        if idx <= 0 or idx >= count or idx in seen:
-            continue
-        seen.add(idx)
-        h = (h * 1315423911) ^ (
-            int(ops[idx]) + 0x9E3779B9 + (int(a1[idx]) << 1) + (int(a2[idx]) << 2)
-        )
-        stack.append(int(a1[idx]))
-        stack.append(int(a2[idx]))
-    return int(h) & 0xFFFFFFFF
+    return _root_struct_hash_host(ops, a1, a2, root_i, count, limit)
 
 
 def _ledger_roots_hash_host(ledger, root_ids, limit=64):
