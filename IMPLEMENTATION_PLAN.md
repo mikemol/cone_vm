@@ -241,6 +241,11 @@ Define a shared denotation interface used for cross-engine comparisons:
 - ID equivalence is engine-local until baseline migrates to the Ledger interner.
 - Termination: within the same step budget, either both converge or both do not;
   non-termination or timeout is treated as a mismatch.
+- CORRUPT dominance: if `corrupt == True` at any point, the denotation result
+  must be `("corrupt", ...)`; clamped sentinel values must never be reported
+  as `("ok", ...)`.
+- OOM dominance: if `oom == True` at any point, the denotation result must be
+  `("oom", ...)`; sentinel ids returned by stop paths are not semantic values.
 - Univalence alignment: any engine-level compare or normalization must preserve
   the Univalence Contract (full key-byte equality, corrupt trap on overflow).
 - Homomorphic projection: define `q(provisional_node) -> canonical_id` and
@@ -340,6 +345,8 @@ Tasks:
   - `slot0` = local rewrite
   - `slot1` = continuation / wrapper / second-stage
 - Emission invariant: buffer shape is `2 * |frontier|` every cycle.
+- Candidate emission must be frontier-permutation invariant (up to slot layout)
+  and independent of BSPˢ scheduling choices.
 - m3 invariant: `enabled[slot1] == 0` always; slot1 payloads are ignored.
 - Implement compaction (enabled mask + prefix sums).
 - Intern compacted candidates via `intern_nodes` (can be fused in m3).
@@ -361,6 +368,9 @@ Tests (before implementation):
 Tasks:
 - Add a lightweight `Stratum` record (offset + count) for new ids.
 - Strict strata (default): nodes in `Si` may only reference ids `< start(Si)`.
+- During a BSPᵗ superstep, rewrite eligibility and candidate payloads must be
+  computed from the pre-step read model and must not observe within-step
+  identity creation unless within-tier mode is explicitly enabled and validated.
 - Future mode: allow within-stratum references only if they are to earlier ids
   in the same stratum (topological order), gated by explicit opt-in.
 - Add validators that enforce the selected rule, scanning only up to
@@ -393,6 +403,8 @@ Tasks:
 - `OP_COORD_PAIR` is ordered (no commutative canonicalization unless staged).
 - Coordinate normalization is part of canonicalization-before-pack (key-safe
   normalization), not a semantic rewrite stage.
+- Coordinate normalization operates on `rep(id)` children (future Canonicalₑ)
+  before packing keys and interning.
 - Implement coordinate construction and XOR/parity rewrite rules in the BSP path.
 - Aggregation scope (m4): coordinate lifting applies to `OP_ADD` only; `OP_MUL`
   remains Peano-style until explicitly lifted.
@@ -534,6 +546,8 @@ Tasks:
 - Compose sort key:
   - `sort_key = (rank << high_bits) | morton`.
 - Ensure stable ordering inside ranks when Morton keys collide.
+- BSPˢ permutations must be bijections and must satisfy `perm[0]=0` and
+  `inv_perm[0]=0`.
 
 ### 10) Hierarchical Arenas (Phase 2)
 Objective: implement multi-level arenas to constrain shatter.

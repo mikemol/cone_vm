@@ -259,16 +259,14 @@ def _guard_gather_index(idx, size, label):
 
 
 def safe_gather_1d(arr, idx, label="safe_gather_1d"):
-    # Guarded gather: raise on invalid indices, clamp to avoid backend-specific OOB.
-    # NOTE: non-test runs do a raw gather; deterministic clamping/strictness
-    # is deferred to IMPLEMENTATION_PLAN.md.
+    # Guarded gather: raise on invalid indices in test mode; always clamp for
+    # deterministic OOB behavior across backends.
+    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
+    idx_i = jnp.asarray(idx, dtype=jnp.int32)
     if _GATHER_GUARD and _HAS_DEBUG_CALLBACK:
-        size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
-        idx_i = jnp.asarray(idx, dtype=jnp.int32)
         _guard_gather_index(idx_i, size, label)
-        idx_safe = jnp.clip(idx_i, 0, size - 1)
-        return arr[idx_safe]
-    return arr[idx]
+    idx_safe = jnp.clip(idx_i, 0, size - 1)
+    return arr[idx_safe]
 
 
 _BINCOUNT_HAS_LENGTH = "length" in inspect.signature(jnp.bincount).parameters
@@ -2163,7 +2161,9 @@ def _op_sort_and_swizzle_morton_with_perm_full(arena, morton):
     idx = jnp.arange(size, dtype=jnp.uint32)
     rank_u = arena.rank.astype(jnp.uint32)
     morton_u = morton.astype(jnp.uint32) & jnp.uint32(0x3FFF)
+    # Keep row 0 uniquely minimal even if other rows alias the 16-bit idx lane.
     idx_u = idx & jnp.uint32(0xFFFF)
+    idx_u = jnp.where(idx_u == 0, jnp.uint32(1), idx_u)
     sort_key = (rank_u << 30) | (morton_u << 16) | idx_u
     sort_key = sort_key.at[0].set(jnp.uint32(0))
     perm = jnp.argsort(sort_key).astype(jnp.int32)
@@ -2177,7 +2177,9 @@ def _op_sort_and_swizzle_morton_with_perm_prefix(arena, morton, active_count):
     idx = jnp.arange(active_count, dtype=jnp.uint32)
     rank_u = arena.rank[:active_count].astype(jnp.uint32)
     morton_u = morton[:active_count].astype(jnp.uint32) & jnp.uint32(0x3FFF)
+    # Keep row 0 uniquely minimal even if other rows alias the 16-bit idx lane.
     idx_u = idx & jnp.uint32(0xFFFF)
+    idx_u = jnp.where(idx_u == 0, jnp.uint32(1), idx_u)
     sort_key = (rank_u << 30) | (morton_u << 16) | idx_u
     sort_key = sort_key.at[0].set(jnp.uint32(0))
     perm_active = jnp.argsort(sort_key).astype(jnp.int32)
