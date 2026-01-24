@@ -3,7 +3,11 @@ import pytest
 
 import prism_vm as pv
 
-pytestmark = pytest.mark.m3
+pytestmark = [
+    pytest.mark.m3,
+    pytest.mark.backend_matrix,
+    pytest.mark.usefixtures("backend_device"),
+]
 
 
 def test_morton_key_stable():

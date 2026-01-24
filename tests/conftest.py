@@ -2,6 +2,7 @@ import os
 import sys
 from pathlib import Path
 
+import jax
 import pytest
 
 # Enable strict scatter guard in tests unless explicitly overridden.
@@ -62,6 +63,43 @@ def pytest_addoption(parser):
         default=_milestone_default(),
         help="run tests up to a milestone (m1-m6)",
     )
+
+
+def _backend_matrix_backends():
+    backends = ["cpu"]
+    try:
+        gpu_devices = jax.devices("gpu")
+    except Exception:
+        gpu_devices = []
+    if gpu_devices:
+        backends.append("gpu")
+    return backends
+
+
+def pytest_generate_tests(metafunc):
+    marker = metafunc.definition.get_closest_marker("backend_matrix")
+    if marker and "backend_device" in metafunc.fixturenames:
+        backends = _backend_matrix_backends()
+        ids = [f"{backend}-backend" for backend in backends]
+        metafunc.parametrize("backend_device", backends, ids=ids, indirect=True)
+
+
+@pytest.fixture
+def backend_device(request):
+    backend = getattr(request, "param", None)
+    if backend is None:
+        return None
+    return jax.devices(backend)[0]
+
+
+@pytest.fixture(autouse=True)
+def _set_default_device(request):
+    if not request.node.get_closest_marker("backend_matrix"):
+        yield
+        return
+    device = request.getfixturevalue("backend_device")
+    with jax.default_device(device):
+        yield
 
 
 def pytest_collection_modifyitems(config, items):

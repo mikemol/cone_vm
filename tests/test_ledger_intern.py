@@ -4,7 +4,11 @@ import pytest
 
 import prism_vm as pv
 
-pytestmark = pytest.mark.m1
+pytestmark = [
+    pytest.mark.m1,
+    pytest.mark.backend_matrix,
+    pytest.mark.usefixtures("backend_device"),
+]
 
 
 def _intern_once(ledger, triples):
@@ -76,3 +80,45 @@ def test_intern_nodes_never_mutates_pre_step_segment():
     assert bool(jnp.array_equal(pre_ops, post_ops))
     assert bool(jnp.array_equal(pre_a1, post_a1))
     assert bool(jnp.array_equal(pre_a2, post_a2))
+
+
+def test_keys_sorted_after_intern():
+    ledger = pv.init_ledger()
+    ops = jnp.array(
+        [pv.OP_SUC, pv.OP_ADD, pv.OP_MUL, pv.OP_ADD, pv.OP_MUL], dtype=jnp.int32
+    )
+    a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR, pv.ZERO_PTR, 0, pv.ZERO_PTR], dtype=jnp.int32)
+    a2 = jnp.array([0, pv.ZERO_PTR, pv.ZERO_PTR, pv.ZERO_PTR, 0], dtype=jnp.int32)
+    _, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    count = int(ledger.count)
+    b0 = jax.device_get(ledger.keys_b0_sorted[:count])
+    b1 = jax.device_get(ledger.keys_b1_sorted[:count])
+    b2 = jax.device_get(ledger.keys_b2_sorted[:count])
+    b3 = jax.device_get(ledger.keys_b3_sorted[:count])
+    b4 = jax.device_get(ledger.keys_b4_sorted[:count])
+    for i in range(count - 1):
+        left = (int(b0[i]), int(b1[i]), int(b2[i]), int(b3[i]), int(b4[i]))
+        right = (
+            int(b0[i + 1]),
+            int(b1[i + 1]),
+            int(b2[i + 1]),
+            int(b3[i + 1]),
+            int(b4[i + 1]),
+        )
+        assert left <= right
+
+
+def test_lookup_returns_self_for_seeded_keys():
+    ledger = pv.init_ledger()
+    ops = jnp.array([pv.OP_SUC, pv.OP_ADD, pv.OP_MUL], dtype=jnp.int32)
+    a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
+    a2 = jnp.array([0, pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
+    _, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    count = int(ledger.count)
+    for idx in range(count):
+        op = ledger.opcode[idx]
+        arg1 = ledger.arg1[idx]
+        arg2 = ledger.arg2[idx]
+        out_id, found = pv._lookup_node_id(ledger, op, arg1, arg2)
+        assert bool(jax.device_get(found))
+        assert int(jax.device_get(out_id)) == idx

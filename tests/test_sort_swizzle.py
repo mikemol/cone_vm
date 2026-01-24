@@ -1,9 +1,14 @@
+import jax
 import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
 
-pytestmark = pytest.mark.m3
+pytestmark = [
+    pytest.mark.m3,
+    pytest.mark.backend_matrix,
+    pytest.mark.usefixtures("backend_device"),
+]
 
 
 def _arena_with_edges():
@@ -51,3 +56,35 @@ def test_sort_swizzle_root_remap():
     assert int(root_new) != 0
     assert int(sorted_arena.opcode[int(root_new)]) == pv.OP_SUC
     assert int(sorted_arena.arg1[root_new]) == int(inv_perm[1])
+
+
+def test_sort_swizzle_preserves_count_and_oom():
+    assert hasattr(pv, "op_sort_and_swizzle_with_perm"), "op_sort_and_swizzle_with_perm missing"
+    arena = _arena_with_edges()
+    arena = arena._replace(oom=jnp.array(True, dtype=jnp.bool_))
+    sorted_arena, _ = pv.op_sort_and_swizzle_with_perm(arena)
+    assert int(sorted_arena.count) == int(arena.count)
+    assert bool(jax.device_get(sorted_arena.oom)) == bool(jax.device_get(arena.oom))
+
+
+def test_swizzle_does_not_create_new_edges():
+    assert hasattr(pv, "op_sort_and_swizzle_with_perm"), "op_sort_and_swizzle_with_perm missing"
+    arena = _arena_with_edges()
+    sorted_arena, inv_perm = pv.op_sort_and_swizzle_with_perm(arena)
+    perm = pv._invert_perm(inv_perm)
+    count = int(arena.count)
+    old_ops = jax.device_get(arena.opcode)
+    old_a1 = jax.device_get(arena.arg1)
+    old_a2 = jax.device_get(arena.arg2)
+    new_ops = jax.device_get(sorted_arena.opcode)
+    new_a1 = jax.device_get(sorted_arena.arg1)
+    new_a2 = jax.device_get(sorted_arena.arg2)
+    perm_h = jax.device_get(perm)
+    inv_h = jax.device_get(inv_perm)
+    for new_idx in range(count):
+        old_idx = int(perm_h[new_idx])
+        exp_a1 = 0 if int(old_a1[old_idx]) == 0 else int(inv_h[old_a1[old_idx]])
+        exp_a2 = 0 if int(old_a2[old_idx]) == 0 else int(inv_h[old_a2[old_idx]])
+        assert int(new_ops[new_idx]) == int(old_ops[old_idx])
+        assert int(new_a1[new_idx]) == exp_a1
+        assert int(new_a2[new_idx]) == exp_a2

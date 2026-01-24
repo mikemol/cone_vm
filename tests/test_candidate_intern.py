@@ -3,7 +3,11 @@ import pytest
 
 import prism_vm as pv
 
-pytestmark = pytest.mark.m2
+pytestmark = [
+    pytest.mark.m2,
+    pytest.mark.backend_matrix,
+    pytest.mark.usefixtures("backend_device"),
+]
 
 
 def _require_candidate_intern_api():

@@ -5,7 +5,11 @@ import pytest
 import prism_vm as pv
 
 
-pytestmark = pytest.mark.m2
+pytestmark = [
+    pytest.mark.m2,
+    pytest.mark.backend_matrix,
+    pytest.mark.usefixtures("backend_device"),
+]
 
 
 def _require_cycle_candidates():
@@ -60,6 +64,34 @@ def _assert_ledger_snapshot(ledger, snapshot):
     fields = _ledger_snapshot(ledger)
     for field, expected in zip(fields, snapshot):
         assert (field == expected).all()
+
+
+def test_cycle_candidates_rejects_when_cnf2_disabled(monkeypatch):
+    _require_cycle_candidates()
+    monkeypatch.setattr(pv, "_cnf2_enabled", lambda: False)
+    ledger = pv.init_ledger()
+    frontier = pv._committed_ids(jnp.array([pv.ZERO_PTR], dtype=jnp.int32))
+    with pytest.raises(RuntimeError, match="cycle_candidates disabled until m2"):
+        pv.cycle_candidates(ledger, frontier)
+
+
+def test_cycle_candidates_empty_frontier_no_mutation():
+    _require_cycle_candidates()
+    ledger = pv.init_ledger()
+    snapshot = _ledger_snapshot(ledger)
+    frontier = pv._committed_ids(jnp.zeros((0,), dtype=jnp.int32))
+    out_ledger, frontier_prov, strata, q_map = pv.cycle_candidates(
+        ledger, frontier
+    )
+    mapped = pv.apply_q(q_map, frontier_prov).a
+    stratum0, stratum1, stratum2 = strata
+    assert int(out_ledger.count) == int(ledger.count)
+    assert int(stratum0.count) == 0
+    assert int(stratum1.count) == 0
+    assert int(stratum2.count) == 0
+    assert bool(jnp.array_equal(frontier_prov.a, frontier.a))
+    assert bool(jnp.array_equal(mapped, frontier.a))
+    _assert_ledger_snapshot(out_ledger, snapshot)
 
 
 def test_cycle_candidates_add_zero():

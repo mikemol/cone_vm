@@ -5,7 +5,11 @@ import pytest
 import prism_vm as pv
 
 
-pytestmark = pytest.mark.m1
+pytestmark = [
+    pytest.mark.m1,
+    pytest.mark.backend_matrix,
+    pytest.mark.usefixtures("backend_device"),
+]
 
 
 @jax.jit
