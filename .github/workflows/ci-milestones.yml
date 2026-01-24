@@ -97,9 +97,16 @@ jobs:
         milestone: [m2]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Ensure mise Python is installed (self-hosted)
+        run: |
+          if ! command -v mise >/dev/null 2>&1; then
+            echo "mise is required on the self-hosted runner" >&2
+            exit 1
+          fi
+          mise install
       - name: Verify python version (self-hosted)
         run: |
-          python - <<'PY'
+          mise exec -- python - <<'PY'
           import os
           import sys
           want = os.environ["PYTHON_VERSION"]
@@ -110,11 +117,11 @@ jobs:
           PY
       - name: Install test dependencies (GPU)
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install pytest "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+          mise exec -- python -m pip install --upgrade pip
+          mise exec -- python -m pip install pytest "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
       - name: Verify GPU backend
         run: |
-          python - <<'PY'
+          mise exec -- python - <<'PY'
           import jax
           gpus = jax.devices("gpu")
           if not gpus:
@@ -125,7 +132,7 @@ jobs:
         run: |
           mkdir -p artifacts
           set -euo pipefail
-          pytest -c pytest.${{ matrix.milestone }}.ini \
+          mise exec -- python -m pytest -c pytest.${{ matrix.milestone }}.ini \
             --junitxml artifacts/pytest-gpu-${{ matrix.milestone }}.xml \
             2>&1 | tee artifacts/pytest-gpu-${{ matrix.milestone }}.txt
       - name: Upload pytest artifact (gpu)
