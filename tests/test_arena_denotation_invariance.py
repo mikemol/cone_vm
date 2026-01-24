@@ -31,6 +31,26 @@ def test_arena_denotation_invariance_random_suite():
         assert no_sort == morton_sort
 
 
+def test_arena_denotation_invariance_blocked_small_suite():
+    size = int(pv.init_arena().rank.shape[0])
+    block_size = 3
+    assert size % block_size == 0
+    cases = [
+        "zero",
+        "(suc zero)",
+        "(add (suc zero) (suc zero))",
+        "(mul (suc (suc zero)) (suc zero))",
+    ]
+    for expr in cases:
+        no_sort = harness.run_arena(expr, steps=4, do_sort=False, use_morton=False)
+        rank_sort = harness.run_arena(expr, steps=4, do_sort=True, use_morton=False)
+        morton_sort = harness.run_arena(expr, steps=4, do_sort=True, use_morton=True)
+        blocked = harness.run_arena(expr, steps=4, do_sort=True, block_size=block_size)
+        assert no_sort == rank_sort
+        assert no_sort == morton_sort
+        assert no_sort == blocked
+
+
 def test_arena_decode_hides_ids_by_default():
     vm = pv.PrismVM_BSP_Legacy()
     root_ptr = vm.parse(harness.tokenize("(mul zero zero)"))

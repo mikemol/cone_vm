@@ -12,13 +12,7 @@ pytestmark = pytest.mark.m3
         "(suc zero)",
         "(add (suc zero) (suc zero))",
         "(mul (suc (suc zero)) (suc zero))",
-        pytest.param(
-            "(add (suc (suc zero)) (mul (suc zero) zero))",
-            marks=pytest.mark.xfail(
-                reason="mul arena commutation not guaranteed yet",
-                strict=False,
-            ),
-        ),
+        "(add (suc (suc zero)) (mul (suc zero) zero))",
     ],
 )
 def test_scheduler_commutation_small_suite(expr):

@@ -1872,6 +1872,13 @@ def _apply_perm_and_swizzle(arena, perm):
     g2 = safe_gather_1d(inv_perm, idx2, "swizzle.arg2")
     swizzled_arg1 = jnp.where(live & (new_arg1 != 0), g1, 0)
     swizzled_arg2 = jnp.where(live & (new_arg2 != 0), g2, 0)
+    # Renormalize commutative ops after swizzle to keep operand order stable.
+    is_commutative = (new_ops == OP_ADD) | (new_ops == OP_MUL)
+    swap = live & is_commutative & (swizzled_arg2 < swizzled_arg1)
+    swizzled_arg1, swizzled_arg2 = (
+        jnp.where(swap, swizzled_arg2, swizzled_arg1),
+        jnp.where(swap, swizzled_arg1, swizzled_arg2),
+    )
     # NOTE: value-bound guards for swizzled args in test mode are deferred to
     # IMPLEMENTATION_PLAN.md.
     # Swizzle is renormalization only; denotation must not change (plan).
@@ -2210,16 +2217,24 @@ def op_interact(arena):
     is_hot = arena.rank == RANK_HOT
     is_add = ops == OP_ADD
     # Guard pointer gathers in test mode; avoid touching inactive garbage rows.
-    a1_for_op = jnp.where(is_hot & is_add, a1, jnp.int32(0))
-    op_x = safe_gather_1d(ops, a1_for_op, "op_interact.op_x")
-    mask_zero = is_hot & is_add & (op_x == OP_ZERO)
-    mask_suc = is_hot & is_add & (op_x == OP_SUC) & (~arena.oom)
+    hot_add = is_hot & is_add
+    a1_for_op = jnp.where(hot_add, a1, jnp.int32(0))
+    a2_for_op = jnp.where(hot_add, a2, jnp.int32(0))
+    op_a1 = safe_gather_1d(ops, a1_for_op, "op_interact.op_a1")
+    op_a2 = safe_gather_1d(ops, a2_for_op, "op_interact.op_a2")
+    is_zero_a1 = op_a1 == OP_ZERO
+    is_zero_a2 = op_a2 == OP_ZERO
+    is_suc_a1 = op_a1 == OP_SUC
+    is_suc_a2 = op_a2 == OP_SUC
+    mask_zero = hot_add & (is_zero_a1 | is_zero_a2)
+    mask_suc = hot_add & (is_suc_a1 | is_suc_a2) & (~mask_zero) & (~arena.oom)
 
     # First: local rewrites that don't allocate.
-    a2_for_zero = jnp.where(mask_zero, a2, jnp.int32(0))
-    y_op = safe_gather_1d(ops, a2_for_zero, "op_interact.y_op")
-    y_a1 = safe_gather_1d(a1, a2_for_zero, "op_interact.y_a1")
-    y_a2 = safe_gather_1d(a2, a2_for_zero, "op_interact.y_a2")
+    zero_other = jnp.where(is_zero_a1, a2, a1)
+    zero_other = jnp.where(mask_zero, zero_other, jnp.int32(0))
+    y_op = safe_gather_1d(ops, zero_other, "op_interact.zero_op")
+    y_a1 = safe_gather_1d(a1, zero_other, "op_interact.zero_a1")
+    y_a2 = safe_gather_1d(a2, zero_other, "op_interact.zero_a2")
     new_ops = jnp.where(mask_zero, y_op, ops)
     new_a1 = jnp.where(mask_zero, y_a1, a1)
     new_a2 = jnp.where(mask_zero, y_a2, a2)
@@ -2240,11 +2255,17 @@ def op_interact(arena):
     new_a2 = jnp.where(spawn_mask, 0, new_a2)
 
     # Scatter-create the spawned add nodes only where mask_suc is true.
-    a1_for_spawn = jnp.where(spawn_mask, a1, jnp.int32(0))
-    grandchild_x = safe_gather_1d(a1, a1_for_spawn, "op_interact.grandchild_x")
+    choose_a1 = is_suc_a1 & (~is_suc_a2 | (a1 <= a2))
+    suc_node = jnp.where(choose_a1, a1, a2)
+    other_node = jnp.where(choose_a1, a2, a1)
+    suc_for_spawn = jnp.where(spawn_mask, suc_node, jnp.int32(0))
+    other_for_spawn = jnp.where(spawn_mask, other_node, jnp.int32(0))
+    grandchild_x = safe_gather_1d(
+        a1, suc_for_spawn, "op_interact.grandchild_x"
+    )
     payload_op = jnp.full_like(new_add_idx, OP_ADD)
     payload_a1_raw = jnp.where(spawn_mask, grandchild_x, jnp.int32(0))
-    payload_a2_raw = jnp.where(spawn_mask, a2, jnp.int32(0))
+    payload_a2_raw = jnp.where(spawn_mask, other_for_spawn, jnp.int32(0))
     payload_swap = payload_a2_raw < payload_a1_raw
     payload_a1 = jnp.where(payload_swap, payload_a2_raw, payload_a1_raw)
     payload_a2 = jnp.where(payload_swap, payload_a1_raw, payload_a2_raw)
