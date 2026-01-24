@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import pytest
 
@@ -22,6 +23,72 @@ def test_candidate_emit_fixed_arity():
     assert candidates.opcode.shape[0] == expected
     assert candidates.arg1.shape[0] == expected
     assert candidates.arg2.shape[0] == expected
+
+
+def test_cnf2_slot_layout_indices():
+    _require_candidate_api()
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0, 0], dtype=jnp.int32),
+    )
+    suc_x_id = suc_ids[0]
+    y_id = suc_ids[1]
+    add_zero_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    add_suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([suc_x_id], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    mul_zero_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_MUL], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    mul_suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_MUL], dtype=jnp.int32),
+        jnp.array([suc_x_id], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    frontier = jnp.array(
+        [
+            add_zero_ids[0],
+            add_suc_ids[0],
+            mul_zero_ids[0],
+            mul_suc_ids[0],
+            suc_x_id,
+        ],
+        dtype=jnp.int32,
+    )
+    candidates = pv.emit_candidates(ledger, frontier)
+    _, count, comp_idx = pv.compact_candidates_with_index(candidates)
+    size = candidates.enabled.shape[0]
+    count_i = int(count)
+    ids_compact = jnp.arange(count_i, dtype=jnp.int32) + 100
+    ids_full = pv._scatter_compacted_ids(comp_idx, ids_compact, count, size)
+
+    enabled_np = jax.device_get(candidates.enabled)
+    comp_idx_np = jax.device_get(comp_idx[:count_i])
+    ids_full_np = jax.device_get(ids_full)
+    ids_compact_np = jax.device_get(ids_compact)
+    pos_to_id = {int(pos): int(ids_compact_np[i]) for i, pos in enumerate(comp_idx_np)}
+    slot0_positions = [2 * i for i in range(frontier.shape[0])]
+    for pos in slot0_positions:
+        if enabled_np[pos]:
+            assert int(ids_full_np[pos]) == pos_to_id[pos]
+        else:
+            assert int(ids_full_np[pos]) == 0
+        assert int(ids_full_np[pos + 1]) == 0
 
 
 def test_candidate_compaction_enabled_only():

@@ -251,8 +251,9 @@ Define a shared denotation interface used for cross-engine comparisons:
 
 ## Locked Decisions
 - Read model backend (m1): keep the current ordered index (sorted lanes +
-  binary search). Tests assert full-key equality and do not assume any specific
-  index structure so trie or hash-bucket indexes can replace it later.
+  binary search), maintained via full-array merge in m1. Tests assert full-key
+  equality and do not assume any specific index structure so trie or hash-bucket
+  indexes can replace it later.
 - Univalence encoding (m1): hard-cap mode with 5-byte key; enforce
   `MAX_NODES = 65535`, `MAX_ID = 65534`, and checked packing for `a1/a2`.
 - Aggregation scope (m4): coordinate aggregation applies to `OP_ADD` only;
