@@ -68,6 +68,9 @@ These are already in effect in code/tests and are treated as non-negotiable.
 - Evaluator (Manifest/Arena) and Canonicalizer (Ledger) are linked by a total
   quotient map `q`; denotation is defined by projecting provisional nodes
   through `q` and must commute with scheduling (see `in/in-16.md`).
+- Hyperstrata visibility rule is normative from m3: pre-step rows are immutable
+  during a cycle, and within-cycle visibility is defined by the `(s,t)` staging
+  order; the frozen read model is the hyperstrata collapse corollary.
 - 2:1 BSP swizzle/locality is staged as a performance invariant:
   - m1-m2: rank-only sort (or no sort) is acceptable for correctness tests.
   - m3: denotation invariance must hold across unsorted/rank/morton/block
@@ -607,7 +610,8 @@ Tasks:
 ## Acceptance Gates
 - **m1 gate:** univalence + no aliasing + baseline equivalence on small suite.
 - **m2 gate:** strata validator passes + `q` projection total on emitted strata.
-- **m3 gate:** denotation invariance across unsorted/rank/morton/block schedulers.
+- **m3 gate:** denotation invariance across unsorted/rank/morton/block schedulers,
+  plus pre-step immutability enforced as a hyperstrata visibility rule.
 - **m4 gate:** coordinate normalization idempotence + parity cancellation + instrumentation is denotation-invariant.
 - **m5 gate:** full-suite denotation invariance + univalence stress tests.
 
@@ -626,6 +630,7 @@ m2:
 m3:
 - Denotation matches ledger intrinsic on the shared suite.
 - Denotation invariance across unsorted/rank/morton/block schedulers.
+- Pre-step immutability holds under CNF-2 cycles (hyperstrata visibility rule).
 m4:
 - Coordinate normalization is idempotent and confluent on small inputs.
 - Coordinate lifting limited to `OP_ADD`.

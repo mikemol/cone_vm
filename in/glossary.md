@@ -871,6 +871,10 @@ op(CD(x₁,x₂), CD(y₁,y₂)) = CD(op(x₁,y₁), op(x₂,y₂))
 
 * Time vs Meaning
 
+### Milestone
+
+- m3+
+
 ### Normative Interpretation
 
 > Hyperstrata refine construction order, not semantic identity.

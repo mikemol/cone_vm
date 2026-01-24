@@ -65,6 +65,13 @@ def pytest_addoption(parser):
     )
 
 
+def pytest_configure(config):
+    milestone = _parse_milestone(config.getoption("--milestone"))
+    if milestone is None:
+        return
+    os.environ["PRISM_MILESTONE"] = f"m{milestone}"
+
+
 def _backend_matrix_backends():
     backends = ["cpu"]
     try:

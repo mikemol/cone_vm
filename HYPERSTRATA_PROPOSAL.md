@@ -1,6 +1,7 @@
 # Hyperstrata and Hypervalue CNF-2 Proposal
 
-Status: draft proposal (no code changes implied).
+Status: m3 semantic commitment (implementation staged; no code changes implied).
+Milestone: m3 (hyperstrata visibility rule is normative; hypervalues remain staged).
 
 This note proposes a two-dimensional strata model ("hyperstrata") and a
 structural "hypervalue" representation using Cayley-Dickson recursion. The goal
