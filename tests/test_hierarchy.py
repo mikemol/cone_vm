@@ -3,24 +3,24 @@ import pytest
 
 import prism_vm as pv
 
-pytestmark = pytest.mark.m6
+pytestmark = pytest.mark.m3
 
 
 def test_block_local_sort():
     assert hasattr(pv, "op_sort_and_swizzle_blocked"), "op_sort_and_swizzle_blocked missing"
-    block_size = 4
+    block_size = 3
     arena = pv.init_arena()
     arena = arena._replace(
         opcode=arena.opcode.at[1].set(pv.OP_ADD)
         .at[2].set(pv.OP_SUC)
-        .at[5].set(pv.OP_ADD)
-        .at[6].set(pv.OP_SUC),
-        arg1=arena.arg1.at[1].set(111).at[2].set(222).at[5].set(555).at[6].set(666),
+        .at[4].set(pv.OP_ADD)
+        .at[5].set(pv.OP_SUC),
+        arg1=arena.arg1.at[1].set(111).at[2].set(222).at[4].set(555).at[5].set(666),
         rank=arena.rank.at[1].set(pv.RANK_HOT)
         .at[2].set(pv.RANK_COLD)
-        .at[5].set(pv.RANK_HOT)
-        .at[6].set(pv.RANK_COLD),
-        count=jnp.array(7, dtype=jnp.int32),
+        .at[4].set(pv.RANK_HOT)
+        .at[5].set(pv.RANK_COLD),
+        count=jnp.array(6, dtype=jnp.int32),
     )
     sorted_arena = pv.op_sort_and_swizzle_blocked(arena, block_size)
     block0 = sorted_arena.arg1[:block_size]
