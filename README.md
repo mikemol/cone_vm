@@ -110,6 +110,13 @@ Run the suite:
 mise exec -- pytest
 ```
 
+## Milestones
+m1 semantic commitments: Ledger interning uses full key-byte equality, univalence
+hard-cap is enforced (overflow => corrupt), corrupt/oom are sticky stop-paths
+(no further mutation), and baseline vs ledger equivalence holds on the m1 suite.
+Changes to these commitments require a milestone bump and updates in
+`MILESTONES.md`.
+
 ## Repo layout
 - `prism_vm.py` - VM, kernels, and REPL
 - `tests/` - pytest suite and sample program fixtures
