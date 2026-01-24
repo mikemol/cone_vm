@@ -51,6 +51,10 @@ All other rules, tools, and checks exist **only** to preserve this invariant.
 
 If any downstream rule conflicts with this invariant, the downstream rule is invalid.
 
+Clarification: dependency artifacts fetched via **allow-listed registries** and
+installed through standard package managers in trusted workflows are treated as
+trusted inputs. This is a constrained exception and must follow §4.6.
+
 ---
 
 ## 2. Trust Boundary Definition
@@ -59,6 +63,7 @@ If any downstream rule conflicts with this invariant, the downstream rule is inv
 
 * Direct pushes to `main` and `stage` (explicitly trusted branches).
 * Commits authored by the maintainer or explicitly trusted collaborators.
+* Allow-listed dependency registries when used by trusted workflows (§4.6).
 
 ### 2.2 Untrusted Sources
 
@@ -122,8 +127,10 @@ pinning, but the required labels must always be present.
 Self-hosted jobs MUST include an explicit trust predicate, e.g.:
 
 ```yaml
-if: github.actor == '<maintainer-username>'
+if: github.actor == github.repository_owner
 ```
+
+An explicit maintainer username is also acceptable.
 
 This is redundant by design.
 
@@ -145,6 +152,20 @@ default.
 * Only explicitly allow-listed actions may be used.
 * All non-local actions MUST be pinned to full commit SHAs.
 * Tags are forbidden for security-critical workflows.
+
+### 4.6 Dependency Sources (Self-Hosted)
+
+Self-hosted jobs may install dependencies **only** from allow-listed registries
+using standard package managers. Arbitrary downloads (e.g. `curl | bash`) are
+forbidden.
+
+Allow-listed registries include:
+
+* PyPI (via pip)
+* Official JAX CUDA release index (via pip `-f` URL)
+
+Pinned versions or lockfiles are strongly preferred. If pinning is not feasible,
+the exception must be documented as a risk acceptance.
 
 ---
 
