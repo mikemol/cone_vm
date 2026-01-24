@@ -29,8 +29,8 @@ def test_intern_deterministic_ids_single_engine():
 
 def test_univalence_no_alias_guard():
     assert hasattr(pv, "MAX_ID"), "MAX_ID must be defined for hard-cap mode"
-    assert pv.MAX_NODES == pv.MAX_ID + 1
-    assert pv.MAX_COUNT == pv.MAX_ID + 1
+    assert pv.LEDGER_CAPACITY == pv.MAX_ID + 1
+    assert pv.MAX_COUNT == pv.LEDGER_CAPACITY
     assert pv.MAX_ID < (1 << 16)
 
 

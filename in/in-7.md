@@ -77,7 +77,7 @@ The `Manifest` now represents the **Arena**. It includes a `rank` array to drive
 
 ```python
 # --- 2. The Ontology ---
-MAX_NODES = 1024 * 64
+LEDGER_CAPACITY = 1024 * 64
 
 # Rank Definitions (2-Bit Scalar)
 RANK_HOT  = 0  # 00: Active Redex (Execute Now)
@@ -104,10 +104,10 @@ class Arena(NamedTuple):
 
 def init_arena():
     return Arena(
-        opcode=jnp.zeros(MAX_NODES, dtype=jnp.int32),
-        arg1=jnp.zeros(MAX_NODES, dtype=jnp.int32),
-        arg2=jnp.zeros(MAX_NODES, dtype=jnp.int32),
-        rank=jnp.full(MAX_NODES, RANK_FREE, dtype=jnp.int8), # Init all as FREE
+        opcode=jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32),
+        arg1=jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32),
+        arg2=jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32),
+        rank=jnp.full(LEDGER_CAPACITY, RANK_FREE, dtype=jnp.int8), # Init all as FREE
         count=jnp.array(1, dtype=jnp.int32)
     )
 
@@ -193,7 +193,7 @@ def op_interact(arena):
     # Since we don't have dynamic loops easily in JAX, we map over the whole arena
     # but mask updates for non-HOT nodes.
     
-    idx = jnp.arange(MAX_NODES)
+    idx = jnp.arange(LEDGER_CAPACITY)
     is_hot = (arena.rank == RANK_HOT)
     
     ops = arena.opcode

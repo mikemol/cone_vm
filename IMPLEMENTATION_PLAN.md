@@ -134,9 +134,9 @@ Therefore, the id bound is a semantic invariant, not a memory limit.
 
 Define (naming is capacity vs legal id):
 
-- `MAX_NODES = 65535` (backing array length / capacity)
-- `MAX_ID = 65534` (max legal id; `MAX_NODES - 1`)
-- `MAX_COUNT = MAX_ID + 1` (next-free upper bound; equals capacity)
+- `LEDGER_CAPACITY = 65535` (backing array length / capacity)
+- `MAX_ID = 65534` (max legal id; `LEDGER_CAPACITY - 1`)
+- `MAX_COUNT = MAX_ID + 1` (next-free upper bound; equals `LEDGER_CAPACITY`)
 - `id = 0` reserved for `NULL`
 - `id = 1` reserved for `ZERO`
 
@@ -260,7 +260,7 @@ Define a shared denotation interface used for cross-engine comparisons:
   equality and do not assume any specific index structure so trie or hash-bucket
   indexes can replace it later.
 - Univalence encoding (m1): hard-cap mode with 5-byte key; enforce
-  `MAX_NODES = 65535`, `MAX_ID = 65534`, and checked packing for `a1/a2`.
+  `LEDGER_CAPACITY = 65535`, `MAX_ID = 65534`, and checked packing for `a1/a2`.
 - Aggregation scope (m4): coordinate aggregation applies to `OP_ADD` only;
   `OP_MUL` remains Peano-style until explicitly lifted.
 
@@ -299,7 +299,7 @@ Tasks:
 - Ensure interning uses full-key equality; hash is a hint only.
 - Add a canonicalize-before-pack hook for any derived representations.
 - Guard against truncation aliasing (m1 uses hard-cap mode).
-- Enforce `MAX_NODES = 65535`, define `MAX_ID = 65534`, reserve `0/1` for
+- Enforce `LEDGER_CAPACITY = 65535`, define `MAX_ID = 65534`, reserve `0/1` for
   NULL/ZERO, and hard-trap on `count > MAX_COUNT` (lazy on allocation; eager if
   count already exceeds the bound).
 - Implement a deterministic JAX trap:
@@ -685,7 +685,7 @@ Performance checks:
 
 ## Risks and Mitigations
 - **JAX scatter costs**: minimize scatter writes, batch with prefix sums.
-- **Full-array ledger scans**: fixed-shape interning touches `MAX_NODES`-sized
+- **Full-array ledger scans**: fixed-shape interning touches `LEDGER_CAPACITY`-sized
   buffers even when `count` is small (intentional for JIT stability in m1).
   m4 mitigations: introduce a smaller `MAX_CAPACITY` for production runs,
   maintain per-op counts incrementally to avoid full `_bincount_256`, and/or
@@ -696,7 +696,7 @@ Performance checks:
 - **Key aliasing**: avoid truncation in key encoding or assert limits at intern.
 - **Interner rebuild cost**: avoid full-table merges per tiny batch; use staging
   buffers and periodic read-model rebuilds after m3.
-- **JIT recompilations**: keep shapes static (fixed MAX_NODES).
+- **JIT recompilations**: keep shapes static (fixed LEDGER_CAPACITY).
 
 ## Deferred Implementation Notes (Code Annotations)
 This section mirrors deferred notes/TODOs in `prism_vm.py` for double-entry

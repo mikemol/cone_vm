@@ -9,7 +9,7 @@ import re
 import time
 
 # --- 1. Ontology (Opcodes) ---
-# id=0/1 are semantic reserves (NULL/ZERO) per univalence hard-cap contract.
+# Ledger ids 0/1 are semantic reserves (NULL/ZERO); baseline heaps seed ZERO at 1.
 OP_NULL = 0
 OP_ZERO = 1
 OP_SUC  = 2
@@ -177,12 +177,12 @@ def _committed_ids(value) -> CommittedIds:
 
 MAX_ROWS = 1024 * 32
 MAX_KEY_NODES = 1 << 16
-MAX_NODES = MAX_KEY_NODES - 1
-MAX_ID = MAX_NODES - 1
-MAX_COUNT = MAX_ID + 1  # Next-free upper bound; legal ids are <= MAX_ID.
+LEDGER_CAPACITY = MAX_KEY_NODES - 1
+MAX_ID = LEDGER_CAPACITY - 1
+MAX_COUNT = MAX_ID + 1  # Next-free upper bound; equals LEDGER_CAPACITY.
 # Hard-cap is semantic (univalence), not just capacity; see IMPLEMENTATION_PLAN.md.
-if MAX_NODES >= MAX_KEY_NODES:
-    raise ValueError("MAX_NODES exceeds 16-bit key packing")
+if LEDGER_CAPACITY >= MAX_KEY_NODES:
+    raise ValueError("LEDGER_CAPACITY exceeds 16-bit key packing")
 MAX_COORD_STEPS = 8
 _TEST_GUARDS = os.environ.get("PRISM_TEST_GUARDS", "").strip().lower() in (
     "1",
@@ -528,6 +528,33 @@ def node_batch(op, a1, a2) -> NodeBatch:
             raise ValueError("node_batch expects aligned 1d arrays")
     return NodeBatch(op=op, a1=a1, a2=a2)
 
+def _pack_key(op, a1, a2):
+    # Byte layout: op, a1_hi, a1_lo, a2_hi, a2_lo for lexicographic sort.
+    op_u = op.astype(jnp.uint8)
+    a1_u = (a1.astype(jnp.uint32) & jnp.uint32(0xFFFF)).astype(jnp.uint16)
+    a2_u = (a2.astype(jnp.uint32) & jnp.uint32(0xFFFF)).astype(jnp.uint16)
+    a1_hi = (a1_u >> jnp.uint16(8)).astype(jnp.uint8)
+    a1_lo = (a1_u & jnp.uint16(0xFF)).astype(jnp.uint8)
+    a2_hi = (a2_u >> jnp.uint16(8)).astype(jnp.uint8)
+    a2_lo = (a2_u & jnp.uint16(0xFF)).astype(jnp.uint8)
+    return op_u, a1_hi, a1_lo, a2_hi, a2_lo
+
+
+def _checked_pack_key(op, a1, a2, count):
+    # Checked pack: enforce bounds before fixed-width encoding to avoid aliasing.
+    max_id = jnp.int32(MAX_ID)
+    max_count = jnp.int32(MAX_COUNT)
+    enabled = op != OP_NULL
+    op_oob = (op < 0) | (op > jnp.int32(255))
+    a1_oob = (a1 < 0) | (a1 > max_id)
+    a2_oob = (a2 < 0) | (a2 > max_id)
+    count_oob = (count < 0) | (count > max_count)
+    bad = count_oob | jnp.any(enabled & (op_oob | a1_oob | a2_oob))
+    op_safe = jnp.where(bad, jnp.int32(0), op)
+    a1_safe = jnp.where(bad, jnp.int32(0), a1)
+    a2_safe = jnp.where(bad, jnp.int32(0), a2)
+    return bad, _pack_key(op_safe, a1_safe, a2_safe)
+
 def init_manifest():
     return Manifest(
         opcode=jnp.zeros(MAX_ROWS, dtype=jnp.int32),
@@ -539,10 +566,10 @@ def init_manifest():
 
 def init_arena():
     arena = Arena(
-        opcode=jnp.zeros(MAX_NODES, dtype=jnp.int32),
-        arg1=jnp.zeros(MAX_NODES, dtype=jnp.int32),
-        arg2=jnp.zeros(MAX_NODES, dtype=jnp.int32),
-        rank=jnp.full(MAX_NODES, RANK_FREE, dtype=jnp.int8),
+        opcode=jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32),
+        arg1=jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32),
+        arg2=jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32),
+        rank=jnp.full(LEDGER_CAPACITY, RANK_FREE, dtype=jnp.int8),
         count=jnp.array(1, dtype=jnp.int32),
         oom=jnp.array(False, dtype=jnp.bool_),
     )
@@ -557,22 +584,19 @@ def init_arena():
 def init_ledger():
     max_key = jnp.uint8(0xFF)
 
-    opcode = jnp.zeros(MAX_NODES, dtype=jnp.int32)
-    arg1 = jnp.zeros(MAX_NODES, dtype=jnp.int32)
-    arg2 = jnp.zeros(MAX_NODES, dtype=jnp.int32)
+    opcode = jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32)
+    arg1 = jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32)
+    arg2 = jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32)
 
     opcode = opcode.at[1].set(OP_ZERO)
 
-    keys_b0_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint8)
-    keys_b1_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint8)
-    keys_b2_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint8)
-    keys_b3_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint8)
-    keys_b4_sorted = jnp.full(MAX_NODES, max_key, dtype=jnp.uint8)
-    ids_sorted = jnp.zeros(MAX_NODES, dtype=jnp.int32)
+    keys_b0_sorted = jnp.full(LEDGER_CAPACITY, max_key, dtype=jnp.uint8)
+    keys_b1_sorted = jnp.full(LEDGER_CAPACITY, max_key, dtype=jnp.uint8)
+    keys_b2_sorted = jnp.full(LEDGER_CAPACITY, max_key, dtype=jnp.uint8)
+    keys_b3_sorted = jnp.full(LEDGER_CAPACITY, max_key, dtype=jnp.uint8)
+    keys_b4_sorted = jnp.full(LEDGER_CAPACITY, max_key, dtype=jnp.uint8)
+    ids_sorted = jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32)
 
-    # NOTE: init_ledger uses _pack_key defined later in this module; safe
-    # because init_ledger is called after import today. If that changes,
-    # reorder helpers (see IMPLEMENTATION_PLAN.md).
     k0_b0, k0_b1, k0_b2, k0_b3, k0_b4 = _pack_key(
         jnp.uint8(OP_NULL), jnp.uint16(0), jnp.uint16(0)
     )
@@ -1150,18 +1174,6 @@ def coord_xor(ledger, left_id, right_id):
     # SYNC: host reads device id for coord xor (m1).
     return _host_int_value(ids[0]), ledger
 
-def _pack_key(op, a1, a2):
-    # Byte layout: op, a1_hi, a1_lo, a2_hi, a2_lo for lexicographic sort.
-    op_u = op.astype(jnp.uint8)
-    a1_u = (a1.astype(jnp.uint32) & jnp.uint32(0xFFFF)).astype(jnp.uint16)
-    a2_u = (a2.astype(jnp.uint32) & jnp.uint32(0xFFFF)).astype(jnp.uint16)
-    a1_hi = (a1_u >> jnp.uint16(8)).astype(jnp.uint8)
-    a1_lo = (a1_u & jnp.uint16(0xFF)).astype(jnp.uint8)
-    a2_hi = (a2_u >> jnp.uint16(8)).astype(jnp.uint8)
-    a2_lo = (a2_u & jnp.uint16(0xFF)).astype(jnp.uint8)
-    return op_u, a1_hi, a1_lo, a2_hi, a2_lo
-
-
 def _lookup_node_id(ledger, op, a1, a2):
     k0, k1, k2, k3, k4 = _pack_key(op, a1, a2)
     L_b0 = ledger.keys_b0_sorted
@@ -1220,6 +1232,7 @@ def _lookup_node_id(ledger, op, a1, a2):
         # Clarify tuple unpacking if refactored (see IMPLEMENTATION_PLAN.md).
         pos, _ = lax.while_loop(cond, body, (lo, hi))
         safe_pos = jnp.minimum(pos, count - 1)
+        # safe_pos is bounds-only; treat as valid only when pos < count.
         # count > 0 is enforced by the outer cond; keep that guard if refactoring.
         # See IMPLEMENTATION_PLAN.md.
         found = (
@@ -1247,7 +1260,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     # - Pack/sort keys to dedupe proposals and batch-search ledger buckets.
     # - Allocate new ids and merge sorted key arrays into the ledger.
     # Performance note: interning runs on fixed-shape buffers for JIT stability,
-    # so some passes touch MAX_NODES even when count is small (m1 tradeoff).
+    # so some passes touch LEDGER_CAPACITY even when count is small (m1 tradeoff).
     # See IMPLEMENTATION_PLAN.md (m4) for the mitigation roadmap.
     # CORRUPT is semantic (alias risk); OOM is capacity.
     base_corrupt = ledger.corrupt
@@ -1714,28 +1727,13 @@ def _intern_nodes_impl(ledger, batch: NodeBatch):
         proposed_ops, proposed_a1, proposed_a2
     )
     is_null = proposed_ops == OP_NULL
-    enabled = ~is_null
-    max_id = jnp.int32(MAX_ID)
-    max_count = jnp.int32(MAX_COUNT)
-    # Reject negative ids/opcodes to avoid key aliasing from fixed-width packing.
-    op_oob = jnp.any((proposed_ops < 0) | (proposed_ops > jnp.int32(255)))
-    a1_hi = jnp.any(jnp.where(enabled, proposed_a1 > max_id, False))
-    a2_hi = jnp.any(jnp.where(enabled, proposed_a2 > max_id, False))
-    a1_lo = jnp.any(jnp.where(enabled, proposed_a1 < 0, False))
-    a2_lo = jnp.any(jnp.where(enabled, proposed_a2 < 0, False))
-    bounds_corrupt = (
-        (ledger.count > max_count)
-        | (ledger.count < 0)
-        | a1_hi
-        | a2_hi
-        | a1_lo
-        | a2_lo
-        | op_oob
-        | coord_leaf_nonzero
+    bad_key, _ = _checked_pack_key(
+        proposed_ops, proposed_a1, proposed_a2, ledger.count
     )
+    bounds_corrupt = bad_key | coord_leaf_nonzero
 
     def _corrupt_return(_):
-        # Bounds violations are semantic CORRUPT; return zero ids without mutation.
+        # Bounds violations are semantic CORRUPT; return zero ids (flag only).
         zero_ids = jnp.zeros_like(proposed_ops)
         new_ledger = ledger._replace(corrupt=jnp.array(True, dtype=jnp.bool_))
         return zero_ids, new_ledger

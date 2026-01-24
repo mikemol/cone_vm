@@ -92,7 +92,7 @@ def _make_random_arena(
     suc_ratio: float,
     spawn_ratio: float,
 ) -> pv.Arena:
-    size = pv.MAX_NODES
+    size = pv.LEDGER_CAPACITY
     rng = random.Random(seed)
     opcode = np.zeros(size, dtype=np.int32)
     arg1 = np.zeros(size, dtype=np.int32)
@@ -155,7 +155,7 @@ def _make_hierarchy_arena(
     l2_block_size: int,
     l1_block_size: int,
 ) -> pv.Arena:
-    size = pv.MAX_NODES
+    size = pv.LEDGER_CAPACITY
     active_count = min(size - 1, l1_block_size * 2)
     opcode = np.zeros(size, dtype=np.int32)
     arg1 = np.zeros(size, dtype=np.int32)
@@ -482,7 +482,7 @@ def _build_modes(
         )
 
         l1_block_size = block_size * max(1, hierarchy_l1_mult)
-        if l1_block_size > block_size and pv.MAX_NODES % l1_block_size == 0:
+        if l1_block_size > block_size and pv.LEDGER_CAPACITY % l1_block_size == 0:
             modes.append(
                 {
                     "name": f"bsp-hier-l2{block_size}-l1{l1_block_size}",
@@ -735,7 +735,7 @@ def main() -> None:
         base_sizes = block_sizes if block_sizes else [256]
         for l2_size in base_sizes:
             l1_size = l2_size * l1_mult
-            if pv.MAX_NODES % l1_size != 0:
+            if pv.LEDGER_CAPACITY % l1_size != 0:
                 continue
             hierarchy_pairs.append((l2_size, l1_size))
     workloads = _build_workloads(args.seed, arena_counts, hierarchy_pairs)
