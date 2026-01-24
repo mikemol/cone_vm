@@ -240,14 +240,19 @@ def check_posture():
         perms = _api_json(f"{base}/actions/permissions", token)
     except (HTTPError, URLError) as exc:
         _fail([f"actions permissions query failed: {exc}"])
-    default_perms = perms.get("default_workflow_permissions")
-    if default_perms != "read":
-        errors.append("default_workflow_permissions must be 'read'")
-    if perms.get("can_approve_pull_request_reviews"):
-        errors.append("can_approve_pull_request_reviews must be false")
     allowed = perms.get("allowed_actions")
     if allowed != "selected":
         errors.append("allowed_actions must be 'selected'")
+
+    try:
+        workflow_perms = _api_json(f"{base}/actions/permissions/workflow", token)
+    except (HTTPError, URLError) as exc:
+        _fail([f"workflow permissions query failed: {exc}"])
+    default_perms = workflow_perms.get("default_workflow_permissions")
+    if default_perms != "read":
+        errors.append("default_workflow_permissions must be 'read'")
+    if workflow_perms.get("can_approve_pull_request_reviews"):
+        errors.append("can_approve_pull_request_reviews must be false")
 
     try:
         selected = _api_json(

@@ -17,9 +17,14 @@ Install the advisory hooks:
 scripts/install_policy_hooks.sh
 ```
 
+Install the policy-check dependency (once):
+```
+mise exec -- python -m pip install pyyaml
+```
+
 Run the policy checks manually when editing workflows:
 ```
-python scripts/policy_check.py --workflows
+mise exec -- python scripts/policy_check.py --workflows
 ```
 
 CI also runs `scripts/policy_check.py --workflows --posture`, which checks the

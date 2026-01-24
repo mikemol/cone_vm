@@ -15,7 +15,6 @@ on:
       - "semantic_audit.md"
       - "audit_in_versions.md"
 
-jobs:
 permissions:
   contents: read
 
