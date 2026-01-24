@@ -47,10 +47,22 @@ jobs:
             echo "POLICY_GITHUB_TOKEN is empty"
             exit 1
           fi
+          token_len=${#POLICY_GITHUB_TOKEN}
+          echo "policy-check diagnostics:"
+          echo "  token length: ${token_len}"
+          case "$POLICY_GITHUB_TOKEN" in
+            github_pat_*) echo "  token prefix: github_pat_" ;;
+            *) echo "  token prefix: (non github_pat)" ;;
+          esac
+          python - <<'PY'
+          import os
+          token = os.environ["POLICY_GITHUB_TOKEN"]
+          has_newline = ("\n" in token) or ("\r" in token)
+          print(f"  token contains newline: {'yes' if has_newline else 'no'}")
+          PY
           auth_header="Authorization: Bearer ${POLICY_GITHUB_TOKEN}"
           accept_header="Accept: application/vnd.github+json"
           base="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          echo "policy-check diagnostics:"
           code_user=$(curl -sS -o /dev/null -w "%{http_code}" -H "$accept_header" -H "$auth_header" https://api.github.com/user)
           echo "  GET /user -> ${code_user}"
           code_perms=$(curl -sS -o /dev/null -w "%{http_code}" -H "$accept_header" -H "$auth_header" "${base}/actions/permissions")
