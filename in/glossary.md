@@ -47,6 +47,7 @@ pretty(denote(q(BSPᵗ ∘ BSPˢ(P)))) = pretty(denote(q(BSPᵗ(P))))
 * BSPᵗ controls **when identity is created**
 * BSPˢ controls **where provisional data lives**
 * the quotient map `q` erases spatial accidentals
+* BSPᵗ and BSPˢ operate entirely in the Arena (presheaf) layer; their effects must be erased by `q`
 
 ### Failure Modes
 
@@ -162,6 +163,7 @@ pretty(denote(q(rewrite(propose(x))))) = pretty(denote(q(propose(rewrite(x)))))
 
 > **Canonicalization = interning by full key-byte equality.**
 > Rewrite *proposes*; canonicalization *decides*.
+> Canonicalization is the enforcement of global coherence (sheaf condition).
 
 (Any other meaning must be explicitly qualified.)
 
@@ -209,7 +211,7 @@ pretty(denote(q(eval(P)))) = pretty(denote(evalₗ(q(P))))
 
 ### Normative Rule
 
-> Collapse means **projection of meaning**, not erasure of structure unless explicitly stated as a rewrite.
+> Collapse means **sheafification / gluing of presheaf-local structure**, not erasure of structure unless explicitly stated as a rewrite.
 
 ### Test Obligations
 
@@ -631,6 +633,317 @@ compile(λx. x) == compile(λy. y)
 
 ### Test Obligations
 
+- (planned) no pytest coverage yet
+
+---
+
+## 16. Arena / Frontier (Presheaf Semantics)
+
+### Meanings (must be qualified)
+
+* **Arenaₚ**: presheaf of staged constructions (frontier)
+* **Arenaₘ**: manifest / device representation of the frontier
+
+### Axes
+
+* Staging vs Meaning
+* Locality vs Coherence
+
+### Normative Interpretation
+
+> The Arena is the frontier.
+> It is a GF(2)-valued presheaf of local constructions prior to semantic collapse.
+
+Arena contents:
+
+* may duplicate
+* may overlap
+* may depend on order or locality
+* have no semantic identity until projected by `q`
+
+### Erasure by `q`
+
+```
+q(Arenaₚ) = Ledger
+```
+
+All Arena-only distinctions (order, multiplicity, hyperstrata, locality) are erased.
+
+### Failure Mode
+
+* Arena artifacts influencing canonical IDs
+* local ordering affecting meaning
+
+### Normative Rule
+
+> Arena semantics must be presheaf-local and must not survive sheafification.
+
+### Test Obligations
+
+- (m3) `tests/test_arena_denotation_invariance.py::test_arena_denotation_invariance_random_suite`
+- (m2) `tests/test_candidate_cycle.py::test_cycle_candidates_does_not_mutate_preexisting_rows`
+
+---
+
+## 17. `q` — Sheafification / Gluing
+
+### Meanings (must be qualified)
+
+* **qₕ**: homomorphic projection (existing usage)
+* **qₛ**: associated sheaf functor (topos semantics)
+
+These are the same operation, viewed on different axes.
+
+### Axes
+
+* Construction vs Meaning
+* Local vs Global
+
+### Normative Interpretation
+
+> `q` is the associated sheaf functor:
+> it glues presheaf-local Arena data into globally coherent Ledger meaning.
+
+Properties:
+
+* idempotent
+* total
+* order-erasing
+* GF(2)-cancellative
+* structure-preserving
+
+### Desired Commutation
+
+```
+q ∘ Arena_step = Ledger_step ∘ q
+```
+
+### Failure Mode
+
+* partial projection
+* non-idempotent collapse
+* ordering-sensitive results
+
+### Normative Rule
+
+> `q` is the only meaning-forming operation in Prism.
+
+### Test Obligations
+
+- (m2) `tests/test_commit_stratum.py::test_commit_stratum_identity`
+- (m2) `tests/test_commit_stratum.py::test_commit_stratum_applies_prior_q_to_children`
+- (m2) `tests/test_commit_stratum.py::test_commit_stratum_q_map_totality_on_mixed_ids`
+
+---
+
+## 18. Ledger (Sheaf Object / Manifold)
+
+### Meanings (must be qualified)
+
+* **Ledgerₛ**: distinguished sheaf of canonical structure
+* **Ledgerᵣ**: concrete interning table (implementation)
+
+### Axes
+
+* Semantics vs Representation
+
+### Normative Interpretation
+
+> The Ledger is a sheaf, not a log.
+> Its contents are globally coherent semantic objects.
+
+Canonical IDs are global elements of the Ledger sheaf.
+
+### Erasure by `q`
+
+Nothing: the Ledger is post-erasure.
+
+### Failure Mode
+
+* Ledger IDs encoding staging or locality
+* canonical IDs depending on Arena history
+
+### Normative Rule
+
+> Only Ledger IDs carry semantic meaning.
+
+### Test Obligations
+
+- (m1) `tests/test_m1_gate.py::test_ledger_full_key_equality`
+- (m1) `tests/test_m1_gate.py::test_intern_deterministic_ids_single_engine`
+
+---
+
+## 19. Boolean Logic (GF(2) Semantics)
+
+### Meanings (must be qualified)
+
+* **Booleanₗ**: internal logic of the Prism topos
+* **GF(2)**: algebraic carrier of semantics
+
+### Axes
+
+* Logic vs Computation
+
+### Normative Interpretation
+
+> Prism's internal logic is classical (Boolean), even if its construction is staged or partial.
+
+Implications:
+
+* Law of Excluded Middle holds after `q`
+* duplication annihilates (`x ⊕ x = 0`)
+* no semantic accumulation by magnitude
+
+### Desired Commutation
+
+```
+q(x ⊕ x) = 0
+```
+
+### Failure Mode
+
+* weighted semantics
+* order-dependent truth
+
+### Normative Rule
+
+> All semantic meaning is GF(2)-stable.
+
+### Test Obligations
+
+- (m1) `tests/test_m1_gate.py::test_intern_deterministic_ids_single_engine`
+- (m4) `tests/test_coord_ops.py::test_coord_xor_parity_cancel`
+
+---
+
+## 20. Hyperpair / Cayley-Dickson Step
+
+### Meanings (must be qualified)
+
+* **CD-step**: Cayley-Dickson doubling
+* **Hyperpair**: structural pairing at the semantic level
+
+These are the same operator.
+
+### Axes
+
+* Dimension vs Structure
+
+### Normative Interpretation
+
+> The hyperpair is the Cayley-Dickson step.
+> There is exactly one pairing operator.
+
+Higher-dimensional values arise by structural recursion, not new semantics.
+
+### Desired Commutation
+
+```
+op(CD(x₁,x₂), CD(y₁,y₂)) = CD(op(x₁,y₁), op(x₂,y₂))
+```
+
+(for dimension-preserving ops)
+
+### Failure Mode
+
+* introducing parallel "pair" semantics
+* non-structural dimensional growth
+
+### Normative Rule
+
+> All higher-order behavior is structural depth in Σ.
+
+### Test Obligations
+
+- (m4+) planned, not yet in pytest
+
+---
+
+## 21. Hyperstrata (Staging, Not Semantics)
+
+### Meanings (must be qualified)
+
+* **Hyperstrataₚ**: staging indices in the Arena
+* **Hyperstrataₛ**: invalid (must not exist)
+
+### Axes
+
+* Time vs Meaning
+
+### Normative Interpretation
+
+> Hyperstrata refine construction order, not semantic identity.
+
+They:
+
+* live only in the Arena
+* are erased by `q`
+* enforce immutability and causality
+
+### Erasure by `q`
+
+```
+q((s,t)-staged data) = semantic value
+```
+
+### Failure Mode
+
+* hyperstrata leaking into keys or IDs
+
+### Normative Rule
+
+> Hyperstrata are presheaf-local only.
+
+### Test Obligations
+
+- (m2) `tests/test_candidate_cycle.py::test_cycle_candidates_does_not_mutate_preexisting_rows`
+- (m2) `tests/test_candidate_cycle.py::test_cycle_candidates_validate_stratum_trips_on_within_refs`
+
+---
+
+## 22. Hyperlattice (Semantic Structure)
+
+### Meanings (must be qualified)
+
+* **Hyperlatticeᵢ**: internal lattice of subobjects (Boolean)
+* **Hyperlatticeₑ**: refinement order on canonical IDs
+
+### Axes
+
+* Logic vs Structure
+
+### Normative Interpretation
+
+> Canonical IDs form a semantic hyperlattice:
+> a recursively generated, GF(2)-stable lattice induced by CNF-2 and CD structure.
+
+Joins:
+
+* Arena accumulation -> `q`
+
+Meets:
+
+* shared canonical substructure
+
+### Desired Commutation
+
+```
+q(joinₚ(x,y)) = joinₛ(q(x), q(y))
+```
+
+### Failure Mode
+
+* non-idempotent joins
+* semantic dependence on multiplicity
+
+### Normative Rule
+
+> All semantic composition is lattice-stable after `q`.
+
+### Test Obligations
+
+- (m2-m3) projection commutation and denotation invariance
 - (planned) no pytest coverage yet
 
 ---
