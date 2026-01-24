@@ -71,10 +71,18 @@ has_newline = ("\n" in token) or ("\r" in token)
 print("yes" if has_newline else "no")
 PY
 )
+token_fingerprint=$(POLICY_TOKEN="$token" python - <<'PY'
+import os
+import hashlib
+token = os.environ["POLICY_TOKEN"]
+print(hashlib.sha256(token.encode("utf-8")).hexdigest()[:8])
+PY
+)
 
 echo "token length: ${token_len}"
 echo "token prefix: ${token_prefix}"
 echo "token contains newline: ${token_newline}"
+echo "token sha256 prefix: ${token_fingerprint}"
 
 printf %s "$token" | gh secret set "$secret" -b - -R "$repo"
 unset token

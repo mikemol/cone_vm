@@ -233,6 +233,13 @@ def check_posture():
     repo = os.environ.get("GITHUB_REPOSITORY")
     if not token:
         _fail(["missing GITHUB_TOKEN or POLICY_GITHUB_TOKEN for posture check"])
+    if policy_token is not None and len(policy_token) < 20:
+        _fail(
+            [
+                "POLICY_GITHUB_TOKEN appears too short; reset the repo secret "
+                "with scripts/reset_policy_secret.sh"
+            ]
+        )
     if not repo:
         _fail(["missing GITHUB_REPOSITORY for posture check"])
 

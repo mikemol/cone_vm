@@ -56,9 +56,12 @@ jobs:
           esac
           python - <<'PY'
           import os
+          import hashlib
           token = os.environ["POLICY_GITHUB_TOKEN"]
           has_newline = ("\n" in token) or ("\r" in token)
           print(f"  token contains newline: {'yes' if has_newline else 'no'}")
+          fingerprint = hashlib.sha256(token.encode("utf-8")).hexdigest()[:8]
+          print(f"  token sha256 prefix: {fingerprint}")
           PY
           auth_header="Authorization: Bearer ${POLICY_GITHUB_TOKEN}"
           accept_header="Accept: application/vnd.github+json"
