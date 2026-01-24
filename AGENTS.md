@@ -11,5 +11,6 @@ This repository is governed by `POLICY_SEED.md`. Treat it as authoritative.
 ## Local guardrails
 - Install advisory hooks: `scripts/install_policy_hooks.sh`.
 - Hooks are advisory; CI policy checks are authoritative.
+- Use `mise exec -- python` for policy tooling so dependencies resolve as expected.
 
 If any request conflicts with `POLICY_SEED.md`, stop and ask for guidance.

@@ -57,7 +57,7 @@ If any downstream rule conflicts with this invariant, the downstream rule is inv
 
 ### 2.1 Trusted Sources
 
-* Direct pushes to `main` (or explicitly enumerated trusted branches).
+* Direct pushes to `main` and `stage` (explicitly trusted branches).
 * Commits authored by the maintainer or explicitly trusted collaborators.
 
 ### 2.2 Untrusted Sources
@@ -114,7 +114,8 @@ Self-hosted jobs MUST specify **all** required labels:
 runs-on: [self-hosted, gpu, local]
 ```
 
-Partial or ambiguous targeting is forbidden.
+Additional labels (e.g. a specific runner name like `cassian`) are permitted for
+pinning, but the required labels must always be present.
 
 ### 4.3 Actor Guard (Defense in Depth)
 
@@ -135,7 +136,9 @@ permissions:
   contents: read
 ```
 
-No implicit or write-level permissions are allowed by default.
+Additional **read-only** permissions are allowed when required for enforcement
+(e.g. `actions: read` for posture checks), but write scopes are forbidden by
+default.
 
 ### 4.5 Action Supply Chain
 
