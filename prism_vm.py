@@ -1872,13 +1872,6 @@ def _apply_perm_and_swizzle(arena, perm):
     g2 = safe_gather_1d(inv_perm, idx2, "swizzle.arg2")
     swizzled_arg1 = jnp.where(live & (new_arg1 != 0), g1, 0)
     swizzled_arg2 = jnp.where(live & (new_arg2 != 0), g2, 0)
-    # Renormalize commutative ops after swizzle to keep operand order stable.
-    is_commutative = (new_ops == OP_ADD) | (new_ops == OP_MUL)
-    swap = live & is_commutative & (swizzled_arg2 < swizzled_arg1)
-    swizzled_arg1, swizzled_arg2 = (
-        jnp.where(swap, swizzled_arg2, swizzled_arg1),
-        jnp.where(swap, swizzled_arg1, swizzled_arg2),
-    )
     # NOTE: value-bound guards for swizzled args in test mode are deferred to
     # IMPLEMENTATION_PLAN.md.
     # Swizzle is renormalization only; denotation must not change (plan).
