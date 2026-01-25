@@ -97,11 +97,18 @@ def test_commit_stratum_q_map_totality_on_mixed_ids():
         jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
         jnp.array([0], dtype=jnp.int32),
     )
-    node_id = suc_ids[0]
+    suc_zero = suc_ids[0]
+    add_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+    )
+    node_id = add_ids[0]
     node_id_i = int(node_id)
 
     def prior_q(ids: pv.ProvisionalIds) -> pv.CommittedIds:
-        mapped = jnp.where(ids.a == pv.ZERO_PTR, jnp.int32(node_id_i), ids.a)
+        mapped = jnp.where(ids.a == pv.ZERO_PTR, jnp.int32(suc_zero), ids.a)
         return pv._committed_ids(mapped)
 
     stratum = pv.Stratum(start=jnp.int32(node_id_i), count=jnp.int32(1))
@@ -111,6 +118,8 @@ def test_commit_stratum_q_map_totality_on_mixed_ids():
     mixed = jnp.array([0, pv.ZERO_PTR, node_id_i, node_id_i + 1], dtype=jnp.int32)
     mapped = q_map(pv._provisional_ids(mixed)).a
     assert int(mapped[0]) == 0
-    assert int(mapped[1]) == node_id_i
+    assert int(mapped[1]) == int(suc_zero)
     assert int(mapped[2]) == int(canon_ids.a[0])
     assert int(mapped[3]) == node_id_i + 1
+    mapped2 = q_map(pv._provisional_ids(mapped)).a
+    assert bool(jnp.array_equal(mapped, mapped2))
