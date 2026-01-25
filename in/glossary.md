@@ -1,5 +1,12 @@
 # Commuting Acronyms & Polysemous Terms (Normative)
 
+> **Glossary Contract (Normative):**
+> This glossary defines the semantic typing discipline of Prism.
+> Any term reused in code, tests, or documentation must conform to exactly one
+> glossary entry, declare its axis, state its commutation law, and identify
+> what is erased by `q`. Any reuse that does not satisfy these conditions is
+> invalid.
+
 ## 0. Rule of Polysemy
 
 Polysemy is permitted only when:
@@ -47,7 +54,8 @@ pretty(denote(q(BSPᵗ ∘ BSPˢ(P)))) = pretty(denote(q(BSPᵗ(P))))
 * BSPᵗ controls **when identity is created**
 * BSPˢ controls **where provisional data lives**
 * the quotient map `q` erases spatial accidentals
-* BSPᵗ and BSPˢ operate entirely in the Arena (presheaf) layer; their effects must be erased by `q`
+* BSPᵗ and BSPˢ operate entirely in the Arena (presheaf) layer; their effects
+  must be erased by `q` and are therefore gauge symmetries
 
 ### Failure Modes
 
@@ -163,7 +171,8 @@ pretty(denote(q(rewrite(propose(x))))) = pretty(denote(q(propose(rewrite(x)))))
 
 > **Canonicalization = interning by full key-byte equality.**
 > Rewrite *proposes*; canonicalization *decides*.
-> Canonicalization is the enforcement of global coherence (sheaf condition).
+> Canonicalization is the enforcement of global coherence (sheaf condition),
+> i.e. the associated sheaf functor applied to Arena data.
 
 (Any other meaning must be explicitly qualified.)
 
@@ -211,7 +220,10 @@ pretty(denote(q(eval(P)))) = pretty(denote(evalₗ(q(P))))
 
 ### Normative Rule
 
-> Collapse means **sheafification / gluing of presheaf-local structure**, not erasure of structure unless explicitly stated as a rewrite.
+> Collapse means **sheafification / gluing of presheaf-local structure**, not
+> erasure of structure unless explicitly stated as a rewrite.
+> Any interpretation of "collapse" that destroys information before `q` is
+> invalid.
 
 ### Test Obligations
 
@@ -636,6 +648,8 @@ compile(λx. x) == compile(λy. y)
 - (planned) no pytest coverage yet
 
 ---
+
+# Semantic Foundation Extension (Topos, Hyperlattice, Novelty)
 
 ## 16. Arena / Frontier (Presheaf Semantics)
 
