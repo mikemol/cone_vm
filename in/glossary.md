@@ -703,6 +703,7 @@ These are the same operation, viewed on different axes.
 
 > `q` is the associated sheaf functor:
 > it glues presheaf-local Arena data into globally coherent Ledger meaning.
+> It is an irreversible coarse-graining boundary, not an evaluator or scheduling step.
 
 Properties:
 
@@ -1022,6 +1023,10 @@ Noveltyᵢ(E ∘ BSPˢ) = Noveltyᵢ(E)
 
 > Novelty is semantic; Arena structure cannot change it.
 
+### Saturation
+
+> Novelty saturates when no new canonical IDs can appear; this is a representational fixed point, not termination.
+
 ### Test Obligations
 
 - (planned) monotonicity and BSPˢ invariance checks
@@ -1051,6 +1056,7 @@ Noveltyᵢ(E ∘ BSPˢ) = Noveltyᵢ(E)
 ### Normative Rule
 
 > Fixed point claims are about Ledger ID closure only.
+> Min(Prism) may be used to witness fixed-point status under projection.
 
 ### Test Obligations
 
@@ -1081,6 +1087,70 @@ Noveltyᵢ(E ∘ BSPˢ) = Noveltyᵢ(E)
 ### Normative Rule
 
 > Do not assert termination or proof-theoretic strength from Prism fixed-point semantics.
+
+### Test Obligations
+
+- (planned) none
+
+---
+
+## 27. Adjunction / Coherence Discipline
+
+### Meanings (must be qualified)
+
+* **Adjunctionᶜ**: construction adjunctions (Arena -> Ledger)
+* **Adjunctionˢ**: semantic adjunctions (gluing, collapse)
+
+### Axes
+
+* Construction vs Meaning
+* Syntax vs Semantics
+
+### Normative Interpretation
+
+> Any polysemous term must declare its governing functor/adjunction and its commutation equation.
+
+### Failure Mode
+
+* terms reused without axis declaration
+* missing commutation equations
+* coherence obligations omitted
+
+### Normative Rule
+
+> Coherence (triangle/pentagon) is mandatory when multiple adjunctions interact.
+
+### Test Obligations
+
+- (planned) commutation tests tied to glossary terms
+
+---
+
+## 28. Entropy Taxonomy (Semantic Disambiguation)
+
+### Meanings (must be qualified)
+
+* **Entropyₐ**: Arena microstate entropy
+* **Entropyᶜ**: canonical novelty entropy
+* **Entropyₕ**: hyperoperator entropy
+* **Entropyᵍ**: gauge entropy (BSPˢ redundancy)
+
+### Axes
+
+* Construction vs Meaning
+
+### Normative Interpretation
+
+> Entropy claims must specify which entropy and which adjunction they reference.
+
+### Failure Mode
+
+* conflating microstate entropy with canonical novelty
+* claiming monotonicity without an adjunction qualifier
+
+### Normative Rule
+
+> Entropy is adjunction-relative; no cross-axis interpretation is permitted.
 
 ### Test Obligations
 
