@@ -872,13 +872,18 @@ def cycle_candidates(
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
         return ledger, _provisional_ids(frontier_ids.a), (empty, empty, empty), _identity_q
 
-    f_ops = ledger.opcode[frontier_ids.a]
-    f_a1 = ledger.arg1[frontier_ids.a]
-    child_ops = ledger.opcode[f_a1]
-    rewrite_child = (f_ops == OP_SUC) & (
-        (child_ops == OP_ADD) | (child_ops == OP_MUL)
-    )
-    rewrite_ids = jnp.where(rewrite_child, f_a1, frontier_ids.a)
+    def _peel_one(ptr):
+        def cond(state):
+            curr, _ = state
+            return ledger.opcode[curr] == OP_SUC
+
+        def body(state):
+            curr, depth = state
+            return ledger.arg1[curr], depth + 1
+
+        return lax.while_loop(cond, body, (ptr, jnp.int32(0)))
+
+    rewrite_ids, depths = jax.vmap(_peel_one)(frontier_ids.a)
 
     candidates = emit_candidates(ledger, rewrite_ids)
     start0 = ledger.count.astype(jnp.int32)
@@ -952,18 +957,22 @@ def cycle_candidates(
     base_next = jnp.where(slot1_add, slot1_ids, base_next)
     base_next = jnp.where(slot1_mul, slot1_ids, base_next)
 
-    wrap_emit = rewrite_child & (base_next != rewrite_ids)
-    # TODO: add debug counters for rewrite_child/changed/wrap_emit; deferred to
-    # IMPLEMENTATION_PLAN.md (CNF-2 staging/observability).
-    wrap_ops = jnp.where(wrap_emit, jnp.int32(OP_SUC), jnp.int32(0))
-    wrap_a1 = jnp.where(wrap_emit, base_next, jnp.int32(0))
-    wrap_a2 = jnp.zeros_like(wrap_a1)
-    wrap_ids, ledger2 = intern_nodes(ledger1, node_batch(wrap_ops, wrap_a1, wrap_a2))
-
-    # NOTE: keeping rewrite_child on the outer wrapper can add extra cycles; a
-    # direct wrapper update is deferred to IMPLEMENTATION_PLAN.md.
-    next_frontier = jnp.where(rewrite_child, frontier_ids.a, base_next)
-    next_frontier = jnp.where(wrap_emit, wrap_ids, next_frontier)
+    wrap_strata = []
+    wrap_depths = depths
+    next_frontier = base_next
+    ledger2 = ledger1
+    while _host_bool_value(jnp.any((wrap_depths > 0) & (~ledger2.oom))):
+        to_wrap = (wrap_depths > 0) & (~ledger2.oom)
+        ops = jnp.where(to_wrap, jnp.int32(OP_SUC), jnp.int32(0))
+        a1 = jnp.where(to_wrap, next_frontier, jnp.int32(0))
+        a2 = jnp.zeros_like(a1)
+        start = _host_int_value(ledger2.count)
+        new_ids, ledger2 = intern_nodes(ledger2, node_batch(ops, a1, a2))
+        end = _host_int_value(ledger2.count)
+        if end > start:
+            wrap_strata.append((start, end - start))
+        next_frontier = jnp.where(to_wrap, new_ids, next_frontier)
+        wrap_depths = wrap_depths - to_wrap.astype(jnp.int32)
 
     # Strata counts track appended id ranges (ledger.count deltas), not
     # proposal counts; keep validators/q-map aligned (see IMPLEMENTATION_PLAN.md).
@@ -974,9 +983,14 @@ def cycle_candidates(
     stratum1 = Stratum(
         start=start1, count=(ledger1.count - start1).astype(jnp.int32)
     )
-    start2 = ledger1.count.astype(jnp.int32)
+    if wrap_strata:
+        start2_i = wrap_strata[0][0]
+        count2_i = sum(count for _, count in wrap_strata)
+    else:
+        start2_i = _host_int_value(ledger1.count)
+        count2_i = 0
     stratum2 = Stratum(
-        start=start2, count=(ledger2.count - start2).astype(jnp.int32)
+        start=jnp.int32(start2_i), count=jnp.int32(count2_i)
     )
     ledger2, _, q_map = commit_stratum(
         ledger2, stratum0, validate=validate_stratum
@@ -984,9 +998,13 @@ def cycle_candidates(
     ledger2, _, q_map = commit_stratum(
         ledger2, stratum1, prior_q=q_map, validate=validate_stratum
     )
-    ledger2, _, q_map = commit_stratum(
-        ledger2, stratum2, prior_q=q_map, validate=validate_stratum
-    )
+    for start_i, count_i in wrap_strata:
+        micro_stratum = Stratum(
+            start=jnp.int32(start_i), count=jnp.int32(count_i)
+        )
+        ledger2, _, q_map = commit_stratum(
+            ledger2, micro_stratum, prior_q=q_map, validate=validate_stratum
+        )
     next_frontier = _provisional_ids(next_frontier)
     _host_raise_if_bad(ledger2, "Ledger capacity exceeded during cycle_candidates")
     if _TEST_GUARDS:
