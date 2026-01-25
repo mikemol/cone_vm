@@ -24,9 +24,15 @@ def test_arena_denotation_invariance_random_suite():
     rng = random.Random(1)
     for _ in range(10):
         expr = _rand_expr(rng, 4)
-        no_sort = harness.run_arena(expr, steps=4, do_sort=False, use_morton=False)
-        rank_sort = harness.run_arena(expr, steps=4, do_sort=True, use_morton=False)
-        morton_sort = harness.run_arena(expr, steps=4, do_sort=True, use_morton=True)
+        no_sort = harness.denote_pretty_arena(
+            expr, steps=4, do_sort=False, use_morton=False
+        )
+        rank_sort = harness.denote_pretty_arena(
+            expr, steps=4, do_sort=True, use_morton=False
+        )
+        morton_sort = harness.denote_pretty_arena(
+            expr, steps=4, do_sort=True, use_morton=True
+        )
         assert no_sort == rank_sort
         assert no_sort == morton_sort
 
@@ -42,10 +48,18 @@ def test_arena_denotation_invariance_blocked_small_suite():
         "(mul (suc (suc zero)) (suc zero))",
     ]
     for expr in cases:
-        no_sort = harness.run_arena(expr, steps=4, do_sort=False, use_morton=False)
-        rank_sort = harness.run_arena(expr, steps=4, do_sort=True, use_morton=False)
-        morton_sort = harness.run_arena(expr, steps=4, do_sort=True, use_morton=True)
-        blocked = harness.run_arena(expr, steps=4, do_sort=True, block_size=block_size)
+        no_sort = harness.denote_pretty_arena(
+            expr, steps=4, do_sort=False, use_morton=False
+        )
+        rank_sort = harness.denote_pretty_arena(
+            expr, steps=4, do_sort=True, use_morton=False
+        )
+        morton_sort = harness.denote_pretty_arena(
+            expr, steps=4, do_sort=True, use_morton=True
+        )
+        blocked = harness.denote_pretty_arena(
+            expr, steps=4, do_sort=True, block_size=block_size
+        )
         assert no_sort == rank_sort
         assert no_sort == morton_sort
         assert no_sort == blocked

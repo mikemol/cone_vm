@@ -25,6 +25,27 @@ def _small_add_manifest(cap):
     )
 
 
+def _add_manifest_two_suc(cap):
+    ops = jnp.zeros(cap, dtype=jnp.int32)
+    a1 = jnp.zeros(cap, dtype=jnp.int32)
+    a2 = jnp.zeros(cap, dtype=jnp.int32)
+    ops = ops.at[1].set(pv.OP_ZERO)
+    ops = ops.at[2].set(pv.OP_SUC)
+    a1 = a1.at[2].set(1)
+    ops = ops.at[3].set(pv.OP_SUC)
+    a1 = a1.at[3].set(2)
+    ops = ops.at[4].set(pv.OP_ADD)
+    a1 = a1.at[4].set(3)
+    a2 = a2.at[4].set(1)
+    return pv.Manifest(
+        ops,
+        a1,
+        a2,
+        jnp.array(5, dtype=jnp.int32),
+        jnp.array(False, dtype=jnp.bool_),
+    )
+
+
 def _small_mul_manifest(cap):
     ops = jnp.zeros(cap, dtype=jnp.int32)
     a1 = jnp.zeros(cap, dtype=jnp.int32)
@@ -143,6 +164,15 @@ def test_kernel_add_oom():
 
 
 @pytest.mark.m1
+def test_kernel_add_partial_allocation_sets_oom():
+    cap = 6
+    manifest = _add_manifest_two_suc(cap)
+    new_manifest, _ = pv.kernel_add(manifest, jnp.int32(4))
+    assert bool(new_manifest.oom)
+    assert int(new_manifest.active_count) == cap
+
+
+@pytest.mark.m1
 def test_kernel_add_oom_preserves_null_slot():
     cap = 4
     manifest = _small_add_manifest(cap)
@@ -195,6 +225,38 @@ def test_op_interact_oom():
         a2,
         rank,
         jnp.array(cap, dtype=jnp.int32),
+        jnp.array(False, dtype=jnp.bool_),
+    )
+    new_arena = pv.op_interact(arena)
+    assert bool(new_arena.oom)
+    assert int(new_arena.count) == cap
+
+
+@pytest.mark.m3
+def test_op_interact_partial_allocation_sets_oom():
+    cap = 7
+    ops = jnp.zeros(cap, dtype=jnp.int32)
+    a1 = jnp.zeros(cap, dtype=jnp.int32)
+    a2 = jnp.zeros(cap, dtype=jnp.int32)
+    rank = jnp.full(cap, pv.RANK_COLD, dtype=jnp.int8)
+    ops = ops.at[1].set(pv.OP_ZERO)
+    ops = ops.at[2].set(pv.OP_SUC)
+    a1 = a1.at[2].set(1)
+    ops = ops.at[3].set(pv.OP_SUC)
+    a1 = a1.at[3].set(1)
+    ops = ops.at[4].set(pv.OP_ADD)
+    a1 = a1.at[4].set(2)
+    a2 = a2.at[4].set(3)
+    ops = ops.at[5].set(pv.OP_ADD)
+    a1 = a1.at[5].set(3)
+    a2 = a2.at[5].set(2)
+    rank = rank.at[4].set(pv.RANK_HOT).at[5].set(pv.RANK_HOT)
+    arena = pv.Arena(
+        ops,
+        a1,
+        a2,
+        rank,
+        jnp.array(6, dtype=jnp.int32),
         jnp.array(False, dtype=jnp.bool_),
     )
     new_arena = pv.op_interact(arena)

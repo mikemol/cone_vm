@@ -564,6 +564,34 @@ def test_cycle_candidates_stop_path_on_oom():
     _assert_ledger_snapshot(ledger, snapshot)
 
 
+def test_cycle_candidates_stop_path_on_oom_is_non_mutating(monkeypatch):
+    _require_cycle_candidates()
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    frontier = pv._committed_ids(jnp.array([suc_ids[0]], dtype=jnp.int32))
+    snapshot = _ledger_snapshot(ledger)
+    ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
+    monkeypatch.setattr(pv, "_host_raise_if_bad", lambda *args, **kwargs: None)
+
+    out_ledger, frontier_prov, strata, q_map = pv.cycle_candidates(
+        ledger, frontier
+    )
+    mapped = pv.apply_q(q_map, frontier_prov).a
+    stratum0, stratum1, stratum2 = strata
+    assert bool(out_ledger.oom)
+    assert int(out_ledger.count) == int(ledger.count)
+    assert int(stratum0.count) == 0
+    assert int(stratum1.count) == 0
+    assert int(stratum2.count) == 0
+    assert bool(jnp.array_equal(mapped, frontier_prov.a))
+    _assert_ledger_snapshot(out_ledger, snapshot)
+
+
 def test_cycle_candidates_q_map_composes_across_strata():
     _require_cycle_candidates()
     ledger, frontier = _build_suc_add_suc_frontier()
