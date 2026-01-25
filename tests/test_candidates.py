@@ -17,20 +17,7 @@ def _require_candidate_api():
     assert hasattr(pv, "compact_candidates")
 
 
-def test_candidate_emit_fixed_arity():
-    _require_candidate_api()
-    ledger = pv.init_ledger()
-    frontier = jnp.array([1, 1], dtype=jnp.int32)
-    candidates = pv.emit_candidates(ledger, frontier)
-    expected = int(frontier.shape[0]) * 2
-    assert candidates.enabled.shape[0] == expected
-    assert candidates.opcode.shape[0] == expected
-    assert candidates.arg1.shape[0] == expected
-    assert candidates.arg2.shape[0] == expected
-
-
-def test_cnf2_slot_layout_indices():
-    _require_candidate_api()
+def _build_frontier_sample():
     ledger = pv.init_ledger()
     suc_ids, ledger = pv.intern_nodes(
         ledger,
@@ -74,6 +61,38 @@ def test_cnf2_slot_layout_indices():
         ],
         dtype=jnp.int32,
     )
+    return ledger, frontier
+
+
+def _sorted_compacted_keys(candidates):
+    compacted, count = pv.compact_candidates(candidates)
+    count_i = int(count)
+    if count_i == 0:
+        return jnp.zeros((0, 5), dtype=jnp.uint8)
+    ops = compacted.opcode[:count_i]
+    a1 = compacted.arg1[:count_i]
+    a2 = compacted.arg2[:count_i]
+    b0, b1, b2, b3, b4 = pv._pack_key(ops, a1, a2)
+    perm = jnp.lexsort((b4, b3, b2, b1, b0))
+    keys = jnp.stack([b0, b1, b2, b3, b4], axis=1)
+    return keys[perm]
+
+
+def test_candidate_emit_fixed_arity():
+    _require_candidate_api()
+    ledger = pv.init_ledger()
+    frontier = jnp.array([1, 1], dtype=jnp.int32)
+    candidates = pv.emit_candidates(ledger, frontier)
+    expected = int(frontier.shape[0]) * 2
+    assert candidates.enabled.shape[0] == expected
+    assert candidates.opcode.shape[0] == expected
+    assert candidates.arg1.shape[0] == expected
+    assert candidates.arg2.shape[0] == expected
+
+
+def test_cnf2_slot_layout_indices():
+    _require_candidate_api()
+    ledger, frontier = _build_frontier_sample()
     candidates = pv.emit_candidates(ledger, frontier)
     _, count, comp_idx = pv.compact_candidates_with_index(candidates)
     size = candidates.enabled.shape[0]
@@ -97,49 +116,7 @@ def test_cnf2_slot_layout_indices():
 
 def test_candidate_emit_frontier_permutation_invariant():
     _require_candidate_api()
-    ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
-    )
-    suc_x_id = suc_ids[0]
-    y_id = suc_ids[1]
-    add_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    add_suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    mul_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    mul_suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    frontier = jnp.array(
-        [
-            add_zero_ids[0],
-            add_suc_ids[0],
-            mul_zero_ids[0],
-            mul_suc_ids[0],
-            suc_x_id,
-        ],
-        dtype=jnp.int32,
-    )
+    ledger, frontier = _build_frontier_sample()
     perm = jnp.array([2, 0, 4, 1, 3], dtype=jnp.int32)
     inv_perm = jnp.argsort(perm)
     frontier_perm = frontier[perm]
@@ -172,6 +149,21 @@ def test_candidate_emit_frontier_permutation_invariant():
     slot0_ids_ref = slot0_ids(ledger, candidates, frontier.shape[0])
     slot0_ids_perm = slot0_ids(ledger, candidates_perm, frontier.shape[0])
     assert bool(jnp.array_equal(slot0_ids_ref, slot0_ids_perm[inv_perm]))
+
+
+def test_candidate_emit_frontier_permutation_invariant_multiset():
+    _require_candidate_api()
+    ledger, frontier = _build_frontier_sample()
+    candidates = pv.emit_candidates(ledger, frontier)
+    keys_ref = _sorted_compacted_keys(candidates)
+    perms = [
+        jnp.array([2, 0, 4, 1, 3], dtype=jnp.int32),
+        jnp.array([4, 3, 2, 1, 0], dtype=jnp.int32),
+    ]
+    for perm in perms:
+        candidates_perm = pv.emit_candidates(ledger, frontier[perm])
+        keys_perm = _sorted_compacted_keys(candidates_perm)
+        assert bool(jnp.array_equal(keys_ref, keys_perm))
 
 
 def test_candidate_compaction_enabled_only():
