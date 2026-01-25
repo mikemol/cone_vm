@@ -618,6 +618,15 @@ def test_cycle_candidates_q_map_composes_across_strata():
         assert bool(jnp.array_equal(mapped, expected))
 
 
+def test_cycle_candidates_q_map_idempotent_on_frontier():
+    _require_cycle_candidates()
+    ledger, frontier = _build_suc_add_suc_frontier()
+    ledger, next_frontier_prov, _, q_map = pv.cycle_candidates(ledger, frontier)
+    mapped = pv.apply_q(q_map, next_frontier_prov).a
+    remapped = pv.apply_q(q_map, pv._provisional_ids(mapped)).a
+    assert bool(jnp.array_equal(mapped, remapped))
+
+
 @pytest.mark.m3
 def test_cycle_candidates_does_not_mutate_preexisting_rows():
     _require_cycle_candidates()
