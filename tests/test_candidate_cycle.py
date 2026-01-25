@@ -555,6 +555,7 @@ def test_cycle_candidates_q_map_composes_across_strata():
         assert bool(jnp.array_equal(mapped, expected))
 
 
+@pytest.mark.m3
 def test_cycle_candidates_does_not_mutate_preexisting_rows():
     _require_cycle_candidates()
     ledger, frontier = _build_suc_add_suc_frontier()
