@@ -155,6 +155,12 @@ Manual semantic analysis based on `in/in-*.md`, `in/glossary.md`, `prism_vm.py`,
 - vs `prism_vm.py`: Intersection: no ordinal machinery exists in code; SymDiff: none (pure documentation boundary); Wedge: ensure docs and tests avoid ordinal/termination claims, and clarify that “finite representation” is conditional on the univalence cap (CORRUPT on overflow).
 - vs `IMPLEMENTATION_PLAN.md`: Intersection: semantic focus on representation and ordinals as non-goals; SymDiff: plan does not elaborate the boundary details; Wedge: keep ordinal descent out of tests and acceptance criteria.
 
+## in/in-26.md
+- Core semantics: proof roadmap for Agda formalization of the semantic kernel (Sigma, canonical keys, univalence, q, BSPˢ gauge invariance, novelty monotonicity, finite closure, fixed points, Min(Prism), and explicit non-goals); focuses on semantic leverage per proof hour.
+- Prior `in/in-25.md`: Intersection: boundary discipline and explicit non-claims; SymDiff: in-26 shifts from semantic claims to formalization priorities and module structure; Wedge: ensure the proof plan stays aligned with the glossary’s axes/commutation rules rather than implementation details.
+- vs `prism_vm.py`: Intersection: semantic kernel concepts map to existing interning/q semantics; SymDiff: code does not expose Agda artifacts; Wedge: treat in-26 as verification roadmap, not an implementation requirement.
+- vs `IMPLEMENTATION_PLAN.md`: Intersection: Min(Prism), novelty/fixed-point justification, and non-goals (no ordinals/termination); SymDiff: plan does not yet capture the Agda module roadmap; Wedge: link the plan’s verification track to the in-26 proof milestones when formalization begins.
+
 ## in/glossary.md
 - Core semantics: glossary defines commutation constraints for overloaded terms (BSP, CD, canonicalization, collapse, normalize, aggregate, scheduler, identity) and adds Arena/`q`/Ledger sheaf framing, hyperstrata, hyperlattice, gauge symmetry, canonical novelty, hyperoperator fixed points, adjunction/coherence discipline, and an entropy taxonomy; includes explicit pre-step immutability and `q` as coarse-graining.
 - Prior: none (glossary).
