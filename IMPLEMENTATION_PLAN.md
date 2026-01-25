@@ -76,6 +76,9 @@ These are already in effect in code/tests and are treated as non-negotiable.
   quotient map `q`; denotation is defined by projecting provisional nodes
   through `q` and must commute with scheduling (see `in/in-16.md`). `q` is an
   irreversible coarse-graining boundary, not an evaluator or scheduling step.
+- Reserved glyphs/roles are normative: `q` is meaning-forming projection,
+  `σ` denotes BSPˢ permutation (gauge), and `ρ` denotes pointer/id remaps
+  induced by renormalization. Never describe `σ` or `ρ` as `q`.
 - Glossary adjunction/coherence discipline is normative: any new polysemous
   term must declare axes, commutation equations, and test obligations.
 - Entropy terms are semantic descriptors (Arena vs canonical vs hyperoperator
@@ -250,6 +253,8 @@ Until that milestone is explicitly landed, fixed-width hard-cap mode is the law.
 - Univalence means no ambiguity, not “no hash collisions”
 - Fixed-width keys are acceptable only with a semantic id cap
 - Exceeding the cap is CORRUPT, not OOM
+- Partial allocation of "new" proposals is invalid; fixed-width mode must
+  treat any unmet new allocation as CORRUPT (no silent spawn clipping).
 - COORD enables structural growth without widening ids
 - Var-length encoding, if added, is a deliberate semantic transition
 
@@ -269,6 +274,8 @@ Define a shared denotation interface used for cross-engine comparisons:
   `("oom", ...)`; sentinel ids returned by stop paths are not semantic values.
 - Univalence alignment: any engine-level compare or normalization must preserve
   the Univalence Contract (full key-byte equality, corrupt trap on overflow).
+- Structural invariants (hashes, pointer topology checks) are implementation
+  diagnostics only; semantic claims must be stated via `pretty(denote(q(...)))`.
 - Homomorphic projection: define `q(provisional_node) -> canonical_id` and
   compare denotations only after projection; evaluator steps must commute with
   `q` up to canonical rewrite (see `in/in-16.md`).
