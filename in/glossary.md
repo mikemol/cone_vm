@@ -917,7 +917,8 @@ q((s,t)-staged data) = semantic value
 
 ### Test Obligations
 
-- (m2) `tests/test_candidate_cycle.py::test_cycle_candidates_does_not_mutate_preexisting_rows`
+- (m3) `tests/test_candidate_cycle.py::test_cycle_candidates_does_not_mutate_preexisting_rows`
+- (m3) `tests/test_cycle_intrinsic.py::test_cycle_intrinsic_does_not_mutate_preexisting_rows`
 - (m2) `tests/test_candidate_cycle.py::test_cycle_candidates_validate_stratum_trips_on_within_refs`
 - (m1) `tests/test_ledger_intern.py::test_intern_nodes_never_mutates_pre_step_segment`
 

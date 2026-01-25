@@ -551,18 +551,18 @@ Methodology:
     - Only in IMPLEMENTATION_PLAN.md: expected, tests, pytest, null, program, txt, encoding, denotation, id, corrupt, cnf, coordinate
   - Wedge product (bigram intersection): 22 | top: canonical novelty, min prism, md md, suc zero, define canonical, fixed points, gauge symmetry, proof roadmap, representation fixed, agda proof, canonical identity, equality semantic
 ## in/glossary.md
-- Unique tokens: 860
-- Unique bigrams: 1987
+- Unique tokens: 862
+- Unique bigrams: 1991
 - Prior version: none
 - Compare: prism_vm.py
   - Intersection: 233 | top: ledger, arena, count, tests, py, op, m1, none, size, manifest, ids, q
-  - Symmetric difference: 1855 (only in in/glossary.md: 627, only in prism_vm.py: 1228)
+  - Symmetric difference: 1857 (only in in/glossary.md: 629, only in prism_vm.py: 1228)
     - Only in in/glossary.md: normative, obligations, commutation, axes, failure, meanings, qualified, desired, interpretation, meaning, pretty, test_m1_gate
     - Only in prism_vm.py: jnp, int32, self, a1, a2, dtype, int, opcode, ptr, arg1, astype, arg2
   - Wedge product (bigram intersection): 46 | top: m4 tests, canonical ids, test_coord_ops py, tests test_coord_ops, x y, py test_arena_denotation_invariance_random_suite, test_arena_denotation_invariance py, tests test_arena_denotation_invariance, x x, bspᵗ bspˢ, canonical ledger, full key
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 399 | top: tests, py, q, must, pytest, semantic, add, canonical, m1, key, normative, vs
-  - Symmetric difference: 1284 (only in in/glossary.md: 461, only in IMPLEMENTATION_PLAN.md: 823)
+  - Symmetric difference: 1286 (only in in/glossary.md: 463, only in IMPLEMENTATION_PLAN.md: 823)
     - Only in in/glossary.md: meanings, qualified, desired, interpretation, test_m1_gate, p, test_invariants, ungated, test_coord_ops, axis, presheaf, test_ledger_intern
     - Only in IMPLEMENTATION_PLAN.md: expected, program, txt, md, rank, tasks, baseline, implement, objective, per, zero, pipeline
   - Wedge product (bigram intersection): 106 | top: test obligations, m1 tests, canonical ids, full key, denotation invariance, key encoding, key equality, coordinate normalization, damage locality, canonical novelty, cayley dickson, erased q
