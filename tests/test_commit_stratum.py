@@ -89,6 +89,22 @@ def test_commit_stratum_count_mismatch_fails(monkeypatch):
         pv.commit_stratum(ledger, stratum, validate=True)
 
 
+def test_commit_stratum_validate_trips_on_within_refs():
+    ledger = pv.init_ledger()
+    start = int(ledger.count)
+    candidates = pv.CandidateBuffer(
+        enabled=jnp.array([1], dtype=jnp.int32),
+        opcode=jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        arg1=jnp.array([start], dtype=jnp.int32),
+        arg2=jnp.array([0], dtype=jnp.int32),
+    )
+    _, new_ledger, _ = pv.intern_candidates(ledger, candidates)
+    new_count = int(new_ledger.count) - start
+    stratum = pv.Stratum(start=jnp.int32(start), count=jnp.int32(new_count))
+    with pytest.raises(ValueError, match="Stratum contains within-tier references"):
+        pv.commit_stratum(new_ledger, stratum, validate=True)
+
+
 def test_commit_stratum_q_map_totality_on_mixed_ids():
     ledger = pv.init_ledger()
     suc_ids, ledger = pv.intern_nodes(
