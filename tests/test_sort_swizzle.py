@@ -58,6 +58,19 @@ def test_sort_swizzle_root_remap():
     assert int(sorted_arena.arg1[root_new]) == int(inv_perm[1])
 
 
+def test_swizzle_preserves_root_denotation():
+    arena = _arena_with_edges()
+    vm = pv.PrismVM_BSP_Legacy()
+    vm.arena = arena
+    root_old = pv._arena_ptr(3)
+    before = vm.decode(root_old)
+    sorted_arena, inv_perm = pv.op_sort_and_swizzle_with_perm(arena)
+    root_new = jnp.where(jnp.int32(root_old) != 0, inv_perm[int(root_old)], 0)
+    vm.arena = sorted_arena
+    after = vm.decode(pv._arena_ptr(int(root_new)))
+    assert before == after
+
+
 def test_sort_swizzle_preserves_count_and_oom():
     assert hasattr(pv, "op_sort_and_swizzle_with_perm"), "op_sort_and_swizzle_with_perm missing"
     arena = _arena_with_edges()
