@@ -954,6 +954,140 @@ q(joinₚ(x,y)) = joinₛ(q(x), q(y))
 
 ---
 
+## 23. Gauge Symmetry (BSPˢ Invariance)
+
+### Meanings (must be qualified)
+
+* **Gaugeᵣ**: representation-only symmetry (BSPˢ renormalization group)
+* **Gaugeₛ**: semantic invariance after `q`
+
+### Axes
+
+* Representation vs Meaning
+
+### Normative Interpretation
+
+> BSPˢ is a gauge symmetry: it may rearrange Arena microstate but must not affect Ledger meaning.
+
+### Desired Commutation
+
+```
+q ∘ BSPˢ = q
+```
+
+### Failure Mode
+
+* layout affects canonical IDs
+* renormalization changes denotation
+* semantics depend on BSPˢ details
+
+### Normative Rule
+
+> Any predicate that changes under BSPˢ is ill-typed and must be rejected.
+
+### Test Obligations
+
+- (m3) `tests/test_arena_denotation_invariance.py::test_arena_denotation_invariance_random_suite`
+- (m3) `tests/test_morton.py::test_morton_key_stable`
+
+---
+
+## 24. Canonical Novelty (Semantic Monotone)
+
+### Meanings (must be qualified)
+
+* **Noveltyᵢ**: count of distinct canonical Ledger IDs introduced so far
+* **Noveltyₚ**: Arena microstate entropy (non-semantic)
+
+### Axes
+
+* Semantics vs Representation
+
+### Normative Interpretation
+
+> Canonical novelty is a monotone over execution prefixes: it never decreases and is invariant under BSPˢ.
+
+### Desired Commutation
+
+```
+Noveltyᵢ(E ∘ BSPˢ) = Noveltyᵢ(E)
+```
+
+### Failure Mode
+
+* novelty decreases across a prefix
+* novelty depends on Arena layout or scheduling
+
+### Normative Rule
+
+> Novelty is semantic; Arena structure cannot change it.
+
+### Test Obligations
+
+- (planned) monotonicity and BSPˢ invariance checks
+
+---
+
+## 25. Hyperoperator Fixed Points (Representation Stability)
+
+### Meanings (must be qualified)
+
+* **Fixₛ**: representation fixed point (no new hyperoperator IDs)
+* **Fixₑ**: evaluation fixed point / termination (not claimed)
+
+### Axes
+
+* Representation vs Execution
+
+### Normative Interpretation
+
+> A fixed point means semantic operator forms stop expanding; it does not imply termination.
+
+### Failure Mode
+
+* fixed point misread as evaluation result
+* termination claims inferred from representation stability
+
+### Normative Rule
+
+> Fixed point claims are about Ledger ID closure only.
+
+### Test Obligations
+
+- (planned) hyperoperator closure checks in Min(Prism)
+
+---
+
+## 26. Ordinal Descent vs Canonical Fixed Points
+
+### Meanings (must be qualified)
+
+* **Ordinalₜ**: well-founded descent for termination (rewrite theory)
+* **Fixₛ**: representation fixed points (Prism semantics)
+
+### Axes
+
+* Termination vs Representation
+
+### Normative Interpretation
+
+> Prism does not use ordinal descent; it only claims representation stability.
+
+### Failure Mode
+
+* ordinal-based termination inferred from Prism semantics
+* TREE-class claims treated as termination claims
+
+### Normative Rule
+
+> Do not assert termination or proof-theoretic strength from Prism fixed-point semantics.
+
+### Test Obligations
+
+- (planned) none
+
+---
+
 # Meta-Rule: How to Use This Going Forward
 
 Whenever a term or acronym is reused:
