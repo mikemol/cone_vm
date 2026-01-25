@@ -270,6 +270,14 @@ def safe_gather_1d(arr, idx, label="safe_gather_1d"):
 
 
 _BINCOUNT_HAS_LENGTH = "length" in inspect.signature(jnp.bincount).parameters
+_OP_BUCKETS_FULL_RANGE = os.environ.get(
+    "PRISM_OP_BUCKETS_FULL_RANGE", ""
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 
 def _bincount_256(x, weights):
@@ -1385,13 +1393,17 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     available = jnp.where(base_oom | base_corrupt, jnp.int32(0), available)
     idx_all = jnp.arange(L_b0.shape[0], dtype=jnp.int32)
     valid_all = idx_all < count
-    # Bucket existing keys by opcode byte to narrow search ranges.
-    op_counts = _bincount_256(
-        L_b0.astype(jnp.int32),
-        valid_all.astype(jnp.int32),
-    )
-    op_start = jnp.cumsum(op_counts) - op_counts
-    op_end = op_start + op_counts
+    if _OP_BUCKETS_FULL_RANGE:
+        op_start = jnp.zeros(256, dtype=jnp.int32)
+        op_end = jnp.full((256,), count, dtype=jnp.int32)
+    else:
+        # Bucket existing keys by opcode byte to narrow search ranges.
+        op_counts = _bincount_256(
+            L_b0.astype(jnp.int32),
+            valid_all.astype(jnp.int32),
+        )
+        op_start = jnp.cumsum(op_counts) - op_counts
+        op_end = op_start + op_counts
     # NOTE: opcode buckets are a precursor to per-op merges; full-array merge
     # remains an m1 tradeoff (see IMPLEMENTATION_PLAN.md).
 
