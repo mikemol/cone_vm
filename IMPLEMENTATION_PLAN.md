@@ -74,7 +74,12 @@ These are already in effect in code/tests and are treated as non-negotiable.
   equality is pointer equality.
 - Evaluator (Manifest/Arena) and Canonicalizer (Ledger) are linked by a total
   quotient map `q`; denotation is defined by projecting provisional nodes
-  through `q` and must commute with scheduling (see `in/in-16.md`).
+  through `q` and must commute with scheduling (see `in/in-16.md`). `q` is an
+  irreversible coarse-graining boundary, not an evaluator or scheduling step.
+- Glossary adjunction/coherence discipline is normative: any new polysemous
+  term must declare axes, commutation equations, and test obligations.
+- Entropy terms are semantic descriptors (Arena vs canonical vs hyperoperator
+  vs gauge); do not add counters unless a test explicitly requires it.
 - Hyperstrata visibility rule is normative from m3: pre-step rows are immutable
   during a cycle, and within-cycle visibility is defined by the `(s,t)` staging
   order; the frozen read model is the hyperstrata collapse corollary.
@@ -89,6 +94,9 @@ These are already in effect in code/tests and are treated as non-negotiable.
 - Canonical novelty monotonicity and hyperoperator representation fixed points
   are semantic justifications (m3-m4); they do not imply termination and do
   not require operational counters (see `in/in-22.md` through `in/in-25.md`).
+  These claims are scoped to the pre-CORRUPT (id-cap) regime.
+- Min(Prism) witness principle: semantic invariants proved under projection
+  `π_K` are treated as representative at scale (m3+).
 
 ## Staged Commitments (Not Yet Enforced)
 - No-copy sharing and alpha-equivalence collapse (see placeholder tests).
