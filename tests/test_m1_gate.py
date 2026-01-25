@@ -222,6 +222,13 @@ def test_intern_raises_on_corrupt_host():
         vm._intern(pv.OP_SUC, pv._ledger_id(pv.ZERO_PTR), pv._ledger_id(0))
 
 
+def test_intern_raises_on_oom_host():
+    vm = pv.PrismVM_BSP()
+    vm.ledger = vm.ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
+    with pytest.raises(ValueError, match="Ledger capacity exceeded"):
+        vm._intern(pv.OP_SUC, pv._ledger_id(pv.ZERO_PTR), pv._ledger_id(0))
+
+
 def test_ledger_full_key_equality():
     ledger = pv.init_ledger()
     ops = jnp.array([pv.OP_ADD, pv.OP_ADD], dtype=jnp.int32)
