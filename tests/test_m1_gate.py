@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import pytest
 
@@ -169,6 +170,23 @@ def test_intern_stop_path_on_oom_is_non_mutating():
     _assert_seed_snapshot(new_ledger, snapshot)
 
 
+def test_intern_stop_path_on_oom_is_sticky():
+    ledger = pv.init_ledger()
+    snapshot = _seed_snapshot(ledger)
+    ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
+    for _ in range(2):
+        ids, ledger = pv.intern_nodes(
+            ledger,
+            jnp.array([pv.OP_SUC], dtype=jnp.int32),
+            jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+            jnp.array([0], dtype=jnp.int32),
+        )
+        assert not bool(ledger.corrupt)
+        assert bool(ledger.oom)
+        assert int(ids[0]) == 0
+        _assert_seed_snapshot(ledger, snapshot)
+
+
 def test_intern_overflow_trips_corrupt_without_partial_alloc():
     ledger = pv.init_ledger()
     snapshot = _seed_snapshot(ledger)
@@ -255,6 +273,19 @@ def test_ledger_full_key_equality_distinguishes_each_key_byte(a1_vals, a2_vals):
     a1 = jnp.array(a1_vals, dtype=jnp.int32)
     a2 = jnp.array(a2_vals, dtype=jnp.int32)
     ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    assert int(ids[0]) != int(ids[1])
+    assert int(ledger.count) == 4
+
+
+def test_ledger_full_key_equality_under_full_range_buckets(monkeypatch):
+    ledger = pv.init_ledger()
+    monkeypatch.setattr(pv, "_OP_BUCKETS_FULL_RANGE", True)
+    ops = jnp.array([pv.OP_ADD, pv.OP_ADD, pv.OP_ADD], dtype=jnp.int32)
+    a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
+    a2 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR + 1, pv.ZERO_PTR], dtype=jnp.int32)
+    with jax.disable_jit():
+        ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    assert int(ids[0]) == int(ids[2])
     assert int(ids[0]) != int(ids[1])
     assert int(ledger.count) == 4
 
