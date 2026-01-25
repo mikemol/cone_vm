@@ -234,9 +234,31 @@ def run_arena(
     return vm.decode(root_ptr)
 
 
+def denote_pretty_arena(
+    expr,
+    steps=4,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+):
+    return run_arena(
+        expr,
+        steps=steps,
+        do_sort=do_sort,
+        use_morton=use_morton,
+        block_size=block_size,
+        l2_block_size=l2_block_size,
+        l1_block_size=l1_block_size,
+        do_global=do_global,
+    )
+
+
 def assert_arena_schedule_invariance(expr, steps=4):
-    no_sort = run_arena(expr, steps=steps, do_sort=False, use_morton=False)
-    rank_sort = run_arena(expr, steps=steps, do_sort=True, use_morton=False)
-    morton_sort = run_arena(expr, steps=steps, do_sort=True, use_morton=True)
+    no_sort = denote_pretty_arena(expr, steps=steps, do_sort=False, use_morton=False)
+    rank_sort = denote_pretty_arena(expr, steps=steps, do_sort=True, use_morton=False)
+    morton_sort = denote_pretty_arena(expr, steps=steps, do_sort=True, use_morton=True)
     assert no_sort == rank_sort
     assert no_sort == morton_sort
