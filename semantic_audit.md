@@ -125,6 +125,36 @@ Manual semantic analysis based on `in/in-*.md`, `in/glossary.md`, `prism_vm.py`,
 - vs `prism_vm.py`: Intersection: ledger interning, coordinate opcodes, and candidate cycles; SymDiff: code does not model hyperlattice refinement or CD morphisms explicitly; Wedge: add invariants/tests for lattice-stable joins and CD-lifted operations when hyperpair semantics are introduced.
 - vs `IMPLEMENTATION_PLAN.md`: Intersection: Ledger-centric semantics and CNF-2 arity; SymDiff: plan does not mention hyperlattice or sheaf-theoretic Ledger role; Wedge: incorporate hyperlattice invariants as future acceptance criteria once CD lifting becomes active.
 
+## in/in-21.md
+- Core semantics: BSPᵗ vs BSPˢ as time/gauge split; `q` as irreversible coarse-graining; multiple entropies (Arena, canonical novelty, hyperoperator); adjunction/coherence discipline; hyperoperator stabilization framed as semantic consequences; Min(Prism) projection compatibility.
+- Prior `in/in-20.md`: Intersection: `q`-centric sheaf semantics and Ledger as canonical meaning; SymDiff: in-21 adds gauge symmetry, entropy distinctions, and adjunction/coherence as mandatory semantic discipline; Wedge: treat BSPˢ invariance as a gauge law and ensure any semantic claim is stated after `q`.
+- vs `prism_vm.py`: Intersection: denotation-invariance tests and `q`-style projection via stratum commits; SymDiff: code does not encode entropy or adjunction language; Wedge: avoid any observable dependence on BSPˢ layout and treat projection commutation as the coarse-graining law.
+- vs `IMPLEMENTATION_PLAN.md`: Intersection: denotation invariance, hyperstrata visibility, and BSPˢ gauge symmetry; SymDiff: plan still does not encode entropy/adjunction framing; Wedge: keep coarse-graining language and avoid overloading operational semantics with entropy claims.
+
+## in/in-22.md
+- Core semantics: canonical novelty as a semantic monotone; saturation implies representation stability (not termination); novelty is BSPˢ invariant; hyperoperator novelty saturates; Min(Prism) projection preserves novelty within bounds.
+- Prior `in/in-21.md`: Intersection: semantic stability and gauge invariance; SymDiff: in-22 formalizes novelty as a monotone and defines saturation/fixed semantic universe; Wedge: clarify that stabilization is semantic only and does not imply runtime convergence.
+- vs `prism_vm.py`: Intersection: interning by full-key equality implies monotone novelty; SymDiff: no explicit novelty counters or saturation checks exist; Wedge: optional tests can track novelty monotonicity or saturation without adding runtime instrumentation.
+- vs `IMPLEMENTATION_PLAN.md`: Intersection: univalence, canonical interning, and novelty/fixed-point justification language; SymDiff: plan does not require novelty instrumentation or tests; Wedge: treat novelty as semantic rationale and keep any checks optional.
+
+## in/in-23.md
+- Core semantics: representation fixed points for interned hyperoperators; hyperoperator preorder with ascending-chain condition; CNF-2 local finiteness; fixed points are BSPˢ-invariant and BSPᵗ schedule-independent; Min(Prism) can detect fixed-point status; explicit non-claims about termination.
+- Prior `in/in-22.md`: Intersection: canonical novelty saturation; SymDiff: in-23 lifts novelty to hyperoperator fixed points with an order-theoretic framing; Wedge: keep fixed point claims representational (not evaluative).
+- vs `prism_vm.py`: Intersection: interning and CNF-2 candidate emission provide the machinery for closure; SymDiff: code does not expose hyperoperator sets or fixed-point checks; Wedge: optional Min(Prism) tests could validate hyperoperator closure without runtime changes.
+- vs `IMPLEMENTATION_PLAN.md`: Intersection: canonical interning, CNF-2 arity, and hyperoperator fixed-point justification; SymDiff: plan does not define hyperoperator sets or fixed-point tests; Wedge: keep fixed points as doc-level justification unless Min(Prism) tests are added.
+
+## in/in-24.md
+- Core semantics: worked semantic sketch for TREE-class behavior; Arena explosion vs Ledger stabilization; representation fixed point after novelty saturation; explicit non-claims about termination/evaluation; hyperlattice connection; Min(Prism) finite witness principle.
+- Prior `in/in-23.md`: Intersection: hyperoperator fixed points and novelty saturation; SymDiff: in-24 provides an illustrative mapping and explicit non-claims about termination/evaluation; Wedge: keep this as narrative justification rather than a new proof obligation.
+- vs `prism_vm.py`: Intersection: interning and CNF-2 candidate emission support the sketch’s mechanics; SymDiff: no explicit TREE-class mapping exists in code; Wedge: if tests are added, they should be Min(Prism)-style structure checks, not runtime claims.
+- vs `IMPLEMENTATION_PLAN.md`: Intersection: representation stability and fixed-point justification; SymDiff: plan does not include the worked TREE sketch; Wedge: treat the sketch as documentation, not a milestone gate.
+
+## in/in-25.md
+- Core semantics: explicit boundary between ordinal-indexed rewrite (termination via ordinal descent) and Prism’s canonical fixed points (representation stability without termination); rejects ordinal claims for Prism; emphasizes orthogonality.
+- Prior `in/in-24.md`: Intersection: representation stability without termination; SymDiff: in-25 adds proof-theory boundary language and explicit non-claims about ordinal descent; Wedge: guard against reviewers inferring termination from fixed-point semantics.
+- vs `prism_vm.py`: Intersection: no ordinal machinery exists in code; SymDiff: none (pure documentation boundary); Wedge: ensure docs and tests avoid ordinal/termination claims.
+- vs `IMPLEMENTATION_PLAN.md`: Intersection: semantic focus on representation and ordinals as non-goals; SymDiff: plan does not elaborate the boundary details; Wedge: keep ordinal descent out of tests and acceptance criteria.
+
 ## in/glossary.md
 - Core semantics: glossary defines commutation constraints for overloaded terms (BSP, CD, canonicalization, collapse, normalize, aggregate, scheduler, identity) and adds Arena/`q`/Ledger sheaf framing, hyperstrata, and hyperlattice semantics, including explicit pre-step immutability; mandates explicit axes plus `q`-based projection rules.
 - Prior: none (glossary).

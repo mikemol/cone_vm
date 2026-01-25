@@ -4,9 +4,14 @@ This plan implements the features described in `in/in-4.md` through
 `in/in-7.md`, plus the CNF-2 and canonical interning semantics in
 `in/in-9.md` through `in/in-14.md`, the milestone-gated testing workflow in
 `in/in-15.md`, the homomorphic collapse contract in `in/in-16.md`, and the
-conceptual contract in `in/in-17.md`, as a concrete evolution of the current
-`prism_vm.py` implementation. The commutation glossary in `in/glossary.md`
-is normative for ambiguous terms and test obligations.
+conceptual contract in `in/in-17.md`, the Min(Prism) projection commutation
+track in `in/in-18.md`, the topos/sheaf formalization in `in/in-19.md`, the
+hyperlattice/Cayley-Dickson framing in `in/in-20.md`, and the semantic
+justification patches in `in/in-21.md` through `in/in-25.md` (gauge symmetry,
+canonical novelty, hyperoperator fixed points, ordinal boundary), as a
+concrete evolution of the current `prism_vm.py` implementation. The
+commutation glossary in `in/glossary.md` is normative for ambiguous terms and
+test obligations.
 
 Each `in/in-*.md` note now includes a short NOTE header indicating whether it
 has been refined, consolidated, or obsoleted. See `audit_in_versions.md` for
@@ -29,6 +34,7 @@ the current cross-version audit.
 - Persistent event-log storage or snapshotting for CQRS beyond in-memory.
 - Treating 2:1 locality as a semantic invariant before functional correctness
   is locked down.
+- Ordinal-indexed termination proofs or proof-theoretic strength claims.
 
 ## Baseline Summary (Current Code)
 `prism_vm.py` uses a stable heap (`Manifest`) with:
@@ -55,6 +61,7 @@ These are already in effect in code/tests and are treated as non-negotiable.
 - CORRUPT is a hard semantic error (alias risk); OOM is a resource boundary.
 - Sorting/swizzling and scheduling are renormalization only and must not
   affect denotation after `q`.
+- BSPˢ is a gauge symmetry: any BSPˢ effect must be erased by `q`.
 
 ## Semantic Commitments (Staged)
 - CNF-2 symmetric rewrite semantics are the target for BSP. Every rewrite site
@@ -79,6 +86,9 @@ These are already in effect in code/tests and are treated as non-negotiable.
     change denotation (same canonical ids/decoded normal forms).
 - Baseline `PrismVM` is a regression implementation through m3; comparisons are
   on decoded normal forms and termination behavior, not raw ids.
+- Canonical novelty monotonicity and hyperoperator representation fixed points
+  are semantic justifications (m3-m4); they do not imply termination and do
+  not require operational counters (see `in/in-22.md` through `in/in-25.md`).
 
 ## Staged Commitments (Not Yet Enforced)
 - No-copy sharing and alpha-equivalence collapse (see placeholder tests).
