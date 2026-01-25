@@ -21,6 +21,6 @@ def _load_expressions():
 
 @pytest.mark.parametrize("expr", _load_expressions())
 def test_cnf2_basic_fixture_equivalence(expr):
-    assert harness.pretty_bsp_candidates(expr, max_steps=64) == harness.pretty_baseline(
-        expr
-    )
+    assert harness.denote_pretty_bsp_candidates(
+        expr, max_steps=64
+    ) == harness.denote_pretty_baseline(expr, max_steps=64)

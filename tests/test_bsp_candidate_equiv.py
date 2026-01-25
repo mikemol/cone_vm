@@ -38,6 +38,6 @@ def test_bsp_candidates_matches_baseline_mul_suc():
     ],
 )
 def test_bsp_candidates_matches_intrinsic(expr):
-    assert harness.pretty_bsp_candidates(expr, max_steps=64) == harness.pretty_bsp_intrinsic(
+    assert harness.denote_pretty_bsp_candidates(
         expr, max_steps=64
-    )
+    ) == harness.denote_pretty_bsp_intrinsic(expr, max_steps=64)
