@@ -58,6 +58,11 @@ def pretty_baseline(expr, vm=None, max_steps=64):
     return pretty
 
 
+def denote_pretty_baseline(expr, vm=None, max_steps=64):
+    vm, ptr = denote_baseline(expr, vm=vm, max_steps=max_steps)
+    return vm.decode(ptr)
+
+
 def normalize_bsp_intrinsic(expr, max_steps=64, vm=None):
     vm = vm or pv.PrismVM_BSP()
     root_ptr = parse_expr(vm, expr)
@@ -103,6 +108,11 @@ def pretty_bsp_intrinsic(expr, max_steps=64, vm=None):
             f"BSP intrinsic evaluation did not converge within max_steps={max_steps}"
         )
     return pretty
+
+
+def denote_pretty_bsp_intrinsic(expr, max_steps=64, vm=None):
+    vm, ptr = denote_bsp_intrinsic(expr, max_steps=max_steps, vm=vm)
+    return vm.decode(ptr)
 
 
 def normalize_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False):
@@ -167,6 +177,13 @@ def pretty_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False):
     return pretty
 
 
+def denote_pretty_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False):
+    vm, ptr = denote_bsp_candidates(
+        expr, max_steps=max_steps, vm=vm, validate_stratum=validate_stratum
+    )
+    return vm.decode(ptr)
+
+
 def _assert_converged(status, label, max_steps):
     if status != STATUS_CONVERGED:
         raise AssertionError(
@@ -175,20 +192,16 @@ def _assert_converged(status, label, max_steps):
 
 
 def assert_baseline_equals_bsp_intrinsic(expr, max_steps=64):
-    status_base, pretty_base = run_baseline(expr, max_steps=max_steps)
-    status_bsp, pretty_bsp = run_bsp_intrinsic(expr, max_steps=max_steps)
-    _assert_converged(status_base, "baseline", max_steps)
-    _assert_converged(status_bsp, "bsp_intrinsic", max_steps)
+    pretty_base = denote_pretty_baseline(expr, max_steps=max_steps)
+    pretty_bsp = denote_pretty_bsp_intrinsic(expr, max_steps=max_steps)
     assert pretty_base == pretty_bsp
 
 
 def assert_baseline_equals_bsp_candidates(expr, max_steps=64, validate_stratum=False):
-    status_base, pretty_base = run_baseline(expr, max_steps=max_steps)
-    status_bsp, pretty_bsp = run_bsp_candidates(
+    pretty_base = denote_pretty_baseline(expr, max_steps=max_steps)
+    pretty_bsp = denote_pretty_bsp_candidates(
         expr, max_steps=max_steps, validate_stratum=validate_stratum
     )
-    _assert_converged(status_base, "baseline", max_steps)
-    _assert_converged(status_bsp, "bsp_candidates", max_steps)
     assert pretty_base == pretty_bsp
 
 

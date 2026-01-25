@@ -17,11 +17,11 @@ def _count_suc(expr):
 
 
 def _eval_baseline(expr):
-    return harness.pretty_baseline(expr)
+    return harness.denote_pretty_baseline(expr)
 
 
 def _eval_bsp(expr, max_steps=128):
-    return harness.pretty_bsp_intrinsic(expr, max_steps=max_steps)
+    return harness.denote_pretty_bsp_intrinsic(expr, max_steps=max_steps)
 
 
 def test_small_add_mul_baseline_vs_bsp():
