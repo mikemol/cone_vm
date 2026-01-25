@@ -133,6 +133,60 @@ def test_corrupt_is_sticky_and_non_mutating():
         assert bool(jnp.array_equal(before, after))
 
 
+def _seed_snapshot(ledger):
+    return (
+        ledger.opcode[:2],
+        ledger.arg1[:2],
+        ledger.arg2[:2],
+        ledger.keys_b0_sorted[:2],
+        ledger.keys_b1_sorted[:2],
+        ledger.keys_b2_sorted[:2],
+        ledger.keys_b3_sorted[:2],
+        ledger.keys_b4_sorted[:2],
+        ledger.ids_sorted[:2],
+    )
+
+
+def _assert_seed_snapshot(ledger, snapshot):
+    for before, after in zip(snapshot, _seed_snapshot(ledger)):
+        assert bool(jnp.array_equal(before, after))
+
+
+def test_intern_stop_path_on_oom_is_non_mutating():
+    ledger = pv.init_ledger()
+    snapshot = _seed_snapshot(ledger)
+    ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
+    ids, new_ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    assert not bool(new_ledger.corrupt)
+    assert bool(new_ledger.oom)
+    assert int(new_ledger.count) == int(ledger.count)
+    assert int(ids[0]) == 0
+    _assert_seed_snapshot(new_ledger, snapshot)
+
+
+def test_intern_overflow_trips_corrupt_without_partial_alloc():
+    ledger = pv.init_ledger()
+    snapshot = _seed_snapshot(ledger)
+    assert pv.MAX_COUNT == int(ledger.opcode.shape[0])
+    ledger = ledger._replace(count=jnp.array(pv.MAX_COUNT, dtype=jnp.int32))
+    ids, new_ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    assert pv.ledger_has_corrupt(new_ledger)
+    assert not bool(new_ledger.oom)
+    assert int(new_ledger.count) == int(ledger.count)
+    assert int(ids[0]) == 0
+    _assert_seed_snapshot(new_ledger, snapshot)
+
+
 @pytest.mark.parametrize("bad_a1, bad_a2", [(-1, 0), (0, -1)])
 def test_intern_corrupt_flag_trips_on_negative_child_id(bad_a1, bad_a2):
     ledger = pv.init_ledger()
@@ -173,6 +227,26 @@ def test_ledger_full_key_equality():
     ops = jnp.array([pv.OP_ADD, pv.OP_ADD], dtype=jnp.int32)
     a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
     a2 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR + 1], dtype=jnp.int32)
+    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    assert int(ids[0]) != int(ids[1])
+    assert int(ledger.count) == 4
+
+
+@pytest.mark.parametrize(
+    "a1_vals, a2_vals",
+    [
+        ((1, 2), (512, 512)),
+        ((1, 1 + 256), (512, 512)),
+        ((1, 1), (512 + 1, 512 + 2)),
+        ((1, 1), (512 + 1, 512 + 1 + 256)),
+    ],
+    ids=["a1_lo", "a1_hi", "a2_lo", "a2_hi"],
+)
+def test_ledger_full_key_equality_distinguishes_each_key_byte(a1_vals, a2_vals):
+    ledger = pv.init_ledger()
+    ops = jnp.array([pv.OP_ADD, pv.OP_ADD], dtype=jnp.int32)
+    a1 = jnp.array(a1_vals, dtype=jnp.int32)
+    a2 = jnp.array(a2_vals, dtype=jnp.int32)
     ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
     assert int(ids[0]) != int(ids[1])
     assert int(ledger.count) == 4
