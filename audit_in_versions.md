@@ -362,23 +362,23 @@ Methodology:
     - Only in IMPLEMENTATION_PLAN.md: expected, tests, pytest, add, null, txt, encoding, md, m1, rank, arena, count
   - Wedge product (bigram intersection): 66 | top: full key, e g, fixed arity, fixed width, id cap, key byte, alpha equivalence, byte equality, candidate slots, canonical identity, per cycle, rewrite rules
 ## in/in-18.md
-- Unique tokens: 636
-- Unique bigrams: 1438
+- Unique tokens: 639
+- Unique bigrams: 1443
 - Prior version: in/in-17.md
   - Intersection: 158 | top: prism, semantic, canonical, finite, state, corrupt, q, space, cnf, oom, d, identity
-  - Symmetric difference: 831 (only in in/in-18.md: 478, only in in/in-17.md: 353)
+  - Symmetric difference: 834 (only in in/in-18.md: 481, only in in/in-17.md: 353)
     - Only in in/in-18.md: min, r, canon_state, order, states, k, count, transition, π_k, ids, proof, test
     - Only in in/in-17.md: ca, damage, denote, x, calculus, per, bspᵗ, locality, pretty, style, tile, boundary
   - Wedge product (bigram intersection): 23 | top: oom corrupt, semantic identity, canonical id, canonical nodes, e g, arity bounded, arity cnf, decided full, erased q, fixed arity, full key, identity decided
 - Compare: prism_vm.py
   - Intersection: 179 | top: ledger, count, arena, a1, a2, opcode, prism, arg1, size, arg2, ids, m1
-  - Symmetric difference: 1739 (only in in/in-18.md: 457, only in prism_vm.py: 1282)
+  - Symmetric difference: 1742 (only in in/in-18.md: 460, only in prism_vm.py: 1282)
     - Only in in/in-18.md: finite, canon_state, states, transition, π_k, proof, higher, σ, lemma, π, appendix, ρ
     - Only in prism_vm.py: jnp, int32, self, dtype, int, op, ptr, none, astype, manifest, value, idx
   - Wedge product (bigram intersection): 37 | top: a1 a2, arg1 arg2, bspˢ layout, count count, opcode arg1, bspˢ renormalization, count oom, k set, suc zero, a2 count, zero suc, canonical ids
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 312 | top: prism, tests, semantic, add, min, canonical, null, key, corrupt, count, cnf, md
-  - Symmetric difference: 1234 (only in in/in-18.md: 324, only in IMPLEMENTATION_PLAN.md: 910)
+  - Symmetric difference: 1237 (only in in/in-18.md: 327, only in IMPLEMENTATION_PLAN.md: 910)
     - Only in in/in-18.md: finite, r, canon_state, states, d, σ, lemma, π, appendix, ρ, closure, transitions
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, program, txt, encoding, tasks, implement, normalization, objective, per, pipeline, bsp
   - Wedge product (bigram intersection): 61 | top: min prism, full key, higher order, key equality, canonical ids, denotation invariance, e g, oom corrupt, arg1 arg2, md md, opcode arg1, rank morton
@@ -387,7 +387,7 @@ Methodology:
 - Unique bigrams: 400
 - Prior version: in/in-18.md
   - Intersection: 100 | top: prism, min, semantic, finite, order, k, md, q, c, d, semantics, cnf
-  - Symmetric difference: 678 (only in in/in-19.md: 142, only in in/in-18.md: 536)
+  - Symmetric difference: 681 (only in in/in-19.md: 142, only in in/in-18.md: 539)
     - Only in in/in-19.md: κ, hyperstrata, morphisms, presheaf, sheaf, staging, contexts, mathbf, n, site, topos, visibility
     - Only in in/in-18.md: r, canon_state, state, canonical, states, count, transition, π_k, corrupt, ids, proof, higher
   - Wedge product (bigram intersection): 24 | top: min prism, md md, prism semantics, read model, new semantics, prism semantic, semantic behavior, audience prism, core developers, cycle stratum, draft normative, end md
