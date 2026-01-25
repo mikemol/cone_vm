@@ -99,6 +99,7 @@ jobs:
           path: artifacts/audit_in_versions.md
 
   tests:
+    needs: [policy-check, audit]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -127,7 +128,8 @@ jobs:
           path: artifacts/
 
   tests-gpu:
-    if: github.actor == github.repository_owner
+    needs: [policy-check, audit]
+    if: github.actor == github.repository_owner && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     runs-on: [self-hosted, cassian, gpu, local]
     strategy:
       fail-fast: false
