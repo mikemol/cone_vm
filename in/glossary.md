@@ -1158,6 +1158,36 @@ Noveltyᵢ(E ∘ BSPˢ) = Noveltyᵢ(E)
 
 ---
 
+## 29. Proof Kernel (Agda Roadmap)
+
+### Meanings (must be qualified)
+
+* **Kernelᵖ**: semantic kernel to formalize (Sigma, Key, q, BSPˢ invariance)
+* **Kernelᵒ**: operational implementation (not targeted by proofs)
+
+### Axes
+
+* Semantics vs Implementation
+
+### Normative Interpretation
+
+> Formal proofs target the semantic kernel only, not the runtime or performance layer.
+
+### Failure Mode
+
+* proofs tied to implementation details
+* conflating operational behavior with semantic obligations
+
+### Normative Rule
+
+> Agda proofs should prioritize univalence, gauge invariance, novelty monotonicity, finite closure, and fixed points.
+
+### Test Obligations
+
+- (planned) none
+
+---
+
 # Meta-Rule: How to Use This Going Forward
 
 Whenever a term or acronym is reused:

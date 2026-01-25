@@ -529,6 +529,27 @@ Methodology:
     - Only in in/in-25.md: tree, descent, ordinals, theory, lemma, claim, methods, decreasing, systems, well, different, direct
     - Only in IMPLEMENTATION_PLAN.md: expected, tests, pytest, add, null, key, program, txt, encoding, full, denotation, id
   - Wedge product (bigram intersection): 18 | top: md md, fixed points, ordinal indexed, canonical novelty, min prism, rewrite rules, proof theoretic, theoretic strength, glossary md, imply termination, m3 m4, md semantic
+## in/in-26.md
+- Unique tokens: 323
+- Unique bigrams: 625
+- Prior version: in/in-25.md
+  - Intersection: 99 | top: prism, ordinal, semantic, termination, canonical, novelty, md, finite, representation, proof, step, tree
+  - Symmetric difference: 490 (only in in/in-26.md: 224, only in in/in-25.md: 266)
+    - Only in in/in-26.md: agda, forall, q, arity, key, ledger, set, sigma, formalize, bsp, m, op
+    - Only in in/in-25.md: rewrite, theory, lemma, indexed, claim, document, methods, new, normative, two, decreasing, may
+  - Wedge product (bigram intersection): 37 | top: canonical novelty, min prism, fixed points, md md, ordinal descent, finite semantic, fixed point, novelty monotone, prism claims, reviewer facing, well founded, ordinal measure
+- Compare: prism_vm.py
+  - Intersection: 77 | top: ledger, arena, op, value, set, shape, md, state, semantic, zero, add, false
+  - Symmetric difference: 1630 (only in in/in-26.md: 246, only in prism_vm.py: 1384)
+    - Only in in/in-26.md: agda, novelty, finite, forall, prove, arity, sigma, formalize, termination, closure, exists, proof
+    - Only in prism_vm.py: jnp, int32, self, count, a1, a2, dtype, int, opcode, ptr, none, arg1
+  - Wedge product (bigram intersection): 7 | top: add mul, suc zero, k1 k2, arena arena, op op, q q, canonical identity
+- Compare: IMPLEMENTATION_PLAN.md
+  - Intersection: 123 | top: add, key, canonical, semantic, ledger, full, q, md, univalence, arena, equality, step
+  - Symmetric difference: 1298 (only in in/in-26.md: 200, only in IMPLEMENTATION_PLAN.md: 1098)
+    - Only in in/in-26.md: agda, finite, forall, prove, sigma, formalize, closure, m, monotone, theorems, everything, fun
+    - Only in IMPLEMENTATION_PLAN.md: expected, tests, pytest, null, program, txt, encoding, denotation, id, corrupt, cnf, coordinate
+  - Wedge product (bigram intersection): 20 | top: canonical novelty, min prism, md md, suc zero, define canonical, fixed points, gauge symmetry, representation fixed, canonical identity, equality semantic, erased q, glossary md
 ## in/glossary.md
 - Unique tokens: 831
 - Unique bigrams: 1888

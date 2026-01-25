@@ -8,10 +8,10 @@ conceptual contract in `in/in-17.md`, the Min(Prism) projection commutation
 track in `in/in-18.md`, the topos/sheaf formalization in `in/in-19.md`, the
 hyperlattice/Cayley-Dickson framing in `in/in-20.md`, and the semantic
 justification patches in `in/in-21.md` through `in/in-25.md` (gauge symmetry,
-canonical novelty, hyperoperator fixed points, ordinal boundary), as a
-concrete evolution of the current `prism_vm.py` implementation. The
-commutation glossary in `in/glossary.md` is normative for ambiguous terms and
-test obligations.
+canonical novelty, hyperoperator fixed points, ordinal boundary), plus the
+Agda proof roadmap in `in/in-26.md`, as a concrete evolution of the current
+`prism_vm.py` implementation. The commutation glossary in `in/glossary.md` is
+normative for ambiguous terms and test obligations.
 
 Each `in/in-*.md` note now includes a short NOTE header indicating whether it
 has been refined, consolidated, or obsoleted. See `audit_in_versions.md` for
