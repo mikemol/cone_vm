@@ -6,6 +6,12 @@
 > glossary entry, declare its axis, state its commutation law, and identify
 > what is erased by `q`. Any reuse that does not satisfy these conditions is
 > invalid.
+>
+> **Reserved Glyphs (Normative):**
+> `q` denotes homomorphic projection / associated sheaf functor (meaning-forming).
+> `σ` denotes BSPˢ permutations (gauge renormalization).
+> `ρ` denotes pointer/id remaps induced by renormalization (layout-only).
+> Never describe `σ` or `ρ` as `q`.
 
 ## 0. Rule of Polysemy
 
@@ -524,10 +530,12 @@ pretty(denote(q(renorm(P)))) = pretty(denote(q(P)))
 
 * sorting changes keys or rewrite outcomes
 * root pointer/remap errors leak into meaning
+* structural hashes treated as semantic invariants
 
 ### Normative Rule
 
 > Sorting/swizzling are renormalization passes only; preserve edges and NULL, and validate invariance after `q`.
+> Structural hashes are implementation checks only; semantic claims must be stated via `pretty(denote(q(...)))`.
 
 ### Test Obligations
 
@@ -560,10 +568,19 @@ denote(q(P)) is undefined iff CORRUPT
 
 * key-width overflow treated as OOM
 * execution proceeds after alias risk
+* spawn clipping (partial allocation of "new" proposals) without CORRUPT
 
 ### Normative Rule
 
 > CORRUPT is a hard semantic error; OOM is an admissible resource boundary.
+> Any partial allocation of "new" proposals without CORRUPT is invalid.
+
+### Spawn Clipping (Forbidden)
+
+**Axis:** implementation vs semantics
+
+Spawn clipping = allocating only a subset of "new" proposals while continuing
+without CORRUPT. This is forbidden under fixed-width univalence semantics.
 
 ### Test Obligations
 
