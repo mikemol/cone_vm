@@ -133,6 +133,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pytest pytest-xdist jax jaxlib
+      - name: Record telemetry metadata
+        run: |
+          mkdir -p artifacts
+          python scripts/record_telemetry_metadata.py \
+            --out artifacts/telemetry_metadata_${{ matrix.milestone }}.json \
+            --milestone ${{ matrix.milestone }} \
+            --label "pytest-${{ matrix.milestone }}" \
+            --extra job=tests
       - name: Run pytest (milestone)
         run: |
           mkdir -p artifacts
@@ -179,10 +187,38 @@ jobs:
         run: |
           mkdir -p artifacts
           python scripts/capture_trace.py \
-            --engine intrinsic --iterations 3 --warmup 1 \
+            --engine intrinsic --iterations 10 --warmup 3 \
             --out-dir /tmp/jax-trace
           python scripts/trace_analyze.py \
             --report-only --json-out artifacts/trace_cpu_report.json
+      - name: Capture m5 servo trace baselines
+        if: matrix.milestone == 'm5'
+        run: |
+          mkdir -p artifacts
+          rm -rf /tmp/jax-trace
+          PRISM_ENABLE_SERVO=0 python scripts/record_telemetry_metadata.py \
+            --out artifacts/telemetry_metadata_m5_servo_off.json \
+            --milestone m5 \
+            --engine cnf2 \
+            --label "m5-servo-off" \
+            --extra trace=cpu
+          PRISM_ENABLE_SERVO=0 python scripts/capture_trace.py \
+            --engine cnf2 --iterations 10 --warmup 3 \
+            --out-dir /tmp/jax-trace
+          python scripts/trace_analyze.py \
+            --report-only --json-out artifacts/trace_cpu_report_servo_off.json
+          rm -rf /tmp/jax-trace
+          PRISM_ENABLE_SERVO=1 python scripts/record_telemetry_metadata.py \
+            --out artifacts/telemetry_metadata_m5_servo_on.json \
+            --milestone m5 \
+            --engine cnf2 \
+            --label "m5-servo-on" \
+            --extra trace=cpu
+          PRISM_ENABLE_SERVO=1 python scripts/capture_trace.py \
+            --engine cnf2 --iterations 10 --warmup 3 \
+            --out-dir /tmp/jax-trace
+          python scripts/trace_analyze.py \
+            --report-only --json-out artifacts/trace_cpu_report_servo_on.json
       - name: Upload pytest artifact
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -233,6 +269,15 @@ jobs:
               raise SystemExit("GPU backend required but not available")
           print("GPU devices:", gpus)
           PY
+      - name: Record telemetry metadata (gpu)
+        run: |
+          mkdir -p artifacts
+          mise exec -- python scripts/record_telemetry_metadata.py \
+            --out artifacts/telemetry_metadata_gpu_m2.json \
+            --milestone m2 \
+            --backend gpu \
+            --label "pytest-gpu-m2" \
+            --extra job=tests-gpu
       - name: Run pytest (milestone, backend matrix)
         run: |
           mkdir -p artifacts
