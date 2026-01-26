@@ -35,10 +35,22 @@ def _first_top_delta(data: dict) -> tuple[str, str]:
     return str(size), str(first_line)
 
 
+def _prefer_non_raw(path: Path, base: Path) -> bool:
+    rel = path.relative_to(base)
+    parts = list(rel.parts)
+    if "raw" not in parts:
+        return True
+    idx = parts.index("raw")
+    candidate = base.joinpath(*parts[:idx], *parts[idx + 1 :])
+    return not candidate.exists()
+
+
 def collect_host_metrics(base: Path):
     perf_rows = []
     mem_rows = []
     for path in sorted(base.rglob("host_perf_*.json")):
+        if not _prefer_non_raw(path, base):
+            continue
         data = _load_json(path)
         if not data:
             continue
@@ -54,6 +66,8 @@ def collect_host_metrics(base: Path):
             )
         )
     for path in sorted(base.rglob("host_memory_*.json")):
+        if not _prefer_non_raw(path, base):
+            continue
         data = _load_json(path)
         if not data:
             continue

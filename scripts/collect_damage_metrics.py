@@ -13,9 +13,22 @@ DAMAGE_PATTERN = re.compile(
 )
 
 
+def _prefer_non_raw(path: Path, base: Path) -> bool:
+    rel = path.relative_to(base)
+    parts = list(rel.parts)
+    if "raw" not in parts:
+        return True
+    idx = parts.index("raw")
+    candidate = base.joinpath(*parts[:idx], *parts[idx + 1 :])
+    return not candidate.exists()
+
+
 def collect_damage_metrics(base: Path) -> list[tuple[str, str, str, str, str, str, str]]:
     rows = []
+    seen = set()
     for path in sorted(base.rglob("damage_metrics*.txt")):
+        if not _prefer_non_raw(path, base):
+            continue
         try:
             text = path.read_text(encoding="utf-8")
         except Exception:
@@ -24,17 +37,19 @@ def collect_damage_metrics(base: Path) -> list[tuple[str, str, str, str, str, st
             match = DAMAGE_PATTERN.search(line)
             if match:
                 cycles, hot, edge_cross, edge_total, rate, tile = match.groups()
-                rows.append(
-                    (
-                        str(path.relative_to(base)),
-                        cycles,
-                        hot,
-                        edge_cross,
-                        edge_total,
-                        rate,
-                        tile,
-                    )
+                row = (
+                    str(path.relative_to(base)),
+                    cycles,
+                    hot,
+                    edge_cross,
+                    edge_total,
+                    rate,
+                    tile,
                 )
+                if row in seen:
+                    continue
+                seen.add(row)
+                rows.append(row)
     return rows
 
 

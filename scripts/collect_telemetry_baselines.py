@@ -21,9 +21,21 @@ def _load_json(path: Path) -> dict:
         return {}
 
 
+def _prefer_non_raw(path: Path, base: Path) -> bool:
+    rel = path.relative_to(base)
+    parts = list(rel.parts)
+    if "raw" not in parts:
+        return True
+    idx = parts.index("raw")
+    candidate = base.joinpath(*parts[:idx], *parts[idx + 1 :])
+    return not candidate.exists()
+
+
 def _collect_trace_reports(base: Path):
     rows = []
     for path in sorted(base.rglob("*trace*_report.json")):
+        if not _prefer_non_raw(path, base):
+            continue
         data = _load_json(path)
         if not data:
             continue
