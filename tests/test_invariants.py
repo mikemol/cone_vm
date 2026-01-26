@@ -226,6 +226,7 @@ def test_op_interact_oom():
         rank,
         jnp.array(cap, dtype=jnp.int32),
         jnp.array(False, dtype=jnp.bool_),
+        jnp.zeros(3, dtype=jnp.uint32),
     )
     new_arena = pv.op_interact(arena)
     assert bool(new_arena.oom)
@@ -258,6 +259,7 @@ def test_op_interact_partial_allocation_sets_oom():
         rank,
         jnp.array(6, dtype=jnp.int32),
         jnp.array(False, dtype=jnp.bool_),
+        jnp.zeros(3, dtype=jnp.uint32),
     )
     new_arena = pv.op_interact(arena)
     assert bool(new_arena.oom)
@@ -287,6 +289,7 @@ def test_op_interact_canonicalizes_spawned_add():
         rank,
         jnp.array(5, dtype=jnp.int32),
         jnp.array(False, dtype=jnp.bool_),
+        jnp.zeros(3, dtype=jnp.uint32),
     )
     new_arena = pv.op_interact(arena)
     add_idx = int(arena.count)

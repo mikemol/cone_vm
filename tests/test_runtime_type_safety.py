@@ -10,7 +10,16 @@ def _small_arena(size: int = 16) -> pv.Arena:
     rank = jnp.zeros(size, dtype=jnp.int8)
     count = jnp.array(2, dtype=jnp.int32)
     oom = jnp.array(False, dtype=jnp.bool_)
-    return pv.Arena(opcode=opcode, arg1=arg1, arg2=arg2, rank=rank, count=count, oom=oom)
+    servo = jnp.zeros(3, dtype=jnp.uint32)
+    return pv.Arena(
+        opcode=opcode,
+        arg1=arg1,
+        arg2=arg2,
+        rank=rank,
+        count=count,
+        oom=oom,
+        servo=servo,
+    )
 
 
 def test_intern_nodes_prefix_compare_handles_scalar_available():
