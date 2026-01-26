@@ -1211,6 +1211,47 @@ def coord_xor(ledger, left_id, right_id):
     # SYNC: host reads device id for coord xor (m1).
     return _host_int_value(ids[0]), ledger
 
+
+@jit
+def _coord_norm_batch_jax(ledger, coord_ids):
+    return jax.vmap(_coord_norm_id_jax, in_axes=(None, 0))(ledger, coord_ids)
+
+
+def coord_norm_batch(ledger, coord_ids):
+    coord_ids = jnp.asarray(coord_ids, dtype=jnp.int32)
+    if coord_ids.size == 0:
+        return coord_ids, ledger
+    norm_ids = _coord_norm_batch_jax(ledger, coord_ids)
+    return norm_ids, ledger
+
+
+def coord_xor_batch(ledger, left_ids, right_ids):
+    left_ids = jnp.asarray(left_ids, dtype=jnp.int32)
+    right_ids = jnp.asarray(right_ids, dtype=jnp.int32)
+    if left_ids.shape != right_ids.shape:
+        raise ValueError("coord_xor_batch expects aligned id arrays")
+    if left_ids.size == 0:
+        return left_ids, ledger
+    left_ops = jax.device_get(ledger.opcode[left_ids])
+    right_ops = jax.device_get(ledger.opcode[right_ids])
+    leaf_mask = (
+        ((left_ops == OP_COORD_ZERO) | (left_ops == OP_COORD_ONE))
+        & ((right_ops == OP_COORD_ZERO) | (right_ops == OP_COORD_ONE))
+    )
+    if bool(leaf_mask.all()):
+        zero_id, ledger = _coord_leaf_id(ledger, OP_COORD_ZERO)
+        one_id, ledger = _coord_leaf_id(ledger, OP_COORD_ONE)
+        left_bits = left_ops == OP_COORD_ONE
+        right_bits = right_ops == OP_COORD_ONE
+        out_bits = left_bits ^ right_bits
+        out_ids = jnp.where(out_bits, one_id, zero_id).astype(jnp.int32)
+        return out_ids, ledger
+    out_ids = []
+    for left_id, right_id in zip(left_ids, right_ids):
+        out_id, ledger = coord_xor(ledger, int(left_id), int(right_id))
+        out_ids.append(out_id)
+    return jnp.array(out_ids, dtype=jnp.int32), ledger
+
 def _lookup_node_id(ledger, op, a1, a2):
     k0, k1, k2, k3, k4 = _pack_key(op, a1, a2)
     L_b0 = ledger.keys_b0_sorted
