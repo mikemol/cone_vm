@@ -20,7 +20,7 @@ the current cross-version audit.
 ## Goals
 - Establish the Ledger + candidate pipeline as the canonical execution path.
 - Converge on CNF-2 symmetric rewrite semantics with a fixed-arity candidate
-  pipeline (slot1 enabled once hyperstrata visibility is enforced; m1 keeps disabled).
+  pipeline (slot1 enabled from m2; hyperstrata visibility enforced under test guards).
 - Enforce univalence: full-key equality for interning and no truncation aliasing.
 - Introduce self-hosted CD coordinates as interned CNF-2 objects and define
   aggregation as coordinate-space normalization.
@@ -66,7 +66,8 @@ These are already in effect in code/tests and are treated as non-negotiable.
 ## Semantic Commitments (Staged)
 - CNF-2 symmetric rewrite semantics are the target for BSP. Every rewrite site
   emits exactly two candidate slots (enabled or disabled).
-- Slot1 continuation is enabled at m2 once hyperstrata visibility is enforced; m1 keeps it disabled.
+- Slot1 continuation is enabled at m2; hyperstrata visibility is enforced under
+  test guards (m3 normative) to justify continuation.
 - m1 uses the intrinsic cycle path; CNF-2 pipeline is gated off until m2.
 - Univalence is enforced by full-key equality (hash as hint only) and
   no truncation aliasing in key encoding.
@@ -379,9 +380,10 @@ Tasks:
 - Emission invariant: buffer shape is `2 * |frontier|` every cycle.
 - Candidate emission must be frontier-permutation invariant (up to slot layout)
   and independent of BSPˢ scheduling choices.
-- m2 invariant: slot1 is enabled under the hyperstrata visibility rule; slot1
-  nodes must only reference ids `< start(stratum1)`.
-- m3 invariant: slot1 visibility boundary is validated by dedicated tests/guards.
+- m2 invariant: slot1 is enabled; slot1 nodes must only reference ids
+  `< start(stratum1)` (hyperstrata visibility rule under guards).
+- m3 invariant: hyperstrata visibility rule is fully normative and enforced
+  across all strata (slot0, slot1, wrap).
 - Implement compaction (enabled mask + prefix sums).
 - Intern compacted candidates via `intern_nodes` (can be fused in m3).
 - Optional debug: track origin site indices for strata violation tracing.
