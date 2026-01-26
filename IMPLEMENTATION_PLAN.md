@@ -464,7 +464,8 @@ Tests (before implementation):
 
 Tasks:
 - Add per-cycle metrics (delta canonical nodes, reuse rate, damage rate).
-- Define "damage" in terms of locality boundary crossings (tile/halo or block).
+- Define "damage" in terms of locality boundary crossings (tile/halo or block) for m4
+  legacy metrics; m5 replaces this with spectral entropy (see `in/in-27.md`).
 - Gate instrumentation behind a debug flag; treat it as a pure read-only pass.
 - Add a small metrics summary to telemetry without altering scheduling.
 
@@ -496,6 +497,33 @@ Tasks:
 Notes:
 - No performance budgets yet; record-only until baselines stabilize.
 - GPU telemetry remains optional; host/CPU paths must not require pynvml.
+
+### 3d) Geometric Servo Architecture (m5)
+Objective: replace host-tuned linear paging with an on-device, **BSPˢ** entropy-driven
+servo (Renormˢ) that coarse-grains Morton sorting without affecting denotation.
+
+Tests (before implementation):
+- Pytest: `test_spectral_probe_tree_peak` (expected: `H[10] > 0.8`).
+- Pytest: `test_spectral_probe_noise_spread` (expected: `Entropy(H) > 3.0` bits).
+- Pytest: `test_lung_capacity_dilate_contract` (expected: thresholds `P_buffer > 0.25`, `P_buffer < 0.10`, `D_active < 0.40`).
+- Pytest: `test_blind_packing` (expected: `Entropy(H) < 1.5`, legacy `damage_rate(tile=512) < 0.01`).
+
+Tasks:
+- Extend `Arena` schema with a `servo` state tensor (uint32 mask + reserved slots).
+- Implement `_blind_spectral_probe` (Entropyₐ):
+  - filter `RANK_HOT`,
+  - compute MSB(A ⊕ B) bins,
+  - `bincount` into a fixed-size spectrum,
+  - normalize to a probability distribution,
+  - use `lax.stop_gradient` to keep it non-differentiable.
+- Implement spatial hysteresis ("lung") as a memoryless controller over Entropyₐ.
+- Apply masked Morton sorting (Renormˢ):
+  - `key = morton(ids) & servo_mask`,
+  - **stable** sort via composite key `(masked_key, original_index)` on GPU.
+- Servo updates are BSPˢ gauge transforms; must commute with `q` and preserve denotation:
+  - `q ∘ Servo = q`
+  - `q ∘ Renormˢ = q`
+- Keep m4 damage metrics as legacy; m5 entropy metrics are performance-only.
 
 ### 4) Data Model: Arena vs Manifest
 Objective: introduce the fluid arena state and keep it isolated from the
@@ -673,6 +701,7 @@ Tasks:
 - **m5: Full homomorphic collapse (production contract)**
   - Evaluator is write-model, Ledger is read-model.
   - Scheduling affects performance only; meaning is measured after `q`.
+  - Autonomic servo (entropy probe + lung + masked Morton) replaces host-tuned paging.
 - **m6: Hierarchical arenas (optional)**
   - Local block sort and merge once the contract is stable.
 
@@ -707,6 +736,7 @@ m4:
 - Damage/locality instrumentation does not change denotation when enabled.
 m5:
 - Arena scheduling (rank/sort/morton on/off) preserves denotation end-to-end.
+- Servo mask/entropy control is performance-only and preserves denotation.
 
 ## Next Commit Checklist (m1 landing)
 1. Add `tests/harness.py` with shared parse/run/normalize helpers.

@@ -6,7 +6,7 @@ This analysis evaluates the architectural shift to a **2:1 Alternating Binary Sp
 
 ### Executive Summary
 
-Moving from a linear arena to a **2:1 Alternating BSP** layout fundamentally transforms the system from a **Bandwidth-Bound** pointer chaser to a **Compute-Bound** tensor processor. By aligning memory address space with the 2:1 aspect ratio of GPU cache lines (which favor contiguous horizontal reads), this layout maximizes effective memory throughput.
+Moving from a linear arena to a **2:1 Alternating BSPˢ** layout fundamentally transforms the system from a **Bandwidth-Bound** pointer chaser to a **Compute-Bound** tensor processor. By aligning memory address space with the 2:1 aspect ratio of GPU cache lines (which favor contiguous horizontal reads), this layout maximizes effective memory throughput.
 
 In JAX, this implementation trades the overhead of "address swizzling" (bit-interleaving) for a massive reduction in global memory divergence. While standard JAX primitives (`numpy` ops) are inefficient for bit-level logic, the use of **Pallas** or **Triton** kernels for the swizzle phase makes this viable. Compared to the previous `exec()` based model and standard HVM implementations, this approach offers deterministic latency and superior scaling on SIMD hardware.
 
