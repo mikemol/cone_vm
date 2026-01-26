@@ -482,32 +482,40 @@ pretty(denote(q(rebuild_from_roots(L)))) = pretty(denote(q(L)))
 
 ### Meanings in Play
 
-* **Damageₛ**: spatial boundary crossing (tile/halo escalation)
-* **Damageₑ**: semantic rewrite impact
+* **Damageₗ**: linear/tile boundary crossing (m4 legacy metric)
+* **Entropyₐ**: arena microstate entropy (m5 metric; MSB(A ⊕ B))
+* **Apertureₛ**: servo mask / coarse-graining scale (m5 control signal)
+* **Damageₑ**: semantic rewrite impact (not a locality signal)
 
 ### Axes
 
 * Locality vs Meaning
+* Measurement vs Control
 
 ### Desired Commutation
 
 ```
 pretty(denote(q(damage_escalate ∘ local_step(P)))) = pretty(denote(q(local_step(P))))
+pretty(denote(q(servo_mask ∘ morton_sort(P)))) = pretty(denote(q(P)))
 ```
 
 ### Failure Mode
 
-* damage sets influence identity creation
+* damage/entropy sets influence identity creation
+* servo state leaks into meaning
 * locality changes which rewrites fire
 
 ### Normative Rule
 
-> Damage/locality is a performance signal only. It must not affect denotation and must be erasable by `q`.
+> Damageₗ, Entropyₐ, and Apertureₛ are performance-only signals. They must not affect denotation and must be erasable by `q`. Servo updates are BSPˢ gauge transforms.
 
 ### Test Obligations
 
 - (m3) `tests/test_arena_denotation_invariance.py::test_arena_denotation_invariance_random_suite`
 - (m3) `tests/test_morton.py::test_morton_key_stable`
+- (m5 planned) `tests/test_spectral_probe.py::test_spectral_probe_tree_peak`
+- (m5 planned) `tests/test_lung_capacity.py::test_lung_capacity_dilate_contract`
+- (m5 planned) `tests/test_blind_packing.py::test_blind_packing`
 
 ---
 
@@ -1199,7 +1207,43 @@ Noveltyᵢ(E ∘ BSPˢ) = Noveltyᵢ(E)
 
 ---
 
-## 29. Proof Kernel (Agda Roadmap)
+## 29. Holographic Collapse / Super-Particle (BSPˢ Gauge Artifacts)
+
+### Meanings (must be qualified)
+
+* **Holographic Collapse**: BSPˢ gauge property where canonical proximity induces spatial proximity under Morton ordering
+* **Super-Particle**: BSPˢ coarse-grained bucket (masked Morton key) treated as a stable unit during Renormˢ
+
+### Axes
+
+* BSPˢ (layout/locality)
+
+### Desired Commutation
+
+```
+q ∘ Servo = q
+q ∘ Renormˢ = q
+```
+
+### Failure Mode
+
+* “collapse” treated as semantic identity
+* super-particle order changes meaning
+* servo state leaks into canonical IDs
+
+### Normative Rule
+
+> These terms are BSPˢ gauge artifacts only. They are erased by `q` and must commute with denotation.
+
+### Test Obligations
+
+- (m5 planned) `tests/test_spectral_probe.py::test_spectral_probe_tree_peak`
+- (m5 planned) `tests/test_lung_capacity.py::test_lung_capacity_dilate_contract`
+- (m5 planned) `tests/test_blind_packing.py::test_blind_packing`
+
+---
+
+## 30. Proof Kernel (Agda Roadmap)
 
 ### Meanings (must be qualified)
 
