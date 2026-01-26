@@ -2265,18 +2265,47 @@ if _SWIZZLE_BACKEND in ("pallas", "triton"):
     if _SWIZZLE_ACCEL is None:
         _SWIZZLE_BACKEND = "jax"
 
+_ARENA_COORD_SCHEME = os.environ.get(
+    "PRISM_ARENA_COORD_SCHEME", "index"
+).strip().lower()
+_ARENA_COORD_GRID_LOG2 = None
+_ARENA_COORD_GRID_MASK = None
+if _ARENA_COORD_SCHEME not in ("index", "grid"):
+    raise ValueError(
+        f"PRISM_ARENA_COORD_SCHEME must be 'index' or 'grid' (got {_ARENA_COORD_SCHEME!r})"
+    )
+if _ARENA_COORD_SCHEME == "grid":
+    value = os.environ.get("PRISM_ARENA_COORD_GRID_LOG2", "").strip()
+    if not value or not value.isdigit():
+        raise ValueError(
+            "PRISM_ARENA_COORD_GRID_LOG2 must be a non-negative integer"
+        )
+    _ARENA_COORD_GRID_LOG2 = int(value)
+    if _ARENA_COORD_GRID_LOG2 > 31:
+        raise ValueError("PRISM_ARENA_COORD_GRID_LOG2 must be <= 31")
+    _ARENA_COORD_GRID_MASK = (1 << _ARENA_COORD_GRID_LOG2) - 1
+
+
 def swizzle_2to1(x, y):
     if _SWIZZLE_ACCEL is not None:
         return _SWIZZLE_ACCEL(x, y)
     return swizzle_2to1_dev(x, y)
 
+
+def _arena_coords(arena):
+    size = arena.opcode.shape[0]
+    idx = jnp.arange(size, dtype=jnp.uint32)
+    if _ARENA_COORD_SCHEME == "grid":
+        x = idx & jnp.uint32(_ARENA_COORD_GRID_MASK)
+        y = idx >> _ARENA_COORD_GRID_LOG2
+        return x, y
+    return idx, jnp.zeros_like(idx)
+
+
 @jit
 def op_morton(arena):
     # BSPˢ: layout/space only.
-    size = arena.opcode.shape[0]
-    idx = jnp.arange(size, dtype=jnp.uint32)
-    x = idx
-    y = jnp.zeros_like(idx)
+    x, y = _arena_coords(arena)
     return swizzle_2to1(x, y)
 
 @jit
