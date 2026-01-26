@@ -519,6 +519,21 @@ def test_cycle_candidates_validate_stratum_trips_on_within_refs(monkeypatch):
         pv.cycle_candidates(ledger, frontier, validate_stratum=True)
 
 
+@pytest.mark.m3
+def test_cycle_candidates_emits_from_pre_step_ledger(monkeypatch):
+    _require_cycle_candidates()
+    ledger, frontier = _build_suc_add_suc_frontier()
+    pre_count = int(pv._host_int_value(ledger.count))
+    real_emit = pv.emit_candidates
+
+    def _emit_checked(ledger_in, frontier_ids):
+        assert int(pv._host_int_value(ledger_in.count)) == pre_count
+        return real_emit(ledger_in, frontier_ids)
+
+    monkeypatch.setattr(pv, "emit_candidates", _emit_checked)
+    pv.cycle_candidates(ledger, frontier)
+
+
 def test_cycle_candidates_stop_path_on_corrupt():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
