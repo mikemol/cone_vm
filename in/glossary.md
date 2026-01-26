@@ -905,7 +905,7 @@ op(CD(x₁,x₂), CD(y₁,y₂)) = CD(op(x₁,y₁), op(x₂,y₂))
 
 ### Milestone
 
-- m3+
+- m2+
 
 ### Normative Interpretation
 

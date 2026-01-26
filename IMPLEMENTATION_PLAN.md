@@ -20,7 +20,7 @@ the current cross-version audit.
 ## Goals
 - Establish the Ledger + candidate pipeline as the canonical execution path.
 - Converge on CNF-2 symmetric rewrite semantics with a fixed-arity candidate
-  pipeline (slot1 enabled once hyperstrata visibility is enforced; m1-m2 keep disabled).
+  pipeline (slot1 enabled once hyperstrata visibility is enforced; m1 keeps disabled).
 - Enforce univalence: full-key equality for interning and no truncation aliasing.
 - Introduce self-hosted CD coordinates as interned CNF-2 objects and define
   aggregation as coordinate-space normalization.
@@ -66,7 +66,7 @@ These are already in effect in code/tests and are treated as non-negotiable.
 ## Semantic Commitments (Staged)
 - CNF-2 symmetric rewrite semantics are the target for BSP. Every rewrite site
   emits exactly two candidate slots (enabled or disabled).
-- Slot1 continuation is enabled at m3 once hyperstrata visibility is enforced; m1-m2 keep it disabled.
+- Slot1 continuation is enabled at m2 once hyperstrata visibility is enforced; m1 keeps it disabled.
 - m1 uses the intrinsic cycle path; CNF-2 pipeline is gated off until m2.
 - Univalence is enforced by full-key equality (hash as hint only) and
   no truncation aliasing in key encoding.
@@ -83,9 +83,9 @@ These are already in effect in code/tests and are treated as non-negotiable.
   term must declare axes, commutation equations, and test obligations.
 - Entropy terms are semantic descriptors (Arena vs canonical vs hyperoperator
   vs gauge); do not add counters unless a test explicitly requires it.
-- Hyperstrata visibility rule is normative from m3: pre-step rows are immutable
-  during a cycle, and within-cycle visibility is defined by the `(s,t)` staging
-  order; the frozen read model is the hyperstrata collapse corollary.
+- Hyperstrata visibility rule is normative from m2 for CNF-2 slot1: pre-step rows
+  are immutable during a cycle, and within-cycle visibility is defined by the
+  `(s,t)` staging order; the frozen read model is the hyperstrata collapse corollary.
 - 2:1 BSP swizzle/locality is staged as a performance invariant:
   - m1-m2: rank-only sort (or no sort) is acceptable for correctness tests.
   - m3: denotation invariance must hold across unsorted/rank/morton/block
@@ -379,9 +379,9 @@ Tasks:
 - Emission invariant: buffer shape is `2 * |frontier|` every cycle.
 - Candidate emission must be frontier-permutation invariant (up to slot layout)
   and independent of BSPˢ scheduling choices.
-- m2 invariant: `enabled[slot1] == 0` always; slot1 payloads are ignored.
-- m3 invariant: slot1 is enabled under the hyperstrata visibility rule; slot1
+- m2 invariant: slot1 is enabled under the hyperstrata visibility rule; slot1
   nodes must only reference ids `< start(stratum1)`.
+- m3 invariant: slot1 visibility boundary is validated by dedicated tests/guards.
 - Implement compaction (enabled mask + prefix sums).
 - Intern compacted candidates via `intern_nodes` (can be fused in m3).
 - Optional debug: track origin site indices for strata violation tracing.
@@ -624,12 +624,12 @@ Tasks:
   - Full-key equality and hard-cap univalence are enforced.
   - Milestone-gated tests are part of the deliverable (see `in/in-15.md`).
 - **m2: Strata boundary + total `q` projection**
-  - CNF-2 fixed-arity pipeline is enabled (slot1 disabled).
+  - CNF-2 fixed-arity pipeline is enabled (slot1 enabled).
   - Evaluator emits strata; no within-tier references.
   - `commit_stratum`: validate → project `q` → intern → swizzle ids.
 - **m3: Canonical rewrites + denotation invariance harness**
   - Canonical rewrites live in Ledger space (rewrite+intern).
-  - Slot1 continuation is enabled under the hyperstrata visibility rule.
+  - Slot1 continuation is validated under the hyperstrata visibility rule.
   - Denotation invariance across unsorted, rank, and morton/block schedulers.
 - **m4: Coordinates as interned objects + aggregation**
   - `OP_COORD_*` objects and idempotent parity normalization.
@@ -657,7 +657,7 @@ m1:
 - Interning early-outs when `oom` or `corrupt` is set.
 - Corrupt is sticky; stop paths leave `count` and key-prefix arrays unchanged.
 m2:
-- CNF-2 emission is fixed-arity (2 slots per site) with slot1 disabled.
+- CNF-2 emission is fixed-arity (2 slots per site) with slot1 enabled.
 - Compaction never interns disabled payloads.
 - Stratum boundary enforces no within-tier refs; `q` projection is total.
 m3:

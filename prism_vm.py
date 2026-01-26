@@ -333,7 +333,7 @@ def _cnf2_enabled():
 
 
 def _cnf2_slot1_enabled():
-    # Slot1 continuation is staged for m3+ (hyperstrata visibility rule).
+    # Slot1 continuation is staged for m2+ (hyperstrata visibility rule).
     # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
     value = os.environ.get("PRISM_ENABLE_CNF2_SLOT1", "").strip().lower()
     if value in ("1", "true", "yes", "on"):
@@ -341,7 +341,7 @@ def _cnf2_slot1_enabled():
     milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
     if milestone is None:
         milestone = _read_pytest_milestone()
-    return milestone is not None and milestone >= 3
+    return milestone is not None and milestone >= 2
 
 
 def _default_bsp_mode():
@@ -931,7 +931,7 @@ def cycle_candidates(
     val_x = ledger.arg1[suc_node]
     val_y = jnp.where(suc_on_a1, r_a2, r_a1)
 
-    # Slot1 is the continuation slot in CNF-2; enabled starting in m3 once
+    # Slot1 is the continuation slot in CNF-2; enabled starting in m2 once
     # hyperstrata visibility is enforced (slot1 reads only from slot0 + pre-step).
     # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
     slot1_gate = _cnf2_slot1_enabled()
