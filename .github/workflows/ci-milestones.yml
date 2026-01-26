@@ -8,13 +8,11 @@ on:
     paths:
       - ".github/workflows/**"
       - "ci_trigger.txt"
-      - "in/**"
+      - "**/*.md"
       - "tests/**"
       - "scripts/**"
       - "prism_vm.py"
-      - "IMPLEMENTATION_PLAN.md"
-      - "semantic_audit.md"
-      - "audit_in_versions.md"
+      - "typecheck/**"
 
 permissions:
   contents: read
@@ -23,7 +21,25 @@ env:
   PYTHON_VERSION: "3.14"
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code_changed: ${{ steps.diff.outputs.code_changed }}
+      changed_files: ${{ steps.diff.outputs.changed_files }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+      - name: Detect code changes
+        id: diff
+        run: |
+          scripts/ci_detect_changes.sh \
+            --base "${{ github.event.before }}" \
+            --head "${{ github.sha }}" \
+            --output "$GITHUB_OUTPUT"
+
   policy-check:
+    needs: [changes]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -82,6 +98,7 @@ jobs:
           python scripts/policy_check.py --workflows --posture
 
   audit:
+    needs: [changes]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -99,7 +116,8 @@ jobs:
           path: artifacts/audit_in_versions.md
 
   tests:
-    needs: [policy-check, audit]
+    needs: [changes, policy-check, audit]
+    if: needs.changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -170,8 +188,8 @@ jobs:
           path: artifacts/
 
   tests-gpu:
-    needs: [policy-check, audit]
-    if: github.actor == github.repository_owner && needs.policy-check.result == 'success' && needs.audit.result == 'success'
+    needs: [changes, policy-check, audit]
+    if: needs.changes.outputs.code_changed == 'true' && github.actor == github.repository_owner && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     runs-on: [self-hosted, cassian, gpu, local]
     strategy:
       fail-fast: false
@@ -241,7 +259,8 @@ jobs:
 
   collect-report:
     runs-on: ubuntu-latest
-    needs: [policy-check, audit, tests, tests-gpu]
+    needs: [changes, policy-check, audit, tests, tests-gpu]
+    if: always() && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Download all artifacts
