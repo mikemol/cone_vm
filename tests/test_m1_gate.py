@@ -306,6 +306,41 @@ def test_ledger_full_key_equality_under_full_range_buckets(monkeypatch):
     assert int(ledger.count) == 4
 
 
+def test_ledger_full_key_equality_full_range_bucket_permutation(monkeypatch):
+    def _canon_key(op, a1, a2):
+        if op in (pv.OP_ADD, pv.OP_MUL) and a2 < a1:
+            a1, a2 = a2, a1
+        return (op, a1, a2)
+
+    def _key_map(ops, a1, a2, ids):
+        mapping = {}
+        for op, a1_val, a2_val, node_id in zip(ops, a1, a2, ids):
+            key = _canon_key(int(op), int(a1_val), int(a2_val))
+            if key in mapping:
+                assert int(mapping[key]) == int(node_id)
+            else:
+                mapping[key] = int(node_id)
+        return mapping
+
+    monkeypatch.setattr(pv, "_OP_BUCKETS_FULL_RANGE", True)
+    ops = jnp.array(
+        [pv.OP_ADD, pv.OP_ADD, pv.OP_MUL, pv.OP_ADD, pv.OP_MUL],
+        dtype=jnp.int32,
+    )
+    a1 = jnp.array([2, 1, 2, 1, 1], dtype=jnp.int32)
+    a2 = jnp.array([1, 2, 1, 3, 2], dtype=jnp.int32)
+    perm = jnp.array([4, 1, 3, 0, 2], dtype=jnp.int32)
+    with jax.disable_jit():
+        ids_a, ledger_a = pv.intern_nodes(pv.init_ledger(), ops, a1, a2)
+        ids_b, ledger_b = pv.intern_nodes(
+            pv.init_ledger(), ops[perm], a1[perm], a2[perm]
+        )
+    assert _key_map(ops, a1, a2, ids_a) == _key_map(
+        ops[perm], a1[perm], a2[perm], ids_b
+    )
+    assert int(ledger_a.count) == int(ledger_b.count)
+
+
 def test_key_width_no_alias():
     assert pv.MAX_ID >= 0x101
     ledger = pv.init_ledger()
