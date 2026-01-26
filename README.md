@@ -129,6 +129,29 @@ mise exec -- python scripts/audit_memory_stability.py \
   --json-out artifacts/host_memory_intrinsic.json
 ```
 
+Capture and analyze a CPU trace (record-only):
+```
+mise exec -- python scripts/capture_trace.py \
+  --engine intrinsic --iterations 5 --warmup 1 \
+  --out-dir /tmp/jax-trace
+
+mise exec -- python scripts/trace_analyze.py \
+  --report-only --json-out artifacts/trace_cpu_report.json
+```
+
+Summarize host telemetry + trace baselines from artifacts:
+```
+mise exec -- python scripts/collect_host_metrics.py \
+  --base collected_report/raw \
+  --out collected_report/host_metrics_summary.md
+
+mise exec -- python scripts/collect_telemetry_baselines.py \
+  --base collected_report/raw \
+  --damage-summary collected_report/damage_metrics_summary.md \
+  --host-summary collected_report/host_metrics_summary.md \
+  --out collected_report/telemetry_baselines.md
+```
+
 ## Policy
 This repo uses a self-hosted runner. Read `POLICY_SEED.md` before changing any
 workflow or CI behavior. Install advisory hooks with:
