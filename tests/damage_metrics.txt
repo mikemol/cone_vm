@@ -1,0 +1,7 @@
+# Damage metrics fixture: run with PRISM_DAMAGE_METRICS=1 to emit telemetry.
+# Example:
+#   PRISM_DAMAGE_METRICS=1 PRISM_DAMAGE_TILE_SIZE=2 \
+#     mise exec -- python prism_vm.py --mode arena --morton --cycles 2 \
+#     tests/damage_metrics.txt
+(add (suc zero) (suc zero))
+(mul (suc zero) (suc zero))

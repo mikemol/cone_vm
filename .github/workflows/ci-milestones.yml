@@ -121,6 +121,17 @@ jobs:
           pytest -c pytest.${{ matrix.milestone }}.ini \
             --junitxml artifacts/pytest-${{ matrix.milestone }}.xml \
             2>&1 | tee artifacts/pytest-${{ matrix.milestone }}.txt
+      - name: Run damage metrics fixture (arena)
+        if: matrix.milestone == 'm4'
+        run: |
+          mkdir -p artifacts
+          set -euo pipefail
+          PRISM_DAMAGE_METRICS=1 PRISM_DAMAGE_TILE_SIZE=2 \
+            python prism_vm.py --mode arena --morton --cycles 2 \
+            tests/damage_metrics.txt 2>&1 | tee artifacts/damage_metrics.txt
+          PRISM_DAMAGE_METRICS=0 \
+            python prism_vm.py --mode arena --morton --cycles 2 \
+            tests/damage_metrics_off.txt 2>&1 | tee artifacts/damage_metrics_off.txt
       - name: Upload pytest artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -175,6 +186,16 @@ jobs:
           mise exec -- python -m pytest -c pytest.${{ matrix.milestone }}.ini \
             --junitxml artifacts/pytest-gpu-${{ matrix.milestone }}.xml \
             2>&1 | tee artifacts/pytest-gpu-${{ matrix.milestone }}.txt
+      - name: Run damage metrics fixture (arena, gpu)
+        run: |
+          mkdir -p artifacts
+          set -euo pipefail
+          PRISM_DAMAGE_METRICS=1 PRISM_DAMAGE_TILE_SIZE=2 \
+            mise exec -- python prism_vm.py --mode arena --morton --cycles 2 \
+            tests/damage_metrics.txt 2>&1 | tee artifacts/damage_metrics_gpu.txt
+          PRISM_DAMAGE_METRICS=0 \
+            mise exec -- python prism_vm.py --mode arena --morton --cycles 2 \
+            tests/damage_metrics_off.txt 2>&1 | tee artifacts/damage_metrics_off_gpu.txt
       - name: Upload pytest artifact (gpu)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
