@@ -7,10 +7,6 @@ import prism_vm as pv
 pytestmark = pytest.mark.m4
 
 
-@pytest.mark.xfail(
-    reason="m4: no batched coord_xor_batch / coord_norm_batch yet",
-    strict=True,
-)
 def test_coord_xor_batch_uses_single_intern_call(monkeypatch):
     calls = {"n": 0}
     real_intern = pv.intern_nodes
@@ -36,7 +32,6 @@ def test_coord_xor_batch_uses_single_intern_call(monkeypatch):
     assert calls["n"] <= 4
 
 
-@pytest.mark.xfail(reason="m4: no batched coord_norm_batch yet", strict=True)
 def test_coord_norm_batch_matches_host():
     ledger = pv.init_ledger()
     z1, ledger = pv._coord_leaf_id(ledger, pv.OP_COORD_ONE)

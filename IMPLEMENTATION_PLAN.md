@@ -426,8 +426,8 @@ Tests (before implementation):
 - Pytest: `test_coord_norm_confluent_small` (expected: small expressions converge).
 - Pytest: `test_coord_norm_probe_only_runs_for_pairs` (expected: probe counts only coord pairs).
 - Pytest: `test_coord_norm_probe_skips_non_coord_batch` (null: probe stays zero).
-- Pytest: `test_coord_xor_batch_uses_single_intern_call` (expected: batch path bounds interning; xfail until batching refactor).
-- Pytest: `test_coord_norm_batch_matches_host` (expected: batch path matches host; xfail until batching refactor).
+- Pytest: `test_coord_xor_batch_uses_single_intern_call` (expected: batch path bounds interning).
+- Pytest: `test_coord_norm_batch_matches_host` (expected: batch path matches host).
 - Program: `tests/coord_basic.txt` (expected: canonical ids for coordinates).
 - Program null: `tests/coord_noop.txt` (expected: no rewrite for non-coord ops).
 
