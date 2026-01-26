@@ -7,6 +7,7 @@ import inspect
 import os
 import re
 import time
+import numpy as np
 
 # --- 1. Ontology (Opcodes) ---
 # Ledger ids 0/1 are semantic reserves (NULL/ZERO); baseline heaps seed ZERO at 1.
@@ -483,6 +484,99 @@ def _coord_norm_probe_assert(has_coord):
         raise RuntimeError("coord_norm probe missing for coord pair batch")
     if not expect and count != 0:
         raise RuntimeError("coord_norm probe fired for non-coord batch")
+
+
+_damage_metrics_cycles = 0
+_damage_metrics_hot_nodes = 0
+_damage_metrics_edge_total = 0
+_damage_metrics_edge_cross = 0
+
+
+def _damage_metrics_enabled():
+    value = os.environ.get("PRISM_DAMAGE_METRICS", "").strip().lower()
+    return value in ("1", "true", "yes", "on")
+
+
+def _damage_tile_size(block_size, l2_block_size, l1_block_size):
+    value = os.environ.get("PRISM_DAMAGE_TILE_SIZE", "").strip()
+    if value:
+        if not value.isdigit():
+            raise ValueError("PRISM_DAMAGE_TILE_SIZE must be an integer")
+        return int(value)
+    for candidate in (block_size, l1_block_size, l2_block_size):
+        if candidate is not None:
+            return int(candidate)
+    return 0
+
+
+def damage_metrics_reset():
+    global _damage_metrics_cycles
+    global _damage_metrics_hot_nodes
+    global _damage_metrics_edge_total
+    global _damage_metrics_edge_cross
+    _damage_metrics_cycles = 0
+    _damage_metrics_hot_nodes = 0
+    _damage_metrics_edge_total = 0
+    _damage_metrics_edge_cross = 0
+
+
+def damage_metrics_get():
+    if not _damage_metrics_enabled():
+        return {
+            "cycles": 0,
+            "hot_nodes": 0,
+            "edge_total": 0,
+            "edge_cross": 0,
+            "damage_rate": 0.0,
+        }
+    edge_total = int(_damage_metrics_edge_total)
+    edge_cross = int(_damage_metrics_edge_cross)
+    damage_rate = (edge_cross / edge_total) if edge_total else 0.0
+    return {
+        "cycles": int(_damage_metrics_cycles),
+        "hot_nodes": int(_damage_metrics_hot_nodes),
+        "edge_total": edge_total,
+        "edge_cross": edge_cross,
+        "damage_rate": float(damage_rate),
+    }
+
+
+def _damage_metrics_update(arena, tile_size):
+    global _damage_metrics_cycles
+    global _damage_metrics_hot_nodes
+    global _damage_metrics_edge_total
+    global _damage_metrics_edge_cross
+    if not _damage_metrics_enabled() or tile_size <= 0:
+        return
+    count = _host_int_value(arena.count)
+    if count <= 0:
+        return
+    ranks = np.asarray(jax.device_get(arena.rank[:count]))
+    arg1 = np.asarray(jax.device_get(arena.arg1[:count]))
+    arg2 = np.asarray(jax.device_get(arena.arg2[:count]))
+    idx = np.arange(count, dtype=np.int32)
+    tile = idx // int(tile_size)
+    hot_mask = ranks == RANK_HOT
+    hot_nodes = int(hot_mask.sum())
+    if hot_nodes <= 0:
+        _damage_metrics_cycles += 1
+        return
+    hot_idx = idx[hot_mask]
+    tile_hot = tile[hot_mask]
+    a1_hot = arg1[hot_mask]
+    a2_hot = arg2[hot_mask]
+    valid1 = (a1_hot > 0) & (a1_hot < count)
+    valid2 = (a2_hot > 0) & (a2_hot < count)
+    a1_safe = np.where(valid1, a1_hot, 0)
+    a2_safe = np.where(valid2, a2_hot, 0)
+    cross1 = valid1 & (tile_hot != tile[a1_safe])
+    cross2 = valid2 & (tile_hot != tile[a2_safe])
+    edge_total = int(valid1.sum() + valid2.sum())
+    edge_cross = int(cross1.sum() + cross2.sum())
+    _damage_metrics_cycles += 1
+    _damage_metrics_hot_nodes += hot_nodes
+    _damage_metrics_edge_total += edge_total
+    _damage_metrics_edge_cross += edge_cross
 
 # --- Rank (2-bit Scheduler) ---
 RANK_HOT = 0
@@ -2613,6 +2707,8 @@ def cycle(
         root_arr = jnp.where(root_arr != 0, root_g, 0)
         if _TEST_GUARDS and pre_hash != _arena_root_hash_host(arena, root_arr):
             raise RuntimeError("BSPˢ renormalization changed root structure")
+    tile_size = _damage_tile_size(block_size, l2_block_size, l1_block_size)
+    _damage_metrics_update(arena, tile_size)
     arena = op_interact(arena)
     return arena, root_arr
 
@@ -3093,6 +3189,8 @@ class PrismVM_BSP:
 
 
 def make_vm(mode="baseline"):
+    if mode == "arena":
+        return PrismVM_BSP_Legacy()
     if mode == "bsp":
         return PrismVM_BSP()
     return PrismVM()
@@ -3142,6 +3240,56 @@ def run_program_lines(lines, vm=None):
         else:
             print(f"   ├─ Kernel  : \033[96mSKIPPED (Static Optimization)\033[0m")
         print(f"   └─ Result  : \033[92m{vm.decode(res_ptr)}\033[0m")
+    return vm
+
+def run_program_lines_arena(
+    lines,
+    vm=None,
+    cycles=1,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+):
+    if vm is None:
+        vm = PrismVM_BSP_Legacy()
+    tile_size = _damage_tile_size(block_size, l2_block_size, l1_block_size)
+    for inp in lines:
+        inp = inp.strip()
+        if not inp or inp.startswith("#"):
+            continue
+        if _damage_metrics_enabled():
+            damage_metrics_reset()
+        tokens = re.findall(r"\(|\)|[a-z]+", inp)
+        root_ptr = vm.parse(tokens)
+        for _ in range(max(1, cycles)):
+            vm.arena, root_ptr = cycle(
+                vm.arena,
+                root_ptr,
+                do_sort=do_sort,
+                use_morton=use_morton,
+                block_size=block_size,
+                l2_block_size=l2_block_size,
+                l1_block_size=l1_block_size,
+                do_global=do_global,
+            )
+            root_ptr = _arena_ptr(_host_int_value(root_ptr))
+            if _host_bool_value(vm.arena.oom):
+                raise RuntimeError("Arena capacity exceeded during cycle")
+        print(f"   ├─ Arena    : {_host_int_value(vm.arena.count)} nodes")
+        if _damage_metrics_enabled():
+            metrics = damage_metrics_get()
+            print(
+                "   ├─ Damage   : "
+                f"cycles={metrics['cycles']} "
+                f"hot={metrics['hot_nodes']} "
+                f"edges={metrics['edge_cross']}/{metrics['edge_total']} "
+                f"rate={metrics['damage_rate']:.4f} "
+                f"tile={int(tile_size)}"
+            )
+        print(f"   └─ Result   : \033[92m{vm.decode(root_ptr)}\033[0m")
     return vm
 
 def run_program_lines_bsp(
@@ -3205,6 +3353,10 @@ def repl(
         mode_label = "CNF-2" if bsp_mode == "cnf2" else "Intrinsic"
         print(f"\n🔮 Prism IR Shell (BSP Ledger, {mode_label})")
         print("   Try: (add (suc zero) (suc zero))")
+    elif mode == "arena":
+        vm = PrismVM_BSP_Legacy()
+        print("\n🔮 Prism IR Shell (Arena BSP, Legacy)")
+        print("   Try: (add (suc zero) (suc zero))")
     else:
         vm = PrismVM()
         print("\n🔮 Prism IR Shell (Static Analysis + Deduplication)")
@@ -3223,6 +3375,13 @@ def repl(
                     block_size=block_size,
                     bsp_mode=bsp_mode,
                     validate_stratum=validate_stratum,
+                )
+            elif mode == "arena":
+                run_program_lines_arena(
+                    [inp],
+                    vm,
+                    use_morton=use_morton,
+                    block_size=block_size,
                 )
             else:
                 run_program_lines([inp], vm)
@@ -3309,6 +3468,14 @@ if __name__ == "__main__":
                 block_size=block_size,
                 bsp_mode=bsp_mode,
                 validate_stratum=validate_stratum,
+            )
+        elif mode == "arena":
+            run_program_lines_arena(
+                lines,
+                cycles=cycles,
+                do_sort=do_sort,
+                use_morton=use_morton,
+                block_size=block_size,
             )
         else:
             run_program_lines(lines)

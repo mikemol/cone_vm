@@ -1,0 +1,5 @@
+# Damage metrics off fixture: metrics disabled should emit no telemetry.
+# Example:
+#   mise exec -- python prism_vm.py --mode arena --morton --cycles 2 \
+#     tests/damage_metrics_off.txt
+(add (suc zero) (suc zero))
