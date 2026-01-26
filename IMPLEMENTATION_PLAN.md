@@ -428,6 +428,8 @@ Tests (before implementation):
 - Pytest: `test_coord_norm_probe_skips_non_coord_batch` (null: probe stays zero).
 - Pytest: `test_coord_xor_batch_uses_single_intern_call` (expected: batch path bounds interning).
 - Pytest: `test_coord_norm_batch_matches_host` (expected: batch path matches host).
+- Pytest: `test_coord_add_aggregates_in_cycle_candidates` (expected: coord add lifts to XOR result).
+- Pytest: `test_coord_mul_does_not_aggregate` (null: coord mul does not lift).
 - Program: `tests/coord_basic.txt` (expected: canonical ids for coordinates).
 - Program null: `tests/coord_noop.txt` (expected: no rewrite for non-coord ops).
 
