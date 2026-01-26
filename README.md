@@ -118,6 +118,17 @@ mise exec -- python scripts/collect_damage_metrics.py \
   --out collected_report/damage_metrics_summary.md
 ```
 
+Capture host performance and memory baselines (record-only):
+```
+mise exec -- python scripts/audit_host_performance.py \
+  --engine intrinsic --iterations 10 --warmup 1 \
+  --json-out artifacts/host_perf_intrinsic.json
+
+mise exec -- python scripts/audit_memory_stability.py \
+  --engine intrinsic --iterations 10 --warmup 1 \
+  --json-out artifacts/host_memory_intrinsic.json
+```
+
 ## Policy
 This repo uses a self-hosted runner. Read `POLICY_SEED.md` before changing any
 workflow or CI behavior. Install advisory hooks with:
