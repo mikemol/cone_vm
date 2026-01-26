@@ -613,6 +613,61 @@ def _blind_spectral_probe(arena):
     return lax.stop_gradient(spectrum)
 
 
+def _servo_enabled():
+    value = os.environ.get("PRISM_ENABLE_SERVO", "").strip().lower()
+    if value in ("1", "true", "yes", "on"):
+        return True
+    milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
+    if milestone is None:
+        milestone = _read_pytest_milestone()
+    return milestone is not None and milestone >= 5
+
+
+_SERVO_MASK_DEFAULT = jnp.uint32(0xFFFFFFFF)
+
+
+def _servo_mask_from_k(k):
+    k = jnp.clip(k, 0, 31).astype(jnp.uint32)
+    low_bits = (jnp.uint32(1) << k) - jnp.uint32(1)
+    return jnp.where(k == 0, _SERVO_MASK_DEFAULT, jnp.bitwise_not(low_bits))
+
+
+def _servo_mask_to_k(mask):
+    mask = jnp.where(mask == 0, _SERVO_MASK_DEFAULT, mask)
+    low_bit = mask & (jnp.uint32(0) - mask)
+    low_bit = jnp.where(low_bit == 0, jnp.uint32(1), low_bit)
+    k = jnp.floor(jnp.log2(low_bit.astype(jnp.float32))).astype(jnp.int32)
+    return jnp.clip(k, 0, 31)
+
+
+@jit
+def _servo_update(arena):
+    mask = arena.servo[0].astype(jnp.uint32)
+    mask = jnp.where(mask == 0, _SERVO_MASK_DEFAULT, mask)
+    k = _servo_mask_to_k(mask)
+    spectrum = _blind_spectral_probe(arena)
+    idx = jnp.arange(spectrum.shape[0], dtype=jnp.int32)
+    start = jnp.maximum(k - 1, 0)
+    p_buffer = jnp.sum(jnp.where(idx >= start, spectrum, 0.0))
+
+    size = arena.rank.shape[0]
+    ids = jnp.arange(size, dtype=jnp.int32)
+    live = ids < arena.count.astype(jnp.int32)
+    hot = (arena.rank == RANK_HOT) & live
+    hot_count = jnp.sum(hot).astype(jnp.float32)
+    denom = jnp.exp2(jnp.maximum(k - 1, 0).astype(jnp.float32))
+    d_active = hot_count / denom
+
+    spill = p_buffer > 0.25
+    vacuum = (p_buffer < 0.10) & (d_active < 0.4)
+    k_up = jnp.minimum(k + 1, 31)
+    k_down = jnp.maximum(k - 1, 0)
+    k_next = jnp.where(spill, k_up, jnp.where(vacuum, k_down, k))
+    mask_next = _servo_mask_from_k(k_next)
+    new_servo = arena.servo.at[0].set(mask_next)
+    return arena._replace(servo=new_servo)
+
+
 def _gpu_metrics_enabled():
     value = os.environ.get("PRISM_GPU_METRICS", "").strip().lower()
     return value in ("1", "true", "yes", "on")
@@ -2577,6 +2632,62 @@ def op_sort_and_swizzle_morton(arena, morton):
     sorted_arena, _ = op_sort_and_swizzle_morton_with_perm(arena, morton)
     return sorted_arena
 
+
+@jit
+def _op_sort_and_swizzle_servo_with_perm_full(arena, morton, servo_mask):
+    size = arena.rank.shape[0]
+    idx = jnp.arange(size, dtype=jnp.uint32)
+    mask = jnp.where(servo_mask == 0, _SERVO_MASK_DEFAULT, servo_mask).astype(
+        jnp.uint32
+    )
+    masked = morton.astype(jnp.uint32) & mask
+    rank_u = arena.rank.astype(jnp.uint32)
+    rank_u = rank_u.at[0].set(jnp.uint32(0))
+    masked = masked.at[0].set(jnp.uint32(0))
+    perm = jnp.lexsort((idx, masked, rank_u)).astype(jnp.int32)
+    return _apply_perm_and_swizzle(arena, perm)
+
+
+def _op_sort_and_swizzle_servo_with_perm_prefix(
+    arena, morton, active_count, servo_mask
+):
+    size = arena.rank.shape[0]
+    if active_count <= 1:
+        perm = jnp.arange(size, dtype=jnp.int32)
+        return _apply_perm_and_swizzle(arena, perm)
+    idx = jnp.arange(active_count, dtype=jnp.uint32)
+    mask = jnp.where(servo_mask == 0, _SERVO_MASK_DEFAULT, servo_mask).astype(
+        jnp.uint32
+    )
+    masked = morton[:active_count].astype(jnp.uint32) & mask
+    rank_u = arena.rank[:active_count].astype(jnp.uint32)
+    rank_u = rank_u.at[0].set(jnp.uint32(0))
+    masked = masked.at[0].set(jnp.uint32(0))
+    perm_active = jnp.lexsort((idx, masked, rank_u)).astype(jnp.int32)
+    tail = jnp.arange(active_count, size, dtype=jnp.int32)
+    perm = jnp.concatenate([perm_active, tail], axis=0)
+    return _apply_perm_and_swizzle(arena, perm)
+
+
+def op_sort_and_swizzle_servo_with_perm(arena, morton, servo_mask):
+    # BSPˢ: layout/space only (servo-masked Morton).
+    active_count = _active_prefix_count(arena)
+    active_count_i = int(active_count)
+    size = arena.rank.shape[0]
+    if active_count_i >= size:
+        return _op_sort_and_swizzle_servo_with_perm_full(arena, morton, servo_mask)
+    return _op_sort_and_swizzle_servo_with_perm_prefix(
+        arena, morton, active_count_i, servo_mask
+    )
+
+
+def op_sort_and_swizzle_servo(arena, morton, servo_mask):
+    # BSPˢ: layout/space only (servo-masked Morton).
+    sorted_arena, _ = op_sort_and_swizzle_servo_with_perm(
+        arena, morton, servo_mask
+    )
+    return sorted_arena
+
 @jit
 def op_interact(arena):
     ops = arena.opcode
@@ -2812,28 +2923,36 @@ def cycle(
     if do_sort:
         pre_hash = _arena_root_hash_host(arena, root_arr)
         morton_arr = None
-        if use_morton or morton is not None:
+        if _servo_enabled():
+            arena = _servo_update(arena)
             morton_arr = morton if morton is not None else op_morton(arena)
-        if l2_block_size is not None or l1_block_size is not None:
-            if l2_block_size is None:
-                l2_block_size = l1_block_size
-            if l1_block_size is None:
-                l1_block_size = l2_block_size
-            arena, inv_perm = op_sort_and_swizzle_hierarchical_with_perm(
-                arena,
-                l2_block_size,
-                l1_block_size,
-                morton=morton_arr,
-                do_global=do_global,
+            servo_mask = arena.servo[0]
+            arena, inv_perm = op_sort_and_swizzle_servo_with_perm(
+                arena, morton_arr, servo_mask
             )
-        elif block_size is not None:
-            arena, inv_perm = op_sort_and_swizzle_blocked_with_perm(
-                arena, block_size, morton=morton_arr
-            )
-        elif morton_arr is not None:
-            arena, inv_perm = op_sort_and_swizzle_morton_with_perm(arena, morton_arr)
         else:
-            arena, inv_perm = op_sort_and_swizzle_with_perm(arena)
+            if use_morton or morton is not None:
+                morton_arr = morton if morton is not None else op_morton(arena)
+            if l2_block_size is not None or l1_block_size is not None:
+                if l2_block_size is None:
+                    l2_block_size = l1_block_size
+                if l1_block_size is None:
+                    l1_block_size = l2_block_size
+                arena, inv_perm = op_sort_and_swizzle_hierarchical_with_perm(
+                    arena,
+                    l2_block_size,
+                    l1_block_size,
+                    morton=morton_arr,
+                    do_global=do_global,
+                )
+            elif block_size is not None:
+                arena, inv_perm = op_sort_and_swizzle_blocked_with_perm(
+                    arena, block_size, morton=morton_arr
+                )
+            elif morton_arr is not None:
+                arena, inv_perm = op_sort_and_swizzle_morton_with_perm(arena, morton_arr)
+            else:
+                arena, inv_perm = op_sort_and_swizzle_with_perm(arena)
         # Root remap is a pointer gather; guard in test mode.
         root_idx = jnp.where(root_arr != 0, root_arr, jnp.int32(0))
         root_g = safe_gather_1d(inv_perm, root_idx, "cycle.root_remap")
