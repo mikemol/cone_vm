@@ -154,6 +154,15 @@ jobs:
           python scripts/audit_memory_stability.py \
             --engine cnf2 --iterations 5 --warmup 1 \
             --json-out artifacts/host_memory_cnf2.json
+      - name: Capture CPU trace baselines
+        if: matrix.milestone == 'm4'
+        run: |
+          mkdir -p artifacts
+          python scripts/capture_trace.py \
+            --engine intrinsic --iterations 3 --warmup 1 \
+            --out-dir /tmp/jax-trace
+          python scripts/trace_analyze.py \
+            --report-only --json-out artifacts/trace_cpu_report.json
       - name: Upload pytest artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -253,6 +262,18 @@ jobs:
           python3 scripts/collect_damage_metrics.py \
             --base collected_report/raw \
             --out collected_report/damage_metrics_summary.md
+      - name: Summarize host telemetry
+        run: |
+          python3 scripts/collect_host_metrics.py \
+            --base collected_report/raw \
+            --out collected_report/host_metrics_summary.md
+      - name: Assemble telemetry baselines
+        run: |
+          python3 scripts/collect_telemetry_baselines.py \
+            --base collected_report/raw \
+            --damage-summary collected_report/damage_metrics_summary.md \
+            --host-summary collected_report/host_metrics_summary.md \
+            --out collected_report/telemetry_baselines.md
       - name: Upload collected report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
