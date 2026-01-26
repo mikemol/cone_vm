@@ -278,6 +278,14 @@ _OP_BUCKETS_FULL_RANGE = os.environ.get(
     "yes",
     "on",
 )
+_FORCE_SPAWN_CLIP = os.environ.get(
+    "PRISM_FORCE_SPAWN_CLIP", ""
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 
 def _bincount_256(x, weights):
@@ -1491,6 +1499,9 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     overflow = (count + requested_new) > max_count
     # NOTE: overflow relies on requested_new being accurate; add a secondary
     # guard on num_new if is_new logic changes (see IMPLEMENTATION_PLAN.md).
+    if _FORCE_SPAWN_CLIP and _TEST_GUARDS:
+        # Test-only hook: force a spawn/available mismatch to exercise guardrails.
+        available = jnp.maximum(requested_new - jnp.int32(1), 0)
 
     def _overflow(_):
         zero_ids = jnp.zeros_like(proposed_ops)
@@ -1606,145 +1617,154 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         is_new_mask = spawn.astype(jnp.bool_)
         offsets = jnp.cumsum(spawn) - spawn
         num_new = jnp.sum(spawn).astype(jnp.int32)
+        spawn_mismatch = num_new != requested_new
 
-        write_start = ledger.count.astype(jnp.int32)
-        new_ids_for_sorted = jnp.where(
-            found_match,
-            matched_ids,
-            jnp.where(is_new_mask, write_start + offsets, jnp.int32(0)),
-        )
+        def _partial_alloc(_):
+            zero_ids = jnp.zeros_like(proposed_ops)
+            new_ledger = ledger._replace(corrupt=jnp.array(True, dtype=jnp.bool_))
+            return zero_ids, new_ledger
 
-        leader_ids = jnp.where(is_diff, new_ids_for_sorted, jnp.int32(0))
-        ids_sorted_order = leader_ids[leader_idx]
+        def _write_alloc(_):
+            write_start = ledger.count.astype(jnp.int32)
+            new_ids_for_sorted = jnp.where(
+                found_match,
+                matched_ids,
+                jnp.where(is_new_mask, write_start + offsets, jnp.int32(0)),
+            )
 
-        inv_perm = _invert_perm(perm)
-        final_ids = ids_sorted_order[inv_perm]
+            leader_ids = jnp.where(is_diff, new_ids_for_sorted, jnp.int32(0))
+            ids_sorted_order = leader_ids[leader_idx]
 
-        new_opcode = ledger.opcode
-        new_arg1 = ledger.arg1
-        new_arg2 = ledger.arg2
+            inv_perm = _invert_perm(perm)
+            final_ids = ids_sorted_order[inv_perm]
 
-        valid_w = is_new_mask
-        safe_w = jnp.where(
-            valid_w, write_start + offsets, jnp.int32(new_opcode.shape[0])
-        )
+            new_opcode = ledger.opcode
+            new_arg1 = ledger.arg1
+            new_arg2 = ledger.arg2
 
-        new_opcode = _scatter_drop(
-            new_opcode,
-            safe_w,
-            jnp.where(valid_w, s_ops, new_opcode[0]),
-            "intern_nodes.new_opcode",
-        )
-        new_arg1 = _scatter_drop(
-            new_arg1,
-            safe_w,
-            jnp.where(valid_w, s_a1, new_arg1[0]),
-            "intern_nodes.new_arg1",
-        )
-        new_arg2 = _scatter_drop(
-            new_arg2,
-            safe_w,
-            jnp.where(valid_w, s_a2, new_arg2[0]),
-            "intern_nodes.new_arg2",
-        )
+            valid_w = is_new_mask
+            safe_w = jnp.where(
+                valid_w, write_start + offsets, jnp.int32(new_opcode.shape[0])
+            )
 
-        new_count = ledger.count + num_new
-        new_oom = base_oom
-        new_corrupt = base_corrupt
-        _guard_max(new_count, max_count, "ledger.count")
-        _guard_max(
-            new_count,
-            jnp.int32(new_opcode.shape[0]),
-            "ledger.backing_array_length",
-        )
+            new_opcode = _scatter_drop(
+                new_opcode,
+                safe_w,
+                jnp.where(valid_w, s_ops, new_opcode[0]),
+                "intern_nodes.new_opcode",
+            )
+            new_arg1 = _scatter_drop(
+                new_arg1,
+                safe_w,
+                jnp.where(valid_w, s_a1, new_arg1[0]),
+                "intern_nodes.new_arg1",
+            )
+            new_arg2 = _scatter_drop(
+                new_arg2,
+                safe_w,
+                jnp.where(valid_w, s_a2, new_arg2[0]),
+                "intern_nodes.new_arg2",
+            )
 
-        valid_new = is_new_mask
-        safe_new = jnp.where(valid_new, offsets, jnp.int32(new_entry_len))
+            new_count = ledger.count + num_new
+            new_oom = base_oom
+            new_corrupt = base_corrupt
+            _guard_max(new_count, max_count, "ledger.count")
+            _guard_max(
+                new_count,
+                jnp.int32(new_opcode.shape[0]),
+                "ledger.backing_array_length",
+            )
 
-        new_entry_b0_sorted = jnp.full_like(s_b0, max_key)
-        new_entry_b1_sorted = jnp.full_like(s_b1, max_key)
-        new_entry_b2_sorted = jnp.full_like(s_b2, max_key)
-        new_entry_b3_sorted = jnp.full_like(s_b3, max_key)
-        new_entry_b4_sorted = jnp.full_like(s_b4, max_key)
-        new_entry_ids_sorted = jnp.zeros(new_entry_len, dtype=jnp.int32)
+            valid_new = is_new_mask
+            safe_new = jnp.where(valid_new, offsets, jnp.int32(new_entry_len))
 
-        new_entry_b0_sorted = _scatter_drop(
-            new_entry_b0_sorted,
-            safe_new,
-            jnp.where(valid_new, s_b0, new_entry_b0_sorted[0]),
-            "intern_nodes.new_entry_b0",
-        )
-        new_entry_b1_sorted = _scatter_drop(
-            new_entry_b1_sorted,
-            safe_new,
-            jnp.where(valid_new, s_b1, new_entry_b1_sorted[0]),
-            "intern_nodes.new_entry_b1",
-        )
-        new_entry_b2_sorted = _scatter_drop(
-            new_entry_b2_sorted,
-            safe_new,
-            jnp.where(valid_new, s_b2, new_entry_b2_sorted[0]),
-            "intern_nodes.new_entry_b2",
-        )
-        new_entry_b3_sorted = _scatter_drop(
-            new_entry_b3_sorted,
-            safe_new,
-            jnp.where(valid_new, s_b3, new_entry_b3_sorted[0]),
-            "intern_nodes.new_entry_b3",
-        )
-        new_entry_b4_sorted = _scatter_drop(
-            new_entry_b4_sorted,
-            safe_new,
-            jnp.where(valid_new, s_b4, new_entry_b4_sorted[0]),
-            "intern_nodes.new_entry_b4",
-        )
-        new_entry_ids_sorted = _scatter_drop(
-            new_entry_ids_sorted,
-            safe_new,
-            jnp.where(valid_new, new_ids_for_sorted, new_entry_ids_sorted[0]),
-            "intern_nodes.new_entry_ids",
-        )
+            new_entry_b0_sorted = jnp.full_like(s_b0, max_key)
+            new_entry_b1_sorted = jnp.full_like(s_b1, max_key)
+            new_entry_b2_sorted = jnp.full_like(s_b2, max_key)
+            new_entry_b3_sorted = jnp.full_like(s_b3, max_key)
+            new_entry_b4_sorted = jnp.full_like(s_b4, max_key)
+            new_entry_ids_sorted = jnp.zeros(new_entry_len, dtype=jnp.int32)
 
-        # Merge sorted new keys into the ledger's sorted key arrays.
-        (
-            new_keys_b0_sorted,
-            new_keys_b1_sorted,
-            new_keys_b2_sorted,
-            new_keys_b3_sorted,
-            new_keys_b4_sorted,
-            new_ids_sorted,
-        ) = _merge_sorted_keys(
-            L_b0,
-            L_b1,
-            L_b2,
-            L_b3,
-            L_b4,
-            L_ids,
-            count,
-            new_entry_b0_sorted,
-            new_entry_b1_sorted,
-            new_entry_b2_sorted,
-            new_entry_b3_sorted,
-            new_entry_b4_sorted,
-            new_entry_ids_sorted,
-            num_new,
-        )
+            new_entry_b0_sorted = _scatter_drop(
+                new_entry_b0_sorted,
+                safe_new,
+                jnp.where(valid_new, s_b0, new_entry_b0_sorted[0]),
+                "intern_nodes.new_entry_b0",
+            )
+            new_entry_b1_sorted = _scatter_drop(
+                new_entry_b1_sorted,
+                safe_new,
+                jnp.where(valid_new, s_b1, new_entry_b1_sorted[0]),
+                "intern_nodes.new_entry_b1",
+            )
+            new_entry_b2_sorted = _scatter_drop(
+                new_entry_b2_sorted,
+                safe_new,
+                jnp.where(valid_new, s_b2, new_entry_b2_sorted[0]),
+                "intern_nodes.new_entry_b2",
+            )
+            new_entry_b3_sorted = _scatter_drop(
+                new_entry_b3_sorted,
+                safe_new,
+                jnp.where(valid_new, s_b3, new_entry_b3_sorted[0]),
+                "intern_nodes.new_entry_b3",
+            )
+            new_entry_b4_sorted = _scatter_drop(
+                new_entry_b4_sorted,
+                safe_new,
+                jnp.where(valid_new, s_b4, new_entry_b4_sorted[0]),
+                "intern_nodes.new_entry_b4",
+            )
+            new_entry_ids_sorted = _scatter_drop(
+                new_entry_ids_sorted,
+                safe_new,
+                jnp.where(valid_new, new_ids_for_sorted, new_entry_ids_sorted[0]),
+                "intern_nodes.new_entry_ids",
+            )
 
-        new_ledger = Ledger(
-            opcode=new_opcode,
-            arg1=new_arg1,
-            arg2=new_arg2,
-            keys_b0_sorted=new_keys_b0_sorted,
-            keys_b1_sorted=new_keys_b1_sorted,
-            keys_b2_sorted=new_keys_b2_sorted,
-            keys_b3_sorted=new_keys_b3_sorted,
-            keys_b4_sorted=new_keys_b4_sorted,
-            ids_sorted=new_ids_sorted,
-            count=new_count,
-            oom=new_oom,
-            corrupt=new_corrupt,
-        )
-        return final_ids, new_ledger
+            # Merge sorted new keys into the ledger's sorted key arrays.
+            (
+                new_keys_b0_sorted,
+                new_keys_b1_sorted,
+                new_keys_b2_sorted,
+                new_keys_b3_sorted,
+                new_keys_b4_sorted,
+                new_ids_sorted,
+            ) = _merge_sorted_keys(
+                L_b0,
+                L_b1,
+                L_b2,
+                L_b3,
+                L_b4,
+                L_ids,
+                count,
+                new_entry_b0_sorted,
+                new_entry_b1_sorted,
+                new_entry_b2_sorted,
+                new_entry_b3_sorted,
+                new_entry_b4_sorted,
+                new_entry_ids_sorted,
+                num_new,
+            )
+
+            new_ledger = Ledger(
+                opcode=new_opcode,
+                arg1=new_arg1,
+                arg2=new_arg2,
+                keys_b0_sorted=new_keys_b0_sorted,
+                keys_b1_sorted=new_keys_b1_sorted,
+                keys_b2_sorted=new_keys_b2_sorted,
+                keys_b3_sorted=new_keys_b3_sorted,
+                keys_b4_sorted=new_keys_b4_sorted,
+                ids_sorted=new_ids_sorted,
+                count=new_count,
+                oom=new_oom,
+                corrupt=new_corrupt,
+            )
+            return final_ids, new_ledger
+
+        return lax.cond(spawn_mismatch, _partial_alloc, _write_alloc, operand=None)
 
     return lax.cond(overflow, _overflow, _allocate, operand=None)
 

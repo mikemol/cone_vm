@@ -205,6 +205,22 @@ def test_intern_overflow_trips_corrupt_without_partial_alloc():
     _assert_seed_snapshot(new_ledger, snapshot)
 
 
+def test_intern_spawn_clipping_trips_corrupt(monkeypatch):
+    ledger = pv.init_ledger()
+    snapshot = _seed_snapshot(ledger)
+    monkeypatch.setattr(pv, "_FORCE_SPAWN_CLIP", True)
+    ops = jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32)
+    a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
+    a2 = jnp.array([0, 0], dtype=jnp.int32)
+    with jax.disable_jit():
+        ids, new_ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    assert pv.ledger_has_corrupt(new_ledger)
+    assert not bool(new_ledger.oom)
+    assert int(new_ledger.count) == int(ledger.count)
+    assert int(jnp.sum(ids)) == 0
+    _assert_seed_snapshot(new_ledger, snapshot)
+
+
 @pytest.mark.parametrize("bad_a1, bad_a2", [(-1, 0), (0, -1)])
 def test_intern_corrupt_flag_trips_on_negative_child_id(bad_a1, bad_a2):
     ledger = pv.init_ledger()

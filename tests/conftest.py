@@ -15,6 +15,15 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 MILESTONE_MARKERS = {"m1", "m2", "m3", "m4", "m5", "m6"}
+_MARKER_DESCRIPTIONS = {
+    "m1": "expected to pass from M1 onward",
+    "m2": "expected to pass from M2 onward",
+    "m3": "expected to pass from M3 onward",
+    "m4": "expected to pass from M4 onward",
+    "m5": "expected to pass from M5 onward",
+    "m6": "expected to pass from M6 onward",
+    "backend_matrix": "run the test on cpu and gpu (when available) in one session",
+}
 
 
 def _parse_milestone(value):
@@ -66,6 +75,8 @@ def pytest_addoption(parser):
 
 
 def pytest_configure(config):
+    for name, desc in _MARKER_DESCRIPTIONS.items():
+        config.addinivalue_line("markers", f"{name}: {desc}")
     milestone = _parse_milestone(config.getoption("--milestone"))
     if milestone is None:
         return
