@@ -466,6 +466,35 @@ Tasks:
 - Gate instrumentation behind a debug flag; treat it as a pure read-only pass.
 - Add a small metrics summary to telemetry without altering scheduling.
 
+### 3c) Telemetry Baselines (Host + Trace, record-only) (m4+)
+Objective: capture host/CPU telemetry baselines without enforcing budgets yet.
+
+Tests (before implementation):
+- Pytest: `test_audit_host_performance_intrinsic` (expected: host perf script emits JSON).
+- Pytest: `test_audit_memory_stability_intrinsic` (expected: memory script emits JSON).
+- Pytest: `test_collect_host_metrics_summary` (expected: host summary table).
+- Pytest: `test_collect_telemetry_baselines` (expected: baseline registry table).
+- Pytest: `test_capture_trace_dry_run` (null: trace capture dry-run succeeds).
+- Pytest: `test_trace_analyze_cpu_mode` (expected: CPU traces report without gating).
+
+Tasks:
+- Add `scripts/audit_host_performance.py` (cProfile → JSON, record-only).
+- Add `scripts/audit_memory_stability.py` (tracemalloc → JSON, record-only).
+- Add `scripts/capture_trace.py` to generate JAX traces for a small workload.
+- Extend `scripts/trace_analyze.py`:
+  - detect CPU traces,
+  - support `--report-only` and `--json-out`.
+- Add `scripts/collect_host_metrics.py` and `scripts/collect_telemetry_baselines.py`
+  to aggregate artifacts into Markdown summaries.
+- Wire CI (m4) to emit:
+  - `artifacts/host_perf_*.json`
+  - `artifacts/host_memory_*.json`
+  - `artifacts/trace_cpu_report.json`
+  and include summaries in `collected_report/telemetry_baselines.md`.
+Notes:
+- No performance budgets yet; record-only until baselines stabilize.
+- GPU telemetry remains optional; host/CPU paths must not require pynvml.
+
 ### 4) Data Model: Arena vs Manifest
 Objective: introduce the fluid arena state and keep it isolated from the
 existing `Manifest` for now.
