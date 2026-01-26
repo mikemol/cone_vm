@@ -46,6 +46,53 @@ def _build_suc_add_suc_frontier():
     return ledger, frontier
 
 
+def _build_frontier_permutation_sample():
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0, 0], dtype=jnp.int32),
+    )
+    suc_x_id = suc_ids[0]
+    y_id = suc_ids[1]
+    add_zero_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    add_suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([suc_x_id], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    mul_zero_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_MUL], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    mul_suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_MUL], dtype=jnp.int32),
+        jnp.array([suc_x_id], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    frontier = jnp.array(
+        [
+            add_zero_ids[0],
+            add_suc_ids[0],
+            mul_zero_ids[0],
+            mul_suc_ids[0],
+            suc_x_id,
+        ],
+        dtype=jnp.int32,
+    )
+    return ledger, frontier
+
+
 def _ledger_snapshot(ledger):
     return (
         jax.device_get(ledger.opcode),
@@ -517,6 +564,26 @@ def test_cycle_candidates_validate_stratum_trips_on_within_refs(monkeypatch):
     monkeypatch.setattr(pv, "intern_nodes", bad_intern)
     with pytest.raises(ValueError, match="Stratum contains within-tier references"):
         pv.cycle_candidates(ledger, frontier, validate_stratum=True)
+
+
+def test_cycle_candidates_frontier_permutation_invariant():
+    _require_cycle_candidates()
+    ledger_a, frontier_a = _build_frontier_permutation_sample()
+    ledger_b, frontier_b = _build_frontier_permutation_sample()
+    perm = jnp.array([2, 0, 4, 1, 3], dtype=jnp.int32)
+    inv_perm = jnp.argsort(perm)
+    frontier_perm = frontier_b[perm]
+
+    ledger_a, next_frontier_prov_a, _, q_map_a = pv.cycle_candidates(
+        ledger_a, pv._committed_ids(frontier_a)
+    )
+    next_frontier_a = pv.apply_q(q_map_a, next_frontier_prov_a).a
+
+    ledger_b, next_frontier_prov_b, _, q_map_b = pv.cycle_candidates(
+        ledger_b, pv._committed_ids(frontier_perm)
+    )
+    next_frontier_b = pv.apply_q(q_map_b, next_frontier_prov_b).a
+    assert bool(jnp.array_equal(next_frontier_a, next_frontier_b[inv_perm]))
 
 
 @pytest.mark.m3
