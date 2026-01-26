@@ -20,7 +20,7 @@ the current cross-version audit.
 ## Goals
 - Establish the Ledger + candidate pipeline as the canonical execution path.
 - Converge on CNF-2 symmetric rewrite semantics with a fixed-arity candidate
-  pipeline (slot 1 disabled until continuation/strata support).
+  pipeline (slot1 enabled once hyperstrata visibility is enforced; m1-m2 keep disabled).
 - Enforce univalence: full-key equality for interning and no truncation aliasing.
 - Introduce self-hosted CD coordinates as interned CNF-2 objects and define
   aggregation as coordinate-space normalization.
@@ -66,7 +66,7 @@ These are already in effect in code/tests and are treated as non-negotiable.
 ## Semantic Commitments (Staged)
 - CNF-2 symmetric rewrite semantics are the target for BSP. Every rewrite site
   emits exactly two candidate slots (enabled or disabled).
-- Keep candidate slot 1 disabled until continuation/strata support lands.
+- Slot1 continuation is enabled at m3 once hyperstrata visibility is enforced; m1-m2 keep it disabled.
 - m1 uses the intrinsic cycle path; CNF-2 pipeline is gated off until m2.
 - Univalence is enforced by full-key equality (hash as hint only) and
   no truncation aliasing in key encoding.
@@ -372,10 +372,16 @@ Tasks:
 - Slot semantics:
   - `slot0` = local rewrite
   - `slot1` = continuation / wrapper / second-stage
+- Hyperstrata order (visibility boundary):
+  - `slot0` writes stratum0 (`s=0`).
+  - `slot1` reads only pre-step rows + stratum0, writes stratum1 (`s=1`).
+  - wrapper emission reads only pre-step + prior strata, writes stratum2 (`s=2`).
 - Emission invariant: buffer shape is `2 * |frontier|` every cycle.
 - Candidate emission must be frontier-permutation invariant (up to slot layout)
   and independent of BSPˢ scheduling choices.
-- m3 invariant: `enabled[slot1] == 0` always; slot1 payloads are ignored.
+- m2 invariant: `enabled[slot1] == 0` always; slot1 payloads are ignored.
+- m3 invariant: slot1 is enabled under the hyperstrata visibility rule; slot1
+  nodes must only reference ids `< start(stratum1)`.
 - Implement compaction (enabled mask + prefix sums).
 - Intern compacted candidates via `intern_nodes` (can be fused in m3).
 - Optional debug: track origin site indices for strata violation tracing.
@@ -403,7 +409,8 @@ Tasks:
   in the same stratum (topological order), gated by explicit opt-in.
 - Add validators that enforce the selected rule, scanning only up to
   `ledger.count`.
-- Wire validators into `cycle_candidates` (guarded by a debug flag).
+- Wire validators into `cycle_candidates` (guarded by a debug flag); when
+  slot1 is enabled, validate stratum0/stratum1 and each wrapper micro-stratum.
 - Add a `commit_stratum` boundary:
   - Validate strata, project through `q`, intern, and swizzle provisional ids.
   - Treat projection as the denotation boundary for evaluator emissions.
@@ -622,6 +629,7 @@ Tasks:
   - `commit_stratum`: validate → project `q` → intern → swizzle ids.
 - **m3: Canonical rewrites + denotation invariance harness**
   - Canonical rewrites live in Ledger space (rewrite+intern).
+  - Slot1 continuation is enabled under the hyperstrata visibility rule.
   - Denotation invariance across unsorted, rank, and morton/block schedulers.
 - **m4: Coordinates as interned objects + aggregation**
   - `OP_COORD_*` objects and idempotent parity normalization.
@@ -656,6 +664,7 @@ m3:
 - Denotation matches ledger intrinsic on the shared suite.
 - Denotation invariance across unsorted/rank/morton/block schedulers.
 - Pre-step immutability holds under CNF-2 cycles (hyperstrata visibility rule).
+- Slot1 continuation respects hyperstrata visibility (reads pre-step + stratum0 only).
 m4:
 - Coordinate normalization is idempotent and confluent on small inputs.
 - Coordinate lifting limited to `OP_ADD`.

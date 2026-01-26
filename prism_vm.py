@@ -333,7 +333,7 @@ def _cnf2_enabled():
 
 
 def _cnf2_slot1_enabled():
-    # Slot1 continuation is staged for m2+ unless explicitly enabled.
+    # Slot1 continuation is staged for m3+ (hyperstrata visibility rule).
     # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
     value = os.environ.get("PRISM_ENABLE_CNF2_SLOT1", "").strip().lower()
     if value in ("1", "true", "yes", "on"):
@@ -341,7 +341,7 @@ def _cnf2_slot1_enabled():
     milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
     if milestone is None:
         milestone = _read_pytest_milestone()
-    return milestone is not None and milestone >= 2
+    return milestone is not None and milestone >= 3
 
 
 def _default_bsp_mode():
@@ -931,7 +931,8 @@ def cycle_candidates(
     val_x = ledger.arg1[suc_node]
     val_y = jnp.where(suc_on_a1, r_a2, r_a1)
 
-    # Slot1 is the continuation slot in CNF-2; enabled starting in m2.
+    # Slot1 is the continuation slot in CNF-2; enabled starting in m3 once
+    # hyperstrata visibility is enforced (slot1 reads only from slot0 + pre-step).
     # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
     slot1_gate = _cnf2_slot1_enabled()
     slot1_add = is_add_suc & slot1_gate
@@ -1000,18 +1001,20 @@ def cycle_candidates(
     stratum2 = Stratum(
         start=jnp.int32(start2_i), count=jnp.int32(count2_i)
     )
+    validate = validate_stratum or _guards_enabled()
     ledger2, _, q_map = commit_stratum(
-        ledger2, stratum0, validate=validate_stratum
+        ledger2, stratum0, validate=validate
     )
     ledger2, _, q_map = commit_stratum(
-        ledger2, stratum1, prior_q=q_map, validate=validate_stratum
+        ledger2, stratum1, prior_q=q_map, validate=validate
     )
+    # Wrapper strata are micro-strata in s=2; commit in order for hyperstrata visibility.
     for start_i, count_i in wrap_strata:
         micro_stratum = Stratum(
             start=jnp.int32(start_i), count=jnp.int32(count_i)
         )
         ledger2, _, q_map = commit_stratum(
-            ledger2, micro_stratum, prior_q=q_map, validate=validate_stratum
+            ledger2, micro_stratum, prior_q=q_map, validate=validate
         )
     next_frontier = _provisional_ids(next_frontier)
     _host_raise_if_bad(ledger2, "Ledger capacity exceeded during cycle_candidates")

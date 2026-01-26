@@ -917,6 +917,11 @@ They:
 * are erased by `q`
 * enforce immutability and causality
 
+Visibility rule (hyperstrata order):
+
+* candidate emission at `(s,t)` reads only from `L_{s,t-1}` (or `L_{s-1,t_max}` when `t=0`)
+* in CNF-2, `slot0 -> slot1 -> wrap` is the `s`-ordering of hyperstrata
+
 ### Erasure by `q`
 
 ```
@@ -935,6 +940,8 @@ q((s,t)-staged data) = semantic value
 ### Test Obligations
 
 - (m3) `tests/test_candidate_cycle.py::test_cycle_candidates_does_not_mutate_preexisting_rows`
+- (m3) `tests/test_candidate_cycle.py::test_cycle_candidates_add_suc`
+- (m3) `tests/test_candidate_cycle.py::test_cycle_candidates_mul_suc`
 - (m3) `tests/test_cycle_intrinsic.py::test_cycle_intrinsic_does_not_mutate_preexisting_rows`
 - (m2) `tests/test_candidate_cycle.py::test_cycle_candidates_validate_stratum_trips_on_within_refs`
 - (m1) `tests/test_ledger_intern.py::test_intern_nodes_never_mutates_pre_step_segment`
