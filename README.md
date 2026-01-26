@@ -110,6 +110,14 @@ Run the suite:
 mise exec -- pytest
 ```
 
+## Telemetry
+Summarize damage metrics from CI artifacts (or local runs):
+```
+mise exec -- python scripts/collect_damage_metrics.py \
+  --base collected_report/raw \
+  --out collected_report/damage_metrics_summary.md
+```
+
 ## Policy
 This repo uses a self-hosted runner. Read `POLICY_SEED.md` before changing any
 workflow or CI behavior. Install advisory hooks with:
