@@ -45,6 +45,14 @@ def _skip_if_no_debug_callback():
         pytest.skip("jax.debug.callback not available")
 
 
+def test_scatter_guard_sanity_requires_debug_callback():
+    assert pv._TEST_GUARDS, "PRISM_TEST_GUARDS must be enabled for guard tests"
+    _skip_if_no_debug_callback()
+    x = jnp.zeros(4, dtype=jnp.int32)
+    with pytest.raises(RuntimeError, match=r"scatter index out of bounds"):
+        _scatter_bad_oob(x).block_until_ready()
+
+
 def test_scatter_guard_negative_index_raises():
     _skip_if_no_debug_callback()
     x = jnp.zeros(4, dtype=jnp.int32)
