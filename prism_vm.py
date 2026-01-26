@@ -297,6 +297,14 @@ def _bincount_256(x, weights):
     return out.at[x].add(weights)
 
 
+def _bincount_32(x, weights):
+    # Fixed-size bincount keeps JIT shapes static across JAX versions.
+    if _BINCOUNT_HAS_LENGTH:
+        return jnp.bincount(x, weights=weights, minlength=32, length=32)
+    out = jnp.zeros(32, dtype=weights.dtype)
+    return out.at[x].add(weights)
+
+
 def _parse_milestone_value(value):
     if not value:
         return None
@@ -580,6 +588,31 @@ def _damage_metrics_update(arena, tile_size):
     _damage_metrics_edge_cross += edge_cross
 
 
+@jit
+def _blind_spectral_probe(arena):
+    # Entropyₐ: BSPˢ observer that measures spatial XOR magnitudes.
+    size = arena.opcode.shape[0]
+    idx = jnp.arange(size, dtype=jnp.uint32)
+    count = arena.count.astype(jnp.uint32)
+    live = idx < count
+    hot = (arena.rank == RANK_HOT) & live
+    hot_w = hot.astype(jnp.float32)
+    arg1 = arena.arg1.astype(jnp.uint32)
+    arg2 = arena.arg2.astype(jnp.uint32)
+    xor1 = jnp.bitwise_xor(idx, arg1)
+    xor2 = jnp.bitwise_xor(idx, arg2)
+
+    def _msb_index(x):
+        x_f = jnp.where(x > 0, jnp.log2(x.astype(jnp.float32)), 0.0)
+        return jnp.floor(x_f).astype(jnp.int32)
+
+    m1 = jnp.clip(_msb_index(xor1), 0, 31)
+    m2 = jnp.clip(_msb_index(xor2), 0, 31)
+    hist = _bincount_32(m1, hot_w) + _bincount_32(m2, hot_w)
+    spectrum = hist / (jnp.sum(hist) + jnp.float32(1e-6))
+    return lax.stop_gradient(spectrum)
+
+
 def _gpu_metrics_enabled():
     value = os.environ.get("PRISM_GPU_METRICS", "").strip().lower()
     return value in ("1", "true", "yes", "on")
@@ -682,6 +715,7 @@ class Arena(NamedTuple):
     rank:   jnp.ndarray
     count:  jnp.ndarray
     oom: jnp.ndarray
+    servo: jnp.ndarray
 
 class Ledger(NamedTuple):
     opcode: jnp.ndarray
@@ -765,6 +799,7 @@ def init_arena():
         rank=jnp.full(LEDGER_CAPACITY, RANK_FREE, dtype=jnp.int8),
         count=jnp.array(1, dtype=jnp.int32),
         oom=jnp.array(False, dtype=jnp.bool_),
+        servo=jnp.zeros(3, dtype=jnp.uint32),
     )
     arena = arena._replace(
         opcode=arena.opcode.at[1].set(OP_ZERO),
@@ -2183,7 +2218,15 @@ def _apply_perm_and_swizzle(arena, perm):
     _guard_slot0_perm(perm, inv_perm, "swizzle.perm")
     _guard_null_row(new_ops, swizzled_arg1, swizzled_arg2, "swizzle.row0")
     return (
-        Arena(new_ops, swizzled_arg1, swizzled_arg2, new_rank, arena.count, arena.oom),
+        Arena(
+            new_ops,
+            swizzled_arg1,
+            swizzled_arg2,
+            new_rank,
+            arena.count,
+            arena.oom,
+            arena.servo,
+        ),
         inv_perm,
     )
 
@@ -2624,7 +2667,13 @@ def op_interact(arena):
     new_count = arena.count + total_spawn
     _guard_max(new_count, cap, "arena.count")
     return Arena(
-        final_ops, final_a1, final_a2, arena.rank, new_count, new_oom
+        final_ops,
+        final_a1,
+        final_a2,
+        arena.rank,
+        new_count,
+        new_oom,
+        arena.servo,
     )
 
 @jit

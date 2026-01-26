@@ -148,6 +148,8 @@ def _make_random_arena(
         arg2=jnp.array(arg2, dtype=jnp.int32),
         rank=jnp.full(size, pv.RANK_FREE, dtype=jnp.int8),
         count=jnp.array(active_count, dtype=jnp.int32),
+        oom=jnp.array(False, dtype=jnp.bool_),
+        servo=jnp.zeros(3, dtype=jnp.uint32),
     )
 
 
@@ -183,6 +185,8 @@ def _make_hierarchy_arena(
         arg2=jnp.array(arg2, dtype=jnp.int32),
         rank=jnp.full(size, pv.RANK_FREE, dtype=jnp.int8),
         count=jnp.array(active_count, dtype=jnp.int32),
+        oom=jnp.array(False, dtype=jnp.bool_),
+        servo=jnp.zeros(3, dtype=jnp.uint32),
     )
 
 
