@@ -182,10 +182,12 @@ jobs:
           python scripts/trace_analyze.py \
             --report-only --json-out artifacts/trace_cpu_report.json
       - name: Upload pytest artifact
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: pytest-${{ matrix.milestone }}
           path: artifacts/
+          if-no-files-found: ignore
 
   tests-gpu:
     needs: [changes, policy-check, audit]
@@ -252,10 +254,12 @@ jobs:
             --inputs artifacts/damage_metrics_gpu.txt artifacts/damage_metrics_tile32_gpu.txt \
             --out artifacts/damage_metrics_delta_gpu.txt
       - name: Upload pytest artifact (gpu)
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: pytest-gpu-${{ matrix.milestone }}
           path: artifacts/
+          if-no-files-found: ignore
 
   collect-report:
     runs-on: ubuntu-latest
