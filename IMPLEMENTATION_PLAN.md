@@ -489,6 +489,8 @@ Tasks:
   - support `--report-only` and `--json-out`.
 - Add `scripts/collect_host_metrics.py` and `scripts/collect_telemetry_baselines.py`
   to aggregate artifacts into Markdown summaries.
+- Record run metadata (python/jax/env/flags) into `telemetry_metadata_*.json`
+  and include it in the telemetry baselines table.
 - Wire CI (m4) to emit:
   - `artifacts/host_perf_*.json`
   - `artifacts/host_memory_*.json`
@@ -520,6 +522,7 @@ Tasks:
 - Apply masked Morton sorting (Renormˢ):
   - `key = morton(ids) & servo_mask`,
   - **stable** sort via composite key `(masked_key, original_index)` on GPU.
+- Gate servo enablement behind `PRISM_ENABLE_SERVO` or milestone ≥ m5 (default off).
 - Servo updates are BSPˢ gauge transforms; must commute with `q` and preserve denotation:
   - `q ∘ Servo = q`
   - `q ∘ Renormˢ = q`
