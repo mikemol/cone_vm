@@ -342,7 +342,8 @@ def _cnf2_enabled():
 
 
 def _cnf2_slot1_enabled():
-    # Slot1 continuation is staged for m2+ (hyperstrata visibility rule).
+    # Slot1 continuation is staged for m2+; hyperstrata visibility is enforced
+    # under test guards (m3 normative) to justify continuation enablement.
     # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
     value = os.environ.get("PRISM_ENABLE_CNF2_SLOT1", "").strip().lower()
     if value in ("1", "true", "yes", "on"):
@@ -1146,8 +1147,9 @@ def cycle_candidates(
     val_x = ledger.arg1[suc_node]
     val_y = jnp.where(suc_on_a1, r_a2, r_a1)
 
-    # Slot1 is the continuation slot in CNF-2; enabled starting in m2 once
-    # hyperstrata visibility is enforced (slot1 reads only from slot0 + pre-step).
+    # Slot1 is the continuation slot in CNF-2; enabled starting in m2. Under
+    # test guards (m3 normative), hyperstrata visibility is enforced so slot1
+    # reads only from slot0 + pre-step.
     # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
     slot1_gate = _cnf2_slot1_enabled()
     slot1_add = is_add_suc & slot1_gate
