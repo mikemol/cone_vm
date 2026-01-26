@@ -100,7 +100,7 @@ def _estimate_watch_duration(
             "--limit",
             str(history_limit),
             "--json",
-            "status,createdAt,updatedAt,runStartedAt",
+            "status,createdAt,updatedAt,startedAt",
         ],
         env,
     )
@@ -108,7 +108,7 @@ def _estimate_watch_duration(
     for run in runs:
         if run.get("status") != "completed":
             continue
-        start = _parse_iso8601(run.get("runStartedAt") or run.get("createdAt"))
+        start = _parse_iso8601(run.get("startedAt") or run.get("createdAt"))
         end = _parse_iso8601(run.get("updatedAt"))
         if start and end and end >= start:
             durations.append((end - start).total_seconds())
@@ -125,7 +125,7 @@ def _fetch_run_status(run_id: str, env: dict) -> dict:
             "view",
             run_id,
             "--json",
-            "status,conclusion,createdAt,runStartedAt,updatedAt",
+            "status,conclusion,createdAt,startedAt,updatedAt",
         ],
         env,
     )
@@ -142,7 +142,7 @@ def _compute_deadline(
 ) -> float | None:
     if expected_duration_s is None:
         return None
-    start_at = _parse_iso8601(status.get("runStartedAt") or status.get("createdAt"))
+    start_at = _parse_iso8601(status.get("startedAt") or status.get("createdAt"))
     now = datetime.now(timezone.utc)
     if start_at is None:
         return (now.timestamp() + expected_duration_s * 1.3 + 60)
@@ -278,9 +278,13 @@ def main() -> int:
         else:
             timeout_raw = args.watch_timeout.strip().lower()
             if timeout_raw == "auto":
-                expected_duration = _estimate_watch_duration(
-                    args.workflow, branch, env, args.watch_history
-                )
+                try:
+                    expected_duration = _estimate_watch_duration(
+                        args.workflow, branch, env, args.watch_history
+                    )
+                except RuntimeError as exc:
+                    print(f"ci_watch: duration estimate failed: {exc}")
+                    expected_duration = None
             else:
                 expected_duration = int(timeout_raw) if timeout_raw != "0" else None
             print(
