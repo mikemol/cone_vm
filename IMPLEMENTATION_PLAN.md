@@ -580,6 +580,9 @@ Tasks:
 - Add `op_morton(arena)`:
   - Define a coordinate scheme (initially derive from index or a stored
     coordinate buffer).
+  - Default scheme: index-derived `x=idx`, `y=0` (`PRISM_ARENA_COORD_SCHEME=index`).
+  - Optional scheme: grid (`PRISM_ARENA_COORD_SCHEME=grid`,
+    `PRISM_ARENA_COORD_GRID_LOG2=<k>`).
 - Compose sort key:
   - `sort_key = (rank << high_bits) | morton`.
 - Ensure stable ordering inside ranks when Morton keys collide.

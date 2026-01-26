@@ -48,3 +48,14 @@ def test_morton_disabled_matches_rank_sort():
     assert bool(jnp.array_equal(with_morton.arg2, baseline.arg2))
     assert bool(jnp.array_equal(with_morton.rank, baseline.rank))
     assert int(with_morton.count) == int(baseline.count)
+
+
+def test_morton_index_scheme_matches_swizzle():
+    if getattr(pv, "_ARENA_COORD_SCHEME", "index") != "index":
+        pytest.skip("index coord scheme not active")
+    arena = pv.init_arena()
+    morton = pv.op_morton(arena)
+    size = arena.opcode.shape[0]
+    idx = jnp.arange(size, dtype=jnp.uint32)
+    expected = pv.swizzle_2to1(idx, jnp.zeros_like(idx))
+    assert bool(jnp.array_equal(morton, expected))
