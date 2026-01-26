@@ -129,9 +129,15 @@ jobs:
           PRISM_DAMAGE_METRICS=1 PRISM_DAMAGE_TILE_SIZE=2 \
             python prism_vm.py --mode arena --morton --cycles 2 \
             tests/damage_metrics.txt 2>&1 | tee artifacts/damage_metrics.txt
+          PRISM_DAMAGE_METRICS=1 PRISM_DAMAGE_TILE_SIZE=32 \
+            python prism_vm.py --mode arena --morton --cycles 2 \
+            tests/damage_metrics.txt 2>&1 | tee artifacts/damage_metrics_tile32.txt
           PRISM_DAMAGE_METRICS=0 \
             python prism_vm.py --mode arena --morton --cycles 2 \
             tests/damage_metrics_off.txt 2>&1 | tee artifacts/damage_metrics_off.txt
+          python scripts/damage_metrics_delta.py \
+            --inputs artifacts/damage_metrics.txt artifacts/damage_metrics_tile32.txt \
+            --out artifacts/damage_metrics_delta.txt
       - name: Upload pytest artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -193,9 +199,15 @@ jobs:
           PRISM_DAMAGE_METRICS=1 PRISM_DAMAGE_TILE_SIZE=2 \
             mise exec -- python prism_vm.py --mode arena --morton --cycles 2 \
             tests/damage_metrics.txt 2>&1 | tee artifacts/damage_metrics_gpu.txt
+          PRISM_DAMAGE_METRICS=1 PRISM_DAMAGE_TILE_SIZE=32 \
+            mise exec -- python prism_vm.py --mode arena --morton --cycles 2 \
+            tests/damage_metrics.txt 2>&1 | tee artifacts/damage_metrics_tile32_gpu.txt
           PRISM_DAMAGE_METRICS=0 \
             mise exec -- python prism_vm.py --mode arena --morton --cycles 2 \
             tests/damage_metrics_off.txt 2>&1 | tee artifacts/damage_metrics_off_gpu.txt
+          mise exec -- python scripts/damage_metrics_delta.py \
+            --inputs artifacts/damage_metrics_gpu.txt artifacts/damage_metrics_tile32_gpu.txt \
+            --out artifacts/damage_metrics_delta_gpu.txt
       - name: Upload pytest artifact (gpu)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -221,51 +233,9 @@ jobs:
           sed 's|^|  - |' collected_report/contents.txt >> collected_report/README.txt
       - name: Summarize damage metrics telemetry
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          
-          base = Path("collected_report/raw")
-          out_path = Path("collected_report/damage_metrics_summary.md")
-          files = sorted(base.rglob("damage_metrics*.txt"))
-          pattern = re.compile(
-              r"Damage\\s*:\\s*cycles=(\\d+)\\s+hot=(\\d+)\\s+"
-              r"edges=(\\d+)/(\\d+)\\s+rate=([0-9.]+)\\s+tile=(\\d+)"
-          )
-          rows = []
-          for path in files:
-              try:
-                  text = path.read_text(encoding="utf-8")
-              except Exception:
-                  continue
-              for line in text.splitlines():
-                  match = pattern.search(line)
-                  if match:
-                      cycles, hot, edge_cross, edge_total, rate, tile = match.groups()
-                      rows.append(
-                          (
-                              str(path.relative_to(base)),
-                              cycles,
-                              hot,
-                              edge_cross,
-                              edge_total,
-                              rate,
-                              tile,
-                          )
-                      )
-          lines = [
-              "# Damage Metrics Summary",
-              "",
-              "| file | cycles | hot | edge_cross | edge_total | rate | tile |",
-              "| --- | --- | --- | --- | --- | --- | --- |",
-          ]
-          if rows:
-              for row in rows:
-                  lines.append("| " + " | ".join(row) + " |")
-          else:
-              lines.append("| (none) | 0 | 0 | 0 | 0 | 0.0 | 0 |")
-          out_path.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
-          PY
+          python3 scripts/collect_damage_metrics.py \
+            --base collected_report/raw \
+            --out collected_report/damage_metrics_summary.md
       - name: Upload collected report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
