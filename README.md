@@ -152,6 +152,13 @@ mise exec -- python scripts/collect_telemetry_baselines.py \
   --out collected_report/telemetry_baselines.md
 ```
 
+Unpack a collected-report zip locally:
+```
+mise exec -- python scripts/unpack_collected_report.py \
+  --zip "artifacts/collected-report (2).zip" \
+  --out-dir artifacts
+```
+
 ## Policy
 This repo uses a self-hosted runner. Read `POLICY_SEED.md` before changing any
 workflow or CI behavior. Install advisory hooks with:
