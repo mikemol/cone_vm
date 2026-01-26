@@ -219,6 +219,53 @@ jobs:
           printf "Collected report for milestone audit and tests.\n" > collected_report/README.txt
           printf "Contents:\n" >> collected_report/README.txt
           sed 's|^|  - |' collected_report/contents.txt >> collected_report/README.txt
+      - name: Summarize damage metrics telemetry
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          
+          base = Path("collected_report/raw")
+          out_path = Path("collected_report/damage_metrics_summary.md")
+          files = sorted(base.rglob("damage_metrics*.txt"))
+          pattern = re.compile(
+              r"Damage\\s*:\\s*cycles=(\\d+)\\s+hot=(\\d+)\\s+"
+              r"edges=(\\d+)/(\\d+)\\s+rate=([0-9.]+)\\s+tile=(\\d+)"
+          )
+          rows = []
+          for path in files:
+              try:
+                  text = path.read_text(encoding="utf-8")
+              except Exception:
+                  continue
+              for line in text.splitlines():
+                  match = pattern.search(line)
+                  if match:
+                      cycles, hot, edge_cross, edge_total, rate, tile = match.groups()
+                      rows.append(
+                          (
+                              str(path.relative_to(base)),
+                              cycles,
+                              hot,
+                              edge_cross,
+                              edge_total,
+                              rate,
+                              tile,
+                          )
+                      )
+          lines = [
+              "# Damage Metrics Summary",
+              "",
+              "| file | cycles | hot | edge_cross | edge_total | rate | tile |",
+              "| --- | --- | --- | --- | --- | --- | --- |",
+          ]
+          if rows:
+              for row in rows:
+                  lines.append("| " + " | ".join(row) + " |")
+          else:
+              lines.append("| (none) | 0 | 0 | 0 | 0 | 0.0 | 0 |")
+          out_path.write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+          PY
       - name: Upload collected report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
