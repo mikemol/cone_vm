@@ -318,6 +318,8 @@ canon( Aggregate𝚌 (x) ) = Aggregate𝚌 ( canon(x) )
 - (m4) `tests/test_coord_ops.py::test_coord_xor_parity_cancel`
 - (m4) `tests/test_coord_ops.py::test_coord_pair_dedup`
 - (m4) `tests/test_coord_batch.py::test_coord_xor_batch_uses_single_intern_call`
+- (m4) `tests/test_coord_aggregate.py::test_coord_add_aggregates_in_cycle_candidates`
+- (m4) `tests/test_coord_aggregate.py::test_coord_mul_does_not_aggregate`
 
 ---
 

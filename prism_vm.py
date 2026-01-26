@@ -901,8 +901,44 @@ def cycle_candidates(
 
     rewrite_ids, depths = jax.vmap(_peel_one)(frontier_ids.a)
 
-    candidates = emit_candidates(ledger, rewrite_ids)
+    r_ops = ledger.opcode[rewrite_ids]
+    r_a1 = ledger.arg1[rewrite_ids]
+    r_a2 = ledger.arg2[rewrite_ids]
+    op_a1 = ledger.opcode[r_a1]
+    op_a2 = ledger.opcode[r_a2]
+    is_coord_a1 = (
+        (op_a1 == OP_COORD_ZERO)
+        | (op_a1 == OP_COORD_ONE)
+        | (op_a1 == OP_COORD_PAIR)
+    )
+    is_coord_a2 = (
+        (op_a2 == OP_COORD_ZERO)
+        | (op_a2 == OP_COORD_ONE)
+        | (op_a2 == OP_COORD_PAIR)
+    )
+    is_coord_add = (r_ops == OP_ADD) & is_coord_a1 & is_coord_a2
+
+    # Coordinate aggregation (Aggregate𝚌) runs before stratum0 to preserve
+    # strict strata while canonicalizing coord-add payloads.
+    coord_ids = jnp.zeros_like(rewrite_ids)
+    coord_enabled = is_coord_add.astype(jnp.int32)
+    coord_idx, coord_valid, coord_count = _candidate_indices(coord_enabled)
+    coord_count_i = _host_int_value(coord_count)
+    if coord_count_i > 0:
+        coord_idx_safe = jnp.where(coord_valid, coord_idx, 0)
+        coord_left = r_a1[coord_idx_safe][:coord_count_i]
+        coord_right = r_a2[coord_idx_safe][:coord_count_i]
+        coord_ids_compact, ledger = coord_xor_batch(
+            ledger, coord_left, coord_right
+        )
+        coord_ids_full = jnp.zeros_like(coord_idx_safe)
+        coord_ids_full = coord_ids_full.at[:coord_count_i].set(coord_ids_compact)
+        coord_ids = _scatter_compacted_ids(
+            coord_idx, coord_ids_full, coord_count, num_frontier
+        )
+
     start0 = ledger.count.astype(jnp.int32)
+    candidates = emit_candidates(ledger, rewrite_ids)
     compacted0, count0, comp_idx0 = compact_candidates_with_index(candidates)
     enabled0 = compacted0.enabled.astype(jnp.int32)
     ops0 = jnp.where(enabled0, compacted0.opcode, jnp.int32(0))
@@ -915,12 +951,7 @@ def cycle_candidates(
     # cycle_candidates relies on this; see IMPLEMENTATION_PLAN.md.
     idx0 = jnp.arange(num_frontier, dtype=jnp.int32) * 2
     slot0_ids = ids_full0[idx0]
-
-    r_ops = ledger.opcode[rewrite_ids]
-    r_a1 = ledger.arg1[rewrite_ids]
-    r_a2 = ledger.arg2[rewrite_ids]
-    op_a1 = ledger.opcode[r_a1]
-    op_a2 = ledger.opcode[r_a2]
+    slot0_ids = jnp.where(is_coord_add, coord_ids, slot0_ids)
     is_add = r_ops == OP_ADD
     is_mul = r_ops == OP_MUL
     is_suc_a1 = op_a1 == OP_SUC
@@ -973,6 +1004,7 @@ def cycle_candidates(
     base_next = jnp.where(is_mul_zero, jnp.int32(ZERO_PTR), base_next)
     base_next = jnp.where(slot1_add, slot1_ids, base_next)
     base_next = jnp.where(slot1_mul, slot1_ids, base_next)
+    base_next = jnp.where(is_coord_add, coord_ids, base_next)
 
     wrap_strata = []
     wrap_depths = depths
