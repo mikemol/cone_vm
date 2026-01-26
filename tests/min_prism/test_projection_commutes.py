@@ -85,6 +85,36 @@ def test_projection_commutes_cycle_intrinsic():
     assert lhs_key == rhs_key
 
 
+def test_projection_commutes_cycle_intrinsic_two_steps():
+    ledger, frontier, max_id = _build_ledger_with_tail()
+    full_ledger, full_frontier = pv.cycle_intrinsic(ledger, frontier)
+    full_ledger, full_frontier = pv.cycle_intrinsic(full_ledger, full_frontier)
+    lhs_ledger, lhs_map = mph.project_ledger(full_ledger, max_id)
+    lhs_state = mph.canon_state_ledger(lhs_ledger)
+    lhs_frontier = mph.map_ids(full_frontier, lhs_map)
+
+    proj_ledger, mapping = mph.project_ledger(ledger, max_id)
+    proj_frontier = mph.map_ids(frontier, mapping)
+    proj_ledger, proj_frontier = pv.cycle_intrinsic(
+        proj_ledger, proj_frontier
+    )
+    proj_ledger, proj_frontier = pv.cycle_intrinsic(
+        proj_ledger, proj_frontier
+    )
+    proj_ledger, rhs_map = mph.project_ledger(proj_ledger, max_id)
+    rhs_state = mph.canon_state_ledger(proj_ledger)
+    proj_frontier = mph.map_ids(proj_frontier, rhs_map)
+    assert lhs_state == rhs_state
+
+    lhs_key = mph.structural_key_for_id(
+        lhs_ledger, int(lhs_frontier[0])
+    )
+    rhs_key = mph.structural_key_for_id(
+        proj_ledger, int(proj_frontier[0])
+    )
+    assert lhs_key == rhs_key
+
+
 def test_projection_commutes_cycle_candidates():
     ledger, frontier, max_id = _build_ledger_with_tail()
     frontier = pv._committed_ids(frontier)
@@ -98,6 +128,46 @@ def test_projection_commutes_cycle_candidates():
 
     proj_ledger, mapping = mph.project_ledger(ledger, max_id)
     proj_frontier = pv._committed_ids(mph.map_ids(frontier.a, mapping))
+    proj_ledger, proj_frontier_prov, _, proj_q = pv.cycle_candidates(
+        proj_ledger, proj_frontier
+    )
+    proj_frontier = pv.apply_q(proj_q, proj_frontier_prov).a
+    proj_ledger, rhs_map = mph.project_ledger(proj_ledger, max_id)
+    rhs_state = mph.canon_state_ledger(proj_ledger)
+    proj_frontier = mph.map_ids(proj_frontier, rhs_map)
+    assert lhs_state == rhs_state
+
+    lhs_key = mph.structural_key_for_id(
+        lhs_ledger, int(lhs_frontier[0])
+    )
+    rhs_key = mph.structural_key_for_id(
+        proj_ledger, int(proj_frontier[0])
+    )
+    assert lhs_key == rhs_key
+
+
+def test_projection_commutes_cycle_candidates_two_steps():
+    ledger, frontier, max_id = _build_ledger_with_tail()
+    frontier_ids = pv._committed_ids(frontier)
+    full_ledger, full_frontier_prov, _, q_map = pv.cycle_candidates(
+        ledger, frontier_ids
+    )
+    full_frontier = pv.apply_q(q_map, full_frontier_prov).a
+    full_frontier = pv._committed_ids(full_frontier)
+    full_ledger, full_frontier_prov, _, q_map = pv.cycle_candidates(
+        full_ledger, full_frontier
+    )
+    full_frontier = pv.apply_q(q_map, full_frontier_prov).a
+    lhs_ledger, lhs_map = mph.project_ledger(full_ledger, max_id)
+    lhs_state = mph.canon_state_ledger(lhs_ledger)
+    lhs_frontier = mph.map_ids(full_frontier, lhs_map)
+
+    proj_ledger, mapping = mph.project_ledger(ledger, max_id)
+    proj_frontier = pv._committed_ids(mph.map_ids(frontier, mapping))
+    proj_ledger, proj_frontier_prov, _, proj_q = pv.cycle_candidates(
+        proj_ledger, proj_frontier
+    )
+    proj_frontier = pv._committed_ids(pv.apply_q(proj_q, proj_frontier_prov).a)
     proj_ledger, proj_frontier_prov, _, proj_q = pv.cycle_candidates(
         proj_ledger, proj_frontier
     )

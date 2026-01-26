@@ -307,6 +307,60 @@ def test_cycle_candidates_slot1_visibility_boundaries():
 
 
 @pytest.mark.m3
+def test_cycle_candidates_slot1_visibility_across_cycles():
+    _require_cycle_candidates()
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([1, 1], dtype=jnp.int32),
+        jnp.array([0, 0], dtype=jnp.int32),
+    )
+    suc_x_id = suc_ids[0]
+    y_id = suc_ids[1]
+    add_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([suc_x_id], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    mul_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_MUL], dtype=jnp.int32),
+        jnp.array([suc_x_id], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    frontier = pv._committed_ids(
+        jnp.array([add_ids[0], mul_ids[0]], dtype=jnp.int32)
+    )
+    saw_slot1 = False
+    for _ in range(3):
+        ledger, frontier_prov, strata, q_map = pv.cycle_candidates(
+            ledger, frontier, validate_stratum=True
+        )
+        stratum0, stratum1, _ = strata
+        if int(stratum1.count) == 0:
+            frontier = _commit_frontier(frontier_prov, q_map)
+            continue
+        saw_slot1 = True
+        start0 = int(stratum0.start)
+        start1 = int(stratum1.start)
+        end0 = start0 + int(stratum0.count)
+        ids = stratum1.start + jnp.arange(int(stratum1.count), dtype=jnp.int32)
+        a1 = jax.device_get(ledger.arg1[ids])
+        a2 = jax.device_get(ledger.arg2[ids])
+        assert (a1 < start1).all()
+        assert (a2 < start1).all()
+        if int(stratum0.count) > 0:
+            slot0_ref = ((a1 >= start0) & (a1 < end0)) | (
+                (a2 >= start0) & (a2 < end0)
+            )
+            assert slot0_ref.all()
+        frontier = _commit_frontier(frontier_prov, q_map)
+    assert saw_slot1
+
+
+@pytest.mark.m3
 def test_cycle_candidates_add_suc_right():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
