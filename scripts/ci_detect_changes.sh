@@ -52,7 +52,7 @@ done < /tmp/changed.txt
 
 {
   echo "code_changed=$code_changed"
-  echo "changed_files<<'EOF'"
+  echo "changed_files<<CHANGED_FILES_EOF"
   cat /tmp/changed.txt
-  echo "EOF"
+  echo "CHANGED_FILES_EOF"
 } >> "$output"
