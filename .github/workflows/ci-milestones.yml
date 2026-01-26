@@ -138,6 +138,22 @@ jobs:
           python scripts/damage_metrics_delta.py \
             --inputs artifacts/damage_metrics.txt artifacts/damage_metrics_tile32.txt \
             --out artifacts/damage_metrics_delta.txt
+      - name: Capture host performance baselines
+        if: matrix.milestone == 'm4'
+        run: |
+          mkdir -p artifacts
+          python scripts/audit_host_performance.py \
+            --engine intrinsic --iterations 5 --warmup 1 \
+            --json-out artifacts/host_perf_intrinsic.json
+          python scripts/audit_host_performance.py \
+            --engine cnf2 --iterations 5 --warmup 1 \
+            --json-out artifacts/host_perf_cnf2.json
+          python scripts/audit_memory_stability.py \
+            --engine intrinsic --iterations 5 --warmup 1 \
+            --json-out artifacts/host_memory_intrinsic.json
+          python scripts/audit_memory_stability.py \
+            --engine cnf2 --iterations 5 --warmup 1 \
+            --json-out artifacts/host_memory_cnf2.json
       - name: Upload pytest artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
