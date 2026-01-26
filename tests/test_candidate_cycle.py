@@ -225,6 +225,41 @@ def test_cycle_candidates_add_suc():
 
 
 @pytest.mark.m3
+def test_cycle_candidates_slot1_visibility_boundaries():
+    _require_cycle_candidates()
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([1, 1], dtype=jnp.int32),
+        jnp.array([0, 0], dtype=jnp.int32),
+    )
+    suc_x_id = suc_ids[0]
+    y_id = suc_ids[1]
+    add_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([suc_x_id], dtype=jnp.int32),
+        jnp.array([y_id], dtype=jnp.int32),
+    )
+    frontier = pv._committed_ids(jnp.array([add_ids[0]], dtype=jnp.int32))
+    ledger, _, strata, _ = pv.cycle_candidates(
+        ledger, frontier, validate_stratum=True
+    )
+    stratum0, stratum1, _ = strata
+    assert int(stratum0.count) > 0
+    assert int(stratum1.count) > 0
+    ids = stratum1.start + jnp.arange(int(stratum1.count), dtype=jnp.int32)
+    a1 = jax.device_get(ledger.arg1[ids])
+    a2 = jax.device_get(ledger.arg2[ids])
+    start1 = int(stratum1.start)
+    assert (a1 < start1).all()
+    assert (a2 < start1).all()
+    slot0_id = int(stratum0.start)
+    assert bool(jnp.any(a1 == slot0_id) | jnp.any(a2 == slot0_id))
+
+
+@pytest.mark.m3
 def test_cycle_candidates_add_suc_right():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
