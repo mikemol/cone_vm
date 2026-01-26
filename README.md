@@ -159,6 +159,11 @@ mise exec -- python scripts/unpack_collected_report.py \
   --out-dir artifacts
 ```
 
+Push, watch CI, and download artifacts:
+```
+scripts/ci_watch.sh --artifacts-dir artifacts
+```
+
 ## Policy
 This repo uses a self-hosted runner. Read `POLICY_SEED.md` before changing any
 workflow or CI behavior. Install advisory hooks with:
