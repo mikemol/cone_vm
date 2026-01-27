@@ -42,8 +42,8 @@ fi
 mkdir -p "$BIN_DIR"
 
 echo "Installing Agda ${AGDA_VERSION} via cabal (downloads from Hackage)..."
-mise exec -- cabal update
-mise exec -- cabal install "Agda-${AGDA_VERSION}" \
+mise exec -- cabal --config-file "$CABAL_CONFIG" update
+mise exec -- cabal --config-file "$CABAL_CONFIG" install "Agda-${AGDA_VERSION}" \
   --installdir "$BIN_DIR" \
   --install-method=symlink \
   --overwrite-policy=always
