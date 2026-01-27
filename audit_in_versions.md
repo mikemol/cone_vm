@@ -14,14 +14,14 @@ Methodology:
 - Unique bigrams: 721
 - Prior version: none
 - Compare: prism_vm.py
-  - Intersection: 211 | top: jnp, self, int32, count, int, dtype, a1, a2, manifest, ptr, opcode, op
-  - Symmetric difference: 1510 (only in in/in-1.md: 95, only in prism_vm.py: 1415)
+  - Intersection: 211 | top: jnp, int32, self, count, int, a1, dtype, a2, manifest, opcode, ptr, op
+  - Symmetric difference: 1540 (only in in/in-1.md: 95, only in prism_vm.py: 1445)
     - Only in in/in-1.md: instruction, data, optimized_ptr, python, type, types, construct, construction, instructions, next_a1, next_active, next_ops
-    - Only in prism_vm.py: ledger, arena, none, astype, size, value, uint32, morton, shape, perm, block_size, m1
-  - Wedge product (bigram intersection): 369 | top: jnp int32, dtype jnp, a1 a2, self manifest, jnp ndarray, jnp array, jnp zeros, int self, print f, parse tokens, manifest opcode, op a1
+    - Only in prism_vm.py: ledger, arena, none, astype, size, value, uint32, ids, morton, shape, m1, perm
+  - Wedge product (bigram intersection): 369 | top: jnp int32, dtype jnp, a1 a2, self manifest, jnp ndarray, jnp array, jnp zeros, int self, ops a1, print f, parse tokens, manifest opcode
 - Compare: IMPLEMENTATION_PLAN.md
-  - Intersection: 143 | top: add, self, null, manifest, zero, op, ptr, host, count, implementation, x, suc
-  - Symmetric difference: 1391 (only in in/in-1.md: 163, only in IMPLEMENTATION_PLAN.md: 1228)
+  - Intersection: 144 | top: add, self, null, manifest, zero, op, ptr, host, count, implementation, x, suc
+  - Symmetric difference: 1390 (only in in/in-1.md: 162, only in IMPLEMENTATION_PLAN.md: 1228)
     - Only in in/in-1.md: jnp, int, ir, f, tokens, analysis, token, instruction, cons, is_suc, res_ptr, b_count
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, key, full, program, denotation, must, txt, canonical, encoding, id
   - Wedge product (bigram intersection): 28 | top: add zero, manifest opcode, suc zero, a1 a2, e g, x y, zero suc, add suc, arg1 arg2, op_add op_mul, opcode arg1, x x
@@ -35,14 +35,14 @@ Methodology:
     - Only in in/in-1.md: analysis, trace_cache, optimized_ptr, prism, rows, analyze_and_optimize, deduplication, exec_allocs, ir_allocs, mid_rows, optimization, telemetry
   - Wedge product (bigram intersection): 309 | top: self manifest, manifest opcode, print f, int self, a1 a2, dtype jnp, jnp int32, parse tokens, op a1, jnp ndarray, self parse, time perf_counter
 - Compare: prism_vm.py
-  - Intersection: 186 | top: jnp, int32, self, count, dtype, int, a1, a2, opcode, ptr, manifest, op
-  - Symmetric difference: 1592 (only in in/in-2.md: 152, only in prism_vm.py: 1440)
+  - Intersection: 187 | top: jnp, int32, self, count, int, a1, dtype, a2, opcode, ptr, manifest, op
+  - Symmetric difference: 1620 (only in in/in-2.md: 151, only in prism_vm.py: 1469)
     - Only in in/in-2.md: data, code, instruction, synthesis, python, registry, b, function, unified, active_flag, addition, compile
-    - Only in prism_vm.py: ledger, arena, none, astype, size, value, uint32, morton, shape, perm, block_size, m1
-  - Wedge product (bigram intersection): 229 | top: jnp int32, dtype jnp, a1 a2, jnp ndarray, self manifest, jnp array, jnp zeros, parse tokens, int self, print f, ops a1, manifest opcode
+    - Only in prism_vm.py: ledger, arena, none, astype, size, value, uint32, ids, morton, shape, m1, perm
+  - Wedge product (bigram intersection): 229 | top: jnp int32, dtype jnp, a1 a2, jnp ndarray, self manifest, jnp array, jnp zeros, ops a1, parse tokens, int self, print f, manifest opcode
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 148 | top: add, null, self, key, manifest, must, op, count, ptr, zero, a1, host
-  - Symmetric difference: 1413 (only in in/in-2.md: 190, only in IMPLEMENTATION_PLAN.md: 1223)
+  - Symmetric difference: 1414 (only in in/in-2.md: 190, only in IMPLEMENTATION_PLAN.md: 1224)
     - Only in in/in-2.md: jnp, ir, f, cons, tokens, instruction, int, interpreter, synthesis, token, b_count, is_suc
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, full, program, denotation, txt, canonical, encoding, id, corrupt, md
   - Wedge product (bigram intersection): 15 | top: a1 a2, e g, manifest opcode, arg1 arg2, op_add op_mul, opcode arg1, normal form, hash consing, op_zero op_suc, suc x, instructions op_add, jax numpy
@@ -56,14 +56,14 @@ Methodology:
     - Only in in/in-2.md: ir, data, cons, node, interpreter, op_add, synthesis, vm, python, memo, execution, heap
   - Wedge product (bigram intersection): 202 | top: self manifest, print f, dtype jnp, int self, manifest opcode, arg1 arg2, jnp int32, jnp ndarray, opcode arg1, a1 a2, jnp zeros, max_rows dtype
 - Compare: prism_vm.py
-  - Intersection: 172 | top: jnp, self, int32, count, int, dtype, a1, opcode, a2, arg1, op, manifest
-  - Symmetric difference: 1573 (only in in/in-3.md: 119, only in prism_vm.py: 1454)
+  - Intersection: 172 | top: jnp, self, int32, count, int, dtype, a1, a2, opcode, arg1, op, f
+  - Symmetric difference: 1603 (only in in/in-3.md: 119, only in prism_vm.py: 1484)
     - Only in in/in-3.md: func_name, parse_expr, alloc_memoized, alloc_raw, candidate_idx, compile, compile_kernel, compiler, end_count, memoized, op_code, op_map
-    - Only in prism_vm.py: ledger, arena, none, astype, size, value, uint32, morton, shape, perm, block_size, m1
-  - Wedge product (bigram intersection): 198 | top: jnp int32, dtype jnp, jnp ndarray, self manifest, a1 a2, jnp array, jnp zeros, print f, int self, ops a1, arg1 arg2, manifest opcode
+    - Only in prism_vm.py: ledger, arena, none, astype, size, value, uint32, ids, morton, shape, m1, perm
+  - Wedge product (bigram intersection): 198 | top: jnp int32, dtype jnp, a1 a2, jnp ndarray, self manifest, jnp array, jnp zeros, ops a1, print f, int self, arg1 arg2, manifest opcode
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 119 | top: expected, self, add, null, md, zero, count, arg1, host, opcode, manifest, op
-  - Symmetric difference: 1424 (only in in/in-3.md: 172, only in IMPLEMENTATION_PLAN.md: 1252)
+  - Symmetric difference: 1425 (only in in/in-3.md: 172, only in IMPLEMENTATION_PLAN.md: 1253)
     - Only in in/in-3.md: jnp, f, int, tokens, func_name, token, signature, name, parse_expr, v, is_suc, max_rows
     - Only in IMPLEMENTATION_PLAN.md: pytest, tests, key, full, program, denotation, must, txt, canonical, encoding, id, corrupt
   - Wedge product (bigram intersection): 19 | top: arg1 arg2, opcode arg1, e g, suc zero, x y, manifest opcode, md md, add suc, a1 a2, hash consing, op_zero op_suc, suc x
@@ -77,14 +77,14 @@ Methodology:
     - Only in in/in-3.md: arg1, f, opcode, arg2, print, int, active_count, op, suc, tokens, zero, idx
   - Wedge product (bigram intersection): 3 | top: e g, jax array, x y
 - Compare: prism_vm.py
-  - Intersection: 121 | top: jnp, ledger, arena, self, astype, size, manifest, morton, perm, jax, set, rank
-  - Symmetric difference: 1794 (only in in/in-4.md: 289, only in prism_vm.py: 1505)
+  - Intersection: 121 | top: jnp, ledger, arena, self, astype, size, manifest, morton, jax, perm, set, rank
+  - Symmetric difference: 1824 (only in in/in-4.md: 289, only in prism_vm.py: 1535)
     - Only in in/in-4.md: arenas, graph, hierarchy, level, shatter, binary, bits, data, dormant, l1, waiting, alternating
-    - Only in prism_vm.py: int32, count, dtype, int, none, a1, a2, opcode, value, arg1, ptr, op
+    - Only in prism_vm.py: int32, count, int, dtype, a1, none, a2, opcode, value, arg1, op, ptr
   - Wedge product (bigram intersection): 17 | top: astype jnp, arena rank, perm jnp, x y, argsort sort_key, jnp argsort, fixed size, rank astype, block size, cnf pipeline, morton astype, arena bsp
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 181 | top: key, arena, rank, sort, md, morton, nodes, cnf, coordinate, ledger, semantic, implementation
-  - Symmetric difference: 1419 (only in in/in-4.md: 229, only in IMPLEMENTATION_PLAN.md: 1190)
+  - Symmetric difference: 1420 (only in in/in-4.md: 229, only in IMPLEMENTATION_PLAN.md: 1191)
     - Only in in/in-4.md: hierarchy, close, dormant, waiting, alternating, connected, jnp, status, tree, z, adjacent, composition
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, add, null, full, program, denotation, must, txt, canonical, encoding
   - Wedge product (bigram intersection): 17 | top: e g, sort key, x y, cnf pipeline, rank morton, bsp path, fixed size, interaction combinator, ledger cnf, self hosted, block size, blocks e
@@ -98,14 +98,14 @@ Methodology:
     - Only in in/in-4.md: manifest, op_sort, key, close, data, dormant, architecture, fluid, status, based, child, composition
   - Wedge product (bigram intersection): 39 | top: bsp tree, shatter effect, x y, bit rank, e g, alternating bsp, arena hierarchy, l1 arenas, spatial locality, active nodes, binary space, cache line
 - Compare: prism_vm.py
-  - Intersection: 124 | top: jnp, arena, dtype, uint32, morton, jax, perm, x, rank, array, device, md
-  - Symmetric difference: 1744 (only in in/in-5.md: 242, only in prism_vm.py: 1502)
+  - Intersection: 124 | top: jnp, arena, dtype, uint32, jax, morton, perm, x, rank, array, device, md
+  - Symmetric difference: 1774 (only in in/in-5.md: 242, only in prism_vm.py: 1532)
     - Only in in/in-5.md: children, shatter, bits, address, arenas, l2, locality, tree, hierarchy, square, alternating, become
-    - Only in prism_vm.py: int32, ledger, self, count, int, none, a1, a2, astype, opcode, size, value
+    - Only in prism_vm.py: int32, ledger, self, count, int, a1, none, a2, astype, opcode, size, value
   - Wedge product (bigram intersection): 26 | top: dtype jnp, jnp uint32, arena rank, jnp zeros_like, x y, arena perm, perm jnp, arena inv_perm, jnp argsort, new nodes, y z, swizzle_2to1 x
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 160 | top: arena, full, bsp, rank, md, nodes, sort, implementation, x, y, invariant, locality
-  - Symmetric difference: 1417 (only in in/in-5.md: 206, only in IMPLEMENTATION_PLAN.md: 1211)
+  - Symmetric difference: 1418 (only in in/in-5.md: 206, only in IMPLEMENTATION_PLAN.md: 1212)
     - Only in in/in-5.md: z, jnp, address, tree, hierarchy, square, alternating, become, using, axis, bottom, contiguous
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, add, null, key, program, denotation, must, txt, canonical, encoding
   - Wedge product (bigram intersection): 14 | top: x y, e g, new nodes, hierarchical arenas, hot nodes, python jax, warm cold, blocks e, classify nodes, free region, jax numpy, l1 l2
@@ -119,14 +119,14 @@ Methodology:
     - Only in in/in-5.md: jnp, tree, become, blocks, range, bottom, coordinates, corresponds, dtype, execution, l1, new
   - Wedge product (bigram intersection): 57 | top: x y, alternating bsp, shatter effect, address swizzling, bit interleaving, bsp block, linear arena, address space, bit rank, bsp layout, cache line, e g
 - Compare: prism_vm.py
-  - Intersection: 119 | top: ledger, arena, size, idx, jax, morton, ops, x, rank, array, md, reads
-  - Symmetric difference: 1796 (only in in/in-6.md: 289, only in prism_vm.py: 1507)
+  - Intersection: 119 | top: ledger, arena, size, idx, jax, ops, morton, x, rank, array, md, reads
+  - Symmetric difference: 1826 (only in in/in-6.md: 289, only in prism_vm.py: 1537)
     - Only in in/in-6.md: graph, address, alternating, hvm, linear, reduction, shatter, standard, divergence, hierarchical, latency, locality
-    - Only in prism_vm.py: jnp, int32, self, count, dtype, int, none, a1, a2, astype, opcode, value
+    - Only in prism_vm.py: jnp, int32, self, count, int, dtype, a1, none, a2, astype, opcode, value
   - Wedge product (bigram intersection): 12 | top: bspˢ layout, x y, x x, cold free, hot warm, jax numpy, pallas triton, warm cold, arena bsp, bsp arena, ledger cnf, swizzle x
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 166 | top: key, encoding, md, cnf, jax, bsp, implementation, ledger, rank, arena, semantic, invariant
-  - Symmetric difference: 1447 (only in in/in-6.md: 242, only in IMPLEMENTATION_PLAN.md: 1205)
+  - Symmetric difference: 1448 (only in in/in-6.md: 242, only in IMPLEMENTATION_PLAN.md: 1206)
     - Only in in/in-6.md: address, alternating, hvm, standard, divergence, latency, contiguous, graphblas, pallas, superior, alu, analysis
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, add, null, full, program, denotation, must, txt, canonical, id
   - Wedge product (bigram intersection): 11 | top: e g, x y, cold free, hot warm, warm cold, jax numpy, ledger cnf, higher order, stream compaction, use jax, x x
@@ -140,14 +140,14 @@ Methodology:
     - Only in in/in-6.md: gpu, hvm, divergence, hierarchical, bottleneck, compute, graphblas, level, pallas, superior, vs, allows
   - Wedge product (bigram intersection): 25 | top: x y, address space, free space, shatter effect, alternating bsp, bit rank, calculate offsets, cold free, hot warm, jax numpy, warm cold, x x
 - Compare: prism_vm.py
-  - Intersection: 251 | top: jnp, arena, int32, self, count, dtype, a1, int, a2, opcode, ptr, arg1
-  - Symmetric difference: 1635 (only in in/in-7.md: 260, only in prism_vm.py: 1375)
+  - Intersection: 251 | top: jnp, arena, int32, self, count, int, a1, dtype, a2, opcode, arg1, op
+  - Symmetric difference: 1665 (only in in/in-7.md: 260, only in prism_vm.py: 1405)
     - Only in in/in-7.md: bits, shatter, child1_idx, fluid, every, linear, pointers, address, python, spawn_counts, alternating, assume
-    - Only in prism_vm.py: ledger, none, astype, size, value, shape, block_size, m1, ids, true, host_int_value, oom
-  - Wedge product (bigram intersection): 243 | top: jnp int32, dtype jnp, jnp uint32, jnp ndarray, a1 a2, arena rank, jnp array, jnp arange, self arena, jnp zeros_like, jnp zeros, x y
+    - Only in prism_vm.py: ledger, none, astype, size, value, ids, shape, m1, block_size, true, host_int_value, oom
+  - Wedge product (bigram intersection): 243 | top: jnp int32, dtype jnp, jnp uint32, a1 a2, jnp ndarray, arena rank, jnp array, jnp arange, self arena, jnp zeros_like, jnp zeros, x y
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 262 | top: add, arena, rank, null, key, self, y, count, sort, must, full, x
-  - Symmetric difference: 1358 (only in in/in-7.md: 249, only in IMPLEMENTATION_PLAN.md: 1109)
+  - Symmetric difference: 1359 (only in in/in-7.md: 249, only in IMPLEMENTATION_PLAN.md: 1110)
     - Only in in/in-7.md: jnp, mask_suc, z, child1_idx, f, ndarray, new_rank, token, tokens, address, final_a1, final_a2
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, program, denotation, txt, canonical, encoding, id, corrupt, cnf, q
   - Wedge product (bigram intersection): 56 | top: x y, rank sort, add suc, add zero, sort swizzle, new nodes, y y, a1 a2, suc zero, add x, fluid arena, suc add
@@ -161,14 +161,14 @@ Methodology:
     - Only in in/in-7.md: self, sort, suc, a1, a2, count, opcode, mask_suc, ptr, swizzle, arg1, hot
   - Wedge product (bigram intersection): 16 | top: new nodes, x y, new node, prefix sum, free nodes, must point, nodes free, structure arrays, active nodes, allocate new, execution kernel, jax jit
 - Compare: prism_vm.py
-  - Intersection: 218 | top: jnp, arena, dtype, jax, size, value, idx, op, uint32, shape, n, ops
-  - Symmetric difference: 2331 (only in in/in-8.md: 923, only in prism_vm.py: 1408)
+  - Intersection: 218 | top: jnp, arena, dtype, jax, size, value, op, idx, uint32, ops, shape, set
+  - Symmetric difference: 2361 (only in in/in-8.md: 923, only in prism_vm.py: 1438)
     - Only in in/in-8.md: interaction, https, tensor, port, graph, ports, accessed, b, january, delta, gamma, linear
-    - Only in prism_vm.py: int32, ledger, self, count, int, none, a1, a2, astype, opcode, arg1, ptr
-  - Wedge product (bigram intersection): 15 | top: implementation_plan md, see implementation_plan, x y, new nodes, device id, control flow, different pointer, k k, shape n, allocate new, per step, indices size
+    - Only in prism_vm.py: int32, ledger, self, count, int, a1, none, a2, astype, opcode, arg1, ptr
+  - Wedge product (bigram intersection): 15 | top: implementation_plan md, see implementation_plan, x y, new nodes, device id, control flow, different pointer, k k, shape n, allocate new, indices size, per step
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 337 | top: interaction, add, n, jax, nodes, tensor, port, must, node, full, active, encoding
-  - Symmetric difference: 1838 (only in in/in-8.md: 804, only in IMPLEMENTATION_PLAN.md: 1034)
+  - Symmetric difference: 1839 (only in in/in-8.md: 804, only in IMPLEMENTATION_PLAN.md: 1035)
     - Only in in/in-8.md: https, accessed, january, logic, gamma, matrix, nets, neighbor, principal, net, aux, en
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, null, key, program, denotation, txt, corrupt, cnf, q, ledger
   - Wedge product (bigram intersection): 35 | top: new nodes, e g, active pair, rewrite rules, active pairs, rule table, x y, annihilation commutation, commutation erasure, interaction combinator, use jax, branchless interaction
@@ -182,14 +182,14 @@ Methodology:
     - Only in in/in-8.md: interaction, https, tensor, port, graph, ports, accessed, january, logic, delta, gpu, memory
   - Wedge product (bigram intersection): 24 | top: new nodes, rewrite rules, control flow, e g, exactly one, k k, new node, x y, newly allocated, allocated nodes, creates nodes, execution makes
 - Compare: prism_vm.py
-  - Intersection: 203 | top: ledger, arena, count, f, a1, a2, op, size, stratum, rewrite, manifest, n
-  - Symmetric difference: 2024 (only in in/in-9.md: 601, only in prism_vm.py: 1423)
+  - Intersection: 203 | top: ledger, arena, count, f, a1, a2, op, size, ids, rewrite, stratum, manifest
+  - Symmetric difference: 2054 (only in in/in-9.md: 601, only in prism_vm.py: 1453)
     - Only in in/in-9.md: mathcal, l, mathrm, text, c, eager, code, exactly, two, prior, reviewer, model
-    - Only in prism_vm.py: jnp, int32, self, dtype, int, none, astype, opcode, value, arg1, ptr, idx
+    - Only in prism_vm.py: jnp, int32, self, int, dtype, none, astype, opcode, value, arg1, ptr, idx
   - Wedge product (bigram intersection): 29 | top: arena count, x y, enabled candidates, ledger intern_nodes, zero suc, add suc, add zero, may reference, new nodes, bsp ledger, cnf pipeline, control flow
 - Compare: IMPLEMENTATION_PLAN.md
-  - Intersection: 301 | top: rewrite, tests, cnf, add, n, key, stratum, c, eager, step, id, ledger
-  - Symmetric difference: 1573 (only in in/in-9.md: 503, only in IMPLEMENTATION_PLAN.md: 1070)
+  - Intersection: 302 | top: rewrite, tests, cnf, add, n, key, stratum, c, eager, step, id, ledger
+  - Symmetric difference: 1572 (only in in/in-9.md: 502, only in IMPLEMENTATION_PLAN.md: 1070)
     - Only in in/in-9.md: mathcal, l, f, mathrm, text, reviewer, a_1, a_2, refinement, identities, mathsf, triangleq
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, null, program, txt, encoding, corrupt, q, coordinate, m1, rank, m4
   - Wedge product (bigram intersection): 64 | top: exactly two, candidate slots, cnf symmetric, fixed arity, prior strata, normal form, identity creation, slots per, x y, canonical ids, current code, e g
@@ -203,14 +203,14 @@ Methodology:
     - Only in in/in-9.md: mathcal, l, f, n, mathrm, c, eager, step, exactly, prior, k, candidates
   - Wedge product (bigram intersection): 17 | top: normal form, address space, arena ledger, rewrite rules, core semantic, local rewrite, rewrite allocation, candidate emission, consolidated md, execution model, frontier propagation, note consolidated
 - Compare: prism_vm.py
-  - Intersection: 107 | top: ledger, arena, self, opcode, value, arg1, op, arg2, morton, ops, shape, x
-  - Symmetric difference: 1795 (only in in/in-10.md: 276, only in prism_vm.py: 1519)
+  - Intersection: 108 | top: ledger, arena, self, opcode, value, arg1, op, arg2, ops, morton, shape, x
+  - Symmetric difference: 1823 (only in in/in-10.md: 275, only in prism_vm.py: 1548)
     - Only in in/in-10.md: cd, parity, tree, canonicalization, coordinates, adjacency, aggregate, cut, diff, idempotent, address, addressed
-    - Only in prism_vm.py: jnp, int32, count, dtype, int, none, a1, a2, astype, size, ptr, idx
+    - Only in prism_vm.py: jnp, int32, count, int, dtype, a1, none, a2, astype, size, ptr, idx
   - Wedge product (bigram intersection): 8 | top: arg1 arg2, opcode arg1, op arg1, op_add op_mul, x x, arg2 op, tier references, within tier
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 189 | top: key, coordinate, cd, canonical, cnf, ledger, md, semantic, invariant, arena, milestone, rewrite
-  - Symmetric difference: 1376 (only in in/in-10.md: 194, only in IMPLEMENTATION_PLAN.md: 1182)
+  - Symmetric difference: 1377 (only in in/in-10.md: 194, only in IMPLEMENTATION_PLAN.md: 1183)
     - Only in in/in-10.md: tree, adjacency, cut, elimination, address, addressed, aggregates, gf, canon, deduplication, engineering, important
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, add, null, full, program, denotation, must, txt, encoding, id
   - Wedge product (bigram intersection): 25 | top: cd coordinates, arg1 arg2, rank sort, normal form, cayley dickson, op_add op_mul, opcode arg1, within tier, pointer equality, rewrite rules, sort swizzle, aggregation scope
@@ -224,14 +224,14 @@ Methodology:
     - Only in in/in-10.md: explicit, frontier, adjacency, aggregate, diff, addressed, aggregates, changes, code, form, key, normalization
   - Wedge product (bigram intersection): 33 | top: cd coordinate, cd coordinates, cayley dickson, cut elimination, address space, arg1 arg2, canonicalization hook, milestone δ, acceptance criteria, equality pointer, finitely observable, local rewrite
 - Compare: prism_vm.py
-  - Intersection: 92 | top: ledger, int32, self, a1, a2, opcode, size, op, arg1, arg2, ops, shape
-  - Symmetric difference: 1739 (only in in/in-11.md: 205, only in prism_vm.py: 1534)
+  - Intersection: 92 | top: int32, ledger, self, a1, a2, opcode, size, arg1, op, arg2, ops, shape
+  - Symmetric difference: 1769 (only in in/in-11.md: 205, only in prism_vm.py: 1564)
     - Only in in/in-11.md: cd, text, coordinates, parity, exactly, program, already, arithmetic, cayley, coord_ptr, dag, dickson
-    - Only in prism_vm.py: jnp, arena, count, dtype, int, none, astype, value, ptr, idx, uint32, manifest
+    - Only in prism_vm.py: jnp, arena, count, int, dtype, none, astype, value, ptr, idx, uint32, f
   - Wedge product (bigram intersection): 9 | top: a1 a2, implementation_plan md, op a1, arg1 arg2, opcode arg1, x x, left right, a2 op, within tier
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 154 | top: coordinate, program, canonical, ledger, cnf, md, equality, semantic, rewrite, invariant, milestone, strata
-  - Symmetric difference: 1360 (only in in/in-11.md: 143, only in IMPLEMENTATION_PLAN.md: 1217)
+  - Symmetric difference: 1361 (only in in/in-11.md: 143, only in IMPLEMENTATION_PLAN.md: 1218)
     - Only in in/in-11.md: text, depth, arithmetic, coord_ptr, dag, finite, p, recursion, reviewer, trade, δ, base
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, add, null, key, full, denotation, must, txt, encoding, id
   - Wedge product (bigram intersection): 21 | top: cd coordinates, arg1 arg2, cnf objects, coordinates interned, interned cnf, opcode arg1, pointer equality, within tier, a1 a2, cayley dickson, equality pointer, rewrite rules
@@ -245,14 +245,14 @@ Methodology:
     - Only in in/in-11.md: coordinate, xor, cd, text, coordinates, op_coord_zero, parity, depth, interned, local, milestone, program
   - Wedge product (bigram intersection): 7 | top: a1 a2, op a1, consolidated md, gives literal, implementation_plan md, md yes, note consolidated
 - Compare: prism_vm.py
-  - Intersection: 118 | top: ledger, count, a1, a2, op, ops, ids, jax, set, key, array, x
-  - Symmetric difference: 1748 (only in in/in-12.md: 240, only in prism_vm.py: 1508)
+  - Intersection: 119 | top: ledger, count, a1, a2, op, ops, ids, jax, set, key, array, x
+  - Symmetric difference: 1776 (only in in/in-12.md: 239, only in prism_vm.py: 1537)
     - Only in in/in-12.md: bytes, collision, collisions, event, log, compare, gives, model, vtable, canonicality, children, current
-    - Only in prism_vm.py: jnp, int32, arena, self, dtype, int, none, astype, opcode, size, value, arg1
+    - Only in prism_vm.py: jnp, int32, arena, self, int, dtype, none, astype, opcode, size, value, arg1
   - Wedge product (bigram intersection): 7 | top: a1 a2, implementation_plan md, op a1, full key, key equality, packed key, intern op
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 193 | top: key, add, id, full, canonical, must, encoding, md, univalence, ledger, equality, rewrite
-  - Symmetric difference: 1343 (only in in/in-12.md: 165, only in IMPLEMENTATION_PLAN.md: 1178)
+  - Symmetric difference: 1344 (only in in/in-12.md: 165, only in IMPLEMENTATION_PLAN.md: 1179)
     - Only in in/in-12.md: gives, vtable, append, canonicality, different, materialized, snapshot, tables, events, key_bytes, resolution, sourcing
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, null, program, denotation, txt, corrupt, cnf, q, coordinate, m1
   - Wedge product (bigram intersection): 36 | top: full key, key equality, read model, e g, key bytes, a1 a2, hash collisions, collision free, truncation aliasing, hash bucket, univalence contract, canonical key
@@ -266,14 +266,14 @@ Methodology:
     - Only in in/in-12.md: gives, children, different, h, tables, two, arrays, derived, encode, events, hashing, order
   - Wedge product (bigram intersection): 64 | top: full key, collision free, key bytes, a1 a2, hash collisions, op a1, read model, canonicality without, child id, event log, event sourced, key equality
 - Compare: prism_vm.py
-  - Intersection: 99 | top: ledger, int32, arena, self, a1, a2, opcode, arg1, op, arg2, shape, jax
-  - Symmetric difference: 1694 (only in in/in-13.md: 167, only in prism_vm.py: 1527)
+  - Intersection: 100 | top: int32, ledger, arena, self, a1, a2, opcode, arg1, op, arg2, shape, jax
+  - Symmetric difference: 1722 (only in in/in-13.md: 166, only in prism_vm.py: 1556)
     - Only in in/in-13.md: coordinates, cd, collisions, event, canonicalization, collision, parity, trie, canon, canonicality, log, materialized
-    - Only in prism_vm.py: jnp, count, dtype, int, none, astype, size, value, ptr, idx, uint32, manifest
-  - Wedge product (bigram intersection): 14 | top: a1 a2, implementation_plan md, op a1, arg1 arg2, full key, opcode arg1, canonical ledger, key equality, ledger cnf, a2 ledger, deterministic interning, intern op
+    - Only in prism_vm.py: jnp, count, int, dtype, none, astype, size, value, ptr, idx, uint32, f
+  - Wedge product (bigram intersection): 14 | top: a1 a2, implementation_plan md, op a1, arg1 arg2, full key, opcode arg1, a2 ledger, canonical ledger, key equality, ledger cnf, deterministic interning, intern op
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 169 | top: key, coordinate, full, id, canonical, ledger, cnf, equality, must, encoding, md, univalence
-  - Symmetric difference: 1299 (only in in/in-13.md: 97, only in IMPLEMENTATION_PLAN.md: 1202)
+  - Symmetric difference: 1300 (only in in/in-13.md: 97, only in IMPLEMENTATION_PLAN.md: 1203)
     - Only in in/in-13.md: canon, canonicality, materialized, tree, commands, constraint, reconciled, reconciliation, sourced, together, vtable, way
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, add, null, program, denotation, txt, corrupt, q, m1, semantic
   - Wedge product (bigram intersection): 58 | top: full key, key equality, read model, cd coordinates, e g, cnf objects, coordinate normalization, coordinates interned, interned cnf, pointer equality, arg1 arg2, event log
@@ -287,14 +287,14 @@ Methodology:
     - Only in in/in-13.md: aggregation, collisions, collision, structure, trie, canon, canonicality, free, materialized, space, tree, acceptance
   - Wedge product (bigram intersection): 32 | top: full key, ledger cnf, cd coordinates, pointer equality, event log, read model, a1 a2, canonical coordinate, coordinate equality, equality pointer, key bytes, key equality
 - Compare: prism_vm.py
-  - Intersection: 166 | top: ledger, arena, count, a1, a2, op, morton, m1, ops, shape, ids, x
-  - Symmetric difference: 1686 (only in in/in-14.md: 226, only in prism_vm.py: 1460)
+  - Intersection: 166 | top: ledger, arena, count, a1, a2, op, ops, ids, morton, m1, shape, x
+  - Symmetric difference: 1716 (only in in/in-14.md: 226, only in prism_vm.py: 1490)
     - Only in in/in-14.md: rep, encode, make, say, two, bytes, canonicalize, contract, coordinates, equivalence, event, everywhere
-    - Only in prism_vm.py: jnp, int32, self, dtype, int, none, astype, opcode, size, value, arg1, ptr
+    - Only in prism_vm.py: jnp, int32, self, int, dtype, none, astype, opcode, size, value, arg1, ptr
   - Wedge product (bigram intersection): 35 | top: a1 a2, implementation_plan md, arena rank, x y, ledger stratum, zero suc, candidate pipeline, ledger cnf, zero x, add suc, add zero, cnf candidate
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 269 | top: tests, add, key, ledger, must, canonical, denotation, full, arena, cnf, id, program
-  - Symmetric difference: 1225 (only in in/in-14.md: 123, only in IMPLEMENTATION_PLAN.md: 1102)
+  - Symmetric difference: 1226 (only in in/in-14.md: 123, only in IMPLEMENTATION_PLAN.md: 1103)
     - Only in in/in-14.md: say, everywhere, asserts, constitutes, fine, generator, good, makes, needs, property, reconciliation, right
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, null, txt, corrupt, q, host, mode, tasks, implement, objective, slot1
   - Wedge product (bigram intersection): 144 | top: full key, denotation invariance, key equality, candidate pipeline, fixed width, rank sort, x y, canonical ids, e g, read model, add zero, arena scheduling
@@ -308,14 +308,14 @@ Methodology:
     - Only in in/in-14.md: add, ledger, arena, canonical, equality, key, rewrite, cnf, suc, coordinate, engine, semantic
   - Wedge product (bigram intersection): 2 | top: m1 m2, implementation_plan md
 - Compare: prism_vm.py
-  - Intersection: 52 | top: m1, milestone, implementation_plan, md, state, reads, pytest, token, note, m2, expected, tests
-  - Symmetric difference: 1670 (only in in/in-15.md: 96, only in prism_vm.py: 1574)
+  - Intersection: 52 | top: m1, milestone, implementation_plan, md, state, reads, pytest, token, m2, note, expected, tests
+  - Symmetric difference: 1700 (only in in/in-15.md: 96, only in prism_vm.py: 1604)
     - Only in in/in-15.md: ini, testing, c, code, conftest, gates, m5, skips, vscode, workflow, makes, panel
-    - Only in prism_vm.py: jnp, int32, ledger, arena, self, count, dtype, int, none, a1, a2, astype
+    - Only in prism_vm.py: jnp, int32, ledger, arena, self, count, int, dtype, a1, none, a2, astype
   - Wedge product (bigram intersection): 5 | top: implementation_plan md, m1 m2, m1 m4, milestone tests, pytest milestone
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 87 | top: pytest, expected, tests, milestone, m1, must, md, m2, m4, implementation, test, m3
-  - Symmetric difference: 1345 (only in in/in-15.md: 61, only in IMPLEMENTATION_PLAN.md: 1284)
+  - Symmetric difference: 1346 (only in in/in-15.md: 61, only in IMPLEMENTATION_PLAN.md: 1285)
     - Only in in/in-15.md: makes, ide, keeps, option, shows, toggle, avoids, back, bless, command, complements, convenience
     - Only in IMPLEMENTATION_PLAN.md: add, null, key, full, program, denotation, txt, canonical, encoding, id, corrupt, cnf
   - Wedge product (bigram intersection): 33 | top: c pytest, pytest c, vs code, conftest py, m1 m2, milestone gate, pytest env, vscode pytest, acceptance gates, milestone gated, selected milestone, testing panel
@@ -329,14 +329,14 @@ Methodology:
     - Only in in/in-15.md: pytest, ini, env, m2, m1, vs, m4, conftest, gates, m5, plan, py
   - Wedge product (bigram intersection): 2 | top: acceptance criteria, milestone gated
 - Compare: prism_vm.py
-  - Intersection: 175 | top: ledger, arena, a1, a2, op, manifest, f, ids, morton, ops, shape, q
-  - Symmetric difference: 1790 (only in in/in-16.md: 339, only in prism_vm.py: 1451)
+  - Intersection: 175 | top: ledger, arena, a1, a2, op, ids, f, manifest, ops, morton, shape, q
+  - Symmetric difference: 1820 (only in in/in-16.md: 339, only in prism_vm.py: 1481)
     - Only in in/in-16.md: p, c, canonicalization, encode, node_ref, structural, contract, convergence, evaluation, model, objects, c1
-    - Only in prism_vm.py: jnp, int32, self, count, dtype, int, none, astype, opcode, size, value, arg1
+    - Only in prism_vm.py: jnp, int32, self, count, int, dtype, none, astype, opcode, size, value, arg1
   - Wedge product (bigram intersection): 34 | top: a1 a2, op a1, x y, denotation invariance, canonical ids, add mul, full key, key equality, within tier, zero suc, projection q, tier references
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 294 | top: tests, q, add, key, canonical, denotation, full, ledger, must, cnf, id, semantic
-  - Symmetric difference: 1297 (only in in/in-16.md: 220, only in IMPLEMENTATION_PLAN.md: 1077)
+  - Symmetric difference: 1298 (only in in/in-16.md: 220, only in IMPLEMENTATION_PLAN.md: 1078)
     - Only in in/in-16.md: p, node_ref, convergence, c1, c2, dynamics, schedule, canon, freedom, homomorphism, memo_q, univalent
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, null, txt, corrupt, m1, count, m4, host, per, m2, mode
   - Wedge product (bigram intersection): 116 | top: denotation invariance, full key, canonical ids, key equality, coordinate normalization, e g, key encoding, read model, within tier, a1 a2, provisional nodes, rank sort
@@ -350,14 +350,14 @@ Methodology:
     - Only in in/in-16.md: evaluator, op, ids, c, a1, a2, invariance, node, strata, canonicalization, tests, encode
   - Wedge product (bigram intersection): 21 | top: map q, full key, quotient map, canonical identity, e g, projection q, canonical id, homomorphic collapse, q x, structure ledger, bounded fanout, coordinate based
 - Compare: prism_vm.py
-  - Intersection: 152 | top: ledger, opcode, size, value, f, morton, ops, set, oom, x, device, state
-  - Symmetric difference: 1851 (only in in/in-17.md: 377, only in prism_vm.py: 1474)
+  - Intersection: 152 | top: ledger, opcode, size, value, f, ops, morton, set, oom, x, device, state
+  - Symmetric difference: 1881 (only in in/in-17.md: 377, only in prism_vm.py: 1504)
     - Only in in/in-17.md: ca, calculus, locality, structural, meaning, pretty, bounded, entropy, interactions, physics, testable, thermodynamic
-    - Only in prism_vm.py: jnp, int32, arena, self, count, dtype, int, none, a1, a2, astype, arg1
+    - Only in prism_vm.py: jnp, int32, arena, self, count, int, dtype, a1, none, a2, astype, arg1
   - Wedge product (bigram intersection): 18 | top: ledger capacity, canonical identity, x x, bspᵗ temporal, canonical ledger, corrupt semantic, full key, projection q, semantic id, bspᵗ bspˢ, byte equality, cdₐ cdᵣ
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 265 | top: key, canonical, must, denotation, q, semantic, corrupt, full, program, id, cnf, coordinate
-  - Symmetric difference: 1370 (only in in/in-17.md: 264, only in IMPLEMENTATION_PLAN.md: 1106)
+  - Symmetric difference: 1371 (only in in/in-17.md: 264, only in IMPLEMENTATION_PLAN.md: 1107)
     - Only in in/in-17.md: ca, calculus, cdᵣ, cdₐ, interactions, physics, thermodynamic, λ, algebraic, claim, duplication, lemma
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, add, null, txt, encoding, md, m1, rank, arena, count
   - Wedge product (bigram intersection): 75 | top: full key, fixed width, e g, fixed arity, id cap, key byte, pretty denote, alpha equivalence, byte equality, candidate slots, canonical identity, erased q
@@ -371,14 +371,14 @@ Methodology:
     - Only in in/in-17.md: ca, damage, denote, x, calculus, locality, per, tile, boundary, bspᵗ, pretty, style
   - Wedge product (bigram intersection): 23 | top: oom corrupt, semantic identity, canonical id, canonical nodes, e g, erased q, arity bounded, arity cnf, decided full, fixed arity, full key, identity decided
 - Compare: prism_vm.py
-  - Intersection: 182 | top: ledger, arena, count, a1, a2, opcode, prism, size, arg1, arg2, f, ids
-  - Symmetric difference: 1901 (only in in/in-18.md: 457, only in prism_vm.py: 1444)
+  - Intersection: 182 | top: ledger, arena, count, a1, a2, opcode, prism, size, arg1, arg2, ids, f
+  - Symmetric difference: 1931 (only in in/in-18.md: 457, only in prism_vm.py: 1474)
     - Only in in/in-18.md: finite, canon_state, states, transition, π_k, proof, higher, σ, lemma, π, appendix, ρ
-    - Only in prism_vm.py: jnp, int32, self, dtype, int, none, astype, value, ptr, op, idx, uint32
+    - Only in prism_vm.py: jnp, int32, self, int, dtype, none, astype, value, op, ptr, idx, uint32
   - Wedge product (bigram intersection): 38 | top: a1 a2, bspˢ layout, arg1 arg2, count count, opcode arg1, bspˢ renormalization, count oom, suc zero, k set, zero suc, a2 count, live ids
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 326 | top: prism, tests, semantic, add, min, canonical, null, key, corrupt, cnf, count, md
-  - Symmetric difference: 1358 (only in in/in-18.md: 313, only in IMPLEMENTATION_PLAN.md: 1045)
+  - Symmetric difference: 1359 (only in in/in-18.md: 313, only in IMPLEMENTATION_PLAN.md: 1046)
     - Only in in/in-18.md: finite, r, canon_state, states, lemma, π, appendix, closure, transitions, exhaustive, t_k, verification
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, program, txt, encoding, host, per, tasks, implement, objective, performance, slot1
   - Wedge product (bigram intersection): 63 | top: min prism, full key, higher order, key equality, canonical ids, denotation invariance, e g, oom corrupt, arg1 arg2, md md, opcode arg1, see md
@@ -392,14 +392,14 @@ Methodology:
     - Only in in/in-18.md: r, canon_state, state, canonical, states, count, transition, π_k, corrupt, ids, proof, higher
   - Wedge product (bigram intersection): 24 | top: min prism, md md, prism semantics, read model, new semantics, prism semantic, semantic behavior, audience prism, core developers, cycle stratum, draft normative, end md
 - Compare: prism_vm.py
-  - Intersection: 80 | top: ledger, arena, op, f, set, true, md, x, stratum, reads, false, note
-  - Symmetric difference: 1708 (only in in/in-19.md: 162, only in prism_vm.py: 1546)
+  - Intersection: 80 | top: ledger, arena, op, f, set, true, md, x, stratum, reads, false, k
+  - Symmetric difference: 1738 (only in in/in-19.md: 162, only in prism_vm.py: 1576)
     - Only in in/in-19.md: κ, c, morphisms, presheaf, sheaf, contexts, every, mathbf, site, topos, κ_i, τ
-    - Only in prism_vm.py: jnp, int32, self, count, dtype, int, none, a1, a2, astype, opcode, size
+    - Only in prism_vm.py: jnp, int32, self, count, int, dtype, a1, none, a2, astype, opcode, size
   - Wedge product (bigram intersection): 5 | top: hyperstrata visibility, pre step, q map, micro strata, slot0 slot1
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 123 | top: md, arena, q, ledger, semantic, cnf, coordinate, univalence, per, fixed, strata, m3
-  - Symmetric difference: 1367 (only in in/in-19.md: 119, only in IMPLEMENTATION_PLAN.md: 1248)
+  - Symmetric difference: 1368 (only in in/in-19.md: 119, only in IMPLEMENTATION_PLAN.md: 1249)
     - Only in in/in-19.md: κ, j, f, morphisms, presheaf, contexts, mathbf, κ_i, τ, category, context, l_
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, add, null, key, full, program, denotation, must, txt, canonical
   - Wedge product (bigram intersection): 22 | top: hyperstrata visibility, visibility rule, pre step, read model, md md, min prism, slot0 slot1, frozen read, per cycle, prior strata, reads pre, candidate emission
@@ -414,13 +414,13 @@ Methodology:
   - Wedge product (bigram intersection): 43 | top: c j, cayley dickson, md md, context κ, mathbf sh, min prism, sh c, gf cancellation, audience prism, bounds k, core developers, d restriction
 - Compare: prism_vm.py
   - Intersection: 51 | top: ledger, arena, opcode, ids, set, md, x, k, y, valid, lower, semantic
-  - Symmetric difference: 1715 (only in in/in-20.md: 140, only in prism_vm.py: 1575)
+  - Symmetric difference: 1745 (only in in/in-20.md: 140, only in prism_vm.py: 1605)
     - Only in in/in-20.md: l, hyperlattice, cd, boolean, c, cayley, dickson, elements, preorder, recursion, sheaf, γ
-    - Only in prism_vm.py: jnp, int32, self, count, dtype, int, none, a1, a2, astype, size, value
+    - Only in prism_vm.py: jnp, int32, self, count, int, dtype, a1, none, a2, astype, size, value
   - Wedge product (bigram intersection): 7 | top: x y, canonical ids, canonical ledger, ledger ids, must preserve, y x, y y
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 89 | top: md, ledger, semantic, canonical, must, q, cnf, ids, arena, fixed, semantics, interning
-  - Symmetric difference: 1384 (only in in/in-20.md: 102, only in IMPLEMENTATION_PLAN.md: 1282)
+  - Symmetric difference: 1385 (only in in/in-20.md: 102, only in IMPLEMENTATION_PLAN.md: 1283)
     - Only in in/in-20.md: l, boolean, context, elements, preorder, recursion, γ, κ, algebra, correspond, depth, distinguished
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, add, null, key, full, program, denotation, txt, encoding, id
   - Wedge product (bigram intersection): 9 | top: canonical ids, md md, x y, cayley dickson, min prism, must preserve, y y, erased q, glossary md
@@ -435,13 +435,13 @@ Methodology:
   - Wedge product (bigram intersection): 30 | top: md md, min prism, already enforced, ledger ids, arena accumulation, audience prism, canonical ledger, core developers, developers semantics, draft normative, end md, enforced prism
 - Compare: prism_vm.py
   - Intersection: 97 | top: ledger, arena, ids, md, state, bspˢ, q, see, semantic, prism, semantics, canonical
-  - Symmetric difference: 1859 (only in in/in-21.md: 330, only in prism_vm.py: 1529)
+  - Symmetric difference: 1889 (only in in/in-21.md: 330, only in prism_vm.py: 1559)
     - Only in in/in-21.md: entropy, lemma, gauge, patch, g, novelty, coherence, direct, justification, adjunction, l, recursive
-    - Only in prism_vm.py: jnp, int32, self, count, dtype, int, none, a1, a2, astype, opcode, size
+    - Only in prism_vm.py: jnp, int32, self, count, int, dtype, a1, none, a2, astype, opcode, size
   - Wedge product (bigram intersection): 6 | top: bspᵗ bspˢ, denotation invariance, bspᵗ temporal, canonical ledger, ledger ids, semantics ledger
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 200 | top: tests, q, canonical, semantic, md, arena, denotation, must, entropy, semantics, ledger, cnf
-  - Symmetric difference: 1398 (only in in/in-21.md: 227, only in IMPLEMENTATION_PLAN.md: 1171)
+  - Symmetric difference: 1399 (only in in/in-21.md: 227, only in IMPLEMENTATION_PLAN.md: 1172)
     - Only in in/in-21.md: lemma, pl, patch, direct, l, recursive, tree, ct, finite, monotone, operator, different
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, add, null, key, full, program, txt, encoding, id, corrupt, coordinate
   - Wedge product (bigram intersection): 37 | top: denotation invariance, canonical novelty, md md, e g, gauge symmetry, see md, coarse graining, decoded normal, min prism, normal forms, irreversible coarse, q irreversible
@@ -456,13 +456,13 @@ Methodology:
   - Wedge product (bigram intersection): 105 | top: canonical novelty, pl semantics, direct pl, min prism, md md, semantics lemma, novelty saturation, ledger ids, semantic monotone, arena entropy, fixed points, lemma bspˢ
 - Compare: prism_vm.py
   - Intersection: 82 | top: ledger, arena, opcode, ids, set, md, canonical, semantic, prism, k, bspˢ, e
-  - Symmetric difference: 1766 (only in in/in-22.md: 222, only in prism_vm.py: 1544)
+  - Symmetric difference: 1796 (only in in/in-22.md: 222, only in prism_vm.py: 1574)
     - Only in in/in-22.md: novelty, lemma, saturation, justification, tree, direct, representation, σ, monotone, ν, bounded, document
-    - Only in prism_vm.py: jnp, int32, self, count, dtype, int, none, a1, a2, astype, size, value
-  - Wedge product (bigram intersection): 11 | top: canonical ids, full key, ledger ids, bspˢ renormalization, canonical ledger, ids k, key equality, canonical identity, existing keys, keys ledger, new keys
+    - Only in prism_vm.py: jnp, int32, self, count, int, dtype, a1, none, a2, astype, size, value
+  - Wedge product (bigram intersection): 11 | top: canonical ids, full key, ledger ids, bspˢ renormalization, canonical ledger, existing keys, ids k, key equality, canonical identity, keys ledger, new keys
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 152 | top: tests, canonical, semantic, key, md, novelty, full, id, ids, ledger, cnf, q
-  - Symmetric difference: 1371 (only in in/in-22.md: 152, only in IMPLEMENTATION_PLAN.md: 1219)
+  - Symmetric difference: 1372 (only in in/in-22.md: 152, only in IMPLEMENTATION_PLAN.md: 1220)
     - Only in in/in-22.md: lemma, saturation, pl, tree, direct, monotone, ν, finite, hyperoperators, intuition, operator, precise
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, add, null, program, denotation, must, txt, encoding, corrupt, coordinate, m1
   - Wedge product (bigram intersection): 26 | top: canonical novelty, full key, min prism, canonical ids, key equality, md md, e g, fixed points, rewrite rules, test obligations, decided full, canonical identity
@@ -477,13 +477,13 @@ Methodology:
   - Wedge product (bigram intersection): 130 | top: canonical novelty, fixed points, pl semantics, min prism, direct pl, semantics lemma, fixed point, representation fixed, md md, canonical ids, novelty saturation, semantic keys
 - Compare: prism_vm.py
   - Intersection: 87 | top: ledger, arena, value, ids, set, md, fixed, semantic, prism, op_add, bspˢ, canonical
-  - Symmetric difference: 1772 (only in in/in-23.md: 233, only in prism_vm.py: 1539)
+  - Symmetric difference: 1802 (only in in/in-23.md: 233, only in prism_vm.py: 1569)
     - Only in in/in-23.md: lemma, representation, points, hyperoperator, hyperoperators, novelty, tree, point, justification, direct, document, operators
-    - Only in prism_vm.py: jnp, int32, self, count, dtype, int, none, a1, a2, astype, opcode, size
+    - Only in prism_vm.py: jnp, int32, self, count, int, dtype, a1, none, a2, astype, opcode, size
   - Wedge product (bigram intersection): 9 | top: canonical ids, canonical ledger, op_add op_mul, full key, bspᵗ bspˢ, key equality, ledger ids, new keys, per step
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 155 | top: tests, fixed, canonical, semantic, key, md, full, cnf, id, ids, ledger, q
-  - Symmetric difference: 1381 (only in in/in-23.md: 165, only in IMPLEMENTATION_PLAN.md: 1216)
+  - Symmetric difference: 1382 (only in in/in-23.md: 165, only in IMPLEMENTATION_PLAN.md: 1217)
     - Only in in/in-23.md: lemma, hyperoperators, tree, direct, pl, operators, finitely, introduces, processes, stabilization, application, e₀
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, add, null, program, denotation, must, txt, encoding, corrupt, coordinate, m1
   - Wedge product (bigram intersection): 25 | top: fixed points, full key, representation fixed, canonical ids, canonical novelty, md md, min prism, key equality, op_add op_mul, candidate slots, rewrite rules, cnf rewrite
@@ -497,14 +497,14 @@ Methodology:
     - Only in in/in-23.md: keys, pl, execution, preorder, already, exist, existence, gauge, monotone, normalization, candidate, chain
   - Wedge product (bigram intersection): 106 | top: fixed point, fixed points, representation fixed, md md, min prism, canonical novelty, canonical ids, tree operators, md tree, operator forms, semantic sketch, tree processes
 - Compare: prism_vm.py
-  - Intersection: 91 | top: ledger, arena, self, opcode, size, value, op, manifest, f, ids, md, set
-  - Symmetric difference: 1800 (only in in/in-24.md: 265, only in prism_vm.py: 1535)
+  - Intersection: 91 | top: ledger, arena, self, opcode, size, value, op, f, manifest, ids, set, md
+  - Symmetric difference: 1830 (only in in/in-24.md: 265, only in prism_vm.py: 1565)
     - Only in in/in-24.md: tree, operator, representation, sketch, finite, growth, operators, explosion, point, recursive, saturation, termination
-    - Only in prism_vm.py: jnp, int32, count, dtype, int, none, a1, a2, astype, arg1, ptr, idx
+    - Only in prism_vm.py: jnp, int32, count, int, dtype, a1, none, a2, astype, arg1, ptr, idx
   - Wedge product (bigram intersection): 8 | top: arena size, arena arena, canonical ids, full key, ledger canonical, bspᵗ controls, key equality, rewrite steps
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 167 | top: expected, md, semantic, key, canonical, arena, full, cnf, id, ledger, rewrite, encoding
-  - Symmetric difference: 1393 (only in in/in-24.md: 189, only in IMPLEMENTATION_PLAN.md: 1204)
+  - Symmetric difference: 1394 (only in in/in-24.md: 189, only in IMPLEMENTATION_PLAN.md: 1205)
     - Only in in/in-24.md: tree, operator, sketch, finite, operators, explosion, recursive, saturation, worked, claim, hyperoperators, lemma
     - Only in IMPLEMENTATION_PLAN.md: pytest, tests, add, null, program, denotation, must, txt, corrupt, coordinate, m1, rank
   - Wedge product (bigram intersection): 26 | top: full key, canonical ids, key equality, md md, see md, min prism, representation fixed, fixed points, rewrite rules, canonical novelty, higher order, ordinal indexed
@@ -518,14 +518,14 @@ Methodology:
     - Only in in/in-24.md: sketch, collapse, ledger, recursive, worked, cnf, construction, hyperoperators, ids, application, continues, e₀
   - Wedge product (bigram intersection): 73 | top: md md, fixed points, canonical fixed, ordinal indexed, indexed rewrite, min prism, fixed point, canonical novelty, representation fixed, operator forms, proof theory, tree operators
 - Compare: prism_vm.py
-  - Intersection: 77 | top: arena, md, enabled, prism, false, semantic, milestone, canonical, rewrite, yes, fixed, semantics
-  - Symmetric difference: 1837 (only in in/in-25.md: 288, only in prism_vm.py: 1549)
+  - Intersection: 77 | top: arena, md, enabled, prism, false, semantic, milestone, canonical, yes, rewrite, fixed, semantics
+  - Symmetric difference: 1867 (only in in/in-25.md: 288, only in prism_vm.py: 1579)
     - Only in in/in-25.md: ordinal, termination, tree, descent, ordinals, representation, claims, proof, theory, lemma, indexed, points
-    - Only in prism_vm.py: jnp, int32, ledger, self, count, dtype, int, none, a1, a2, astype, opcode
+    - Only in prism_vm.py: jnp, int32, ledger, self, count, int, dtype, a1, none, a2, astype, opcode
   - Wedge product (bigram intersection): 1 | top: rewrite steps
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 131 | top: md, semantic, canonical, prism, ordinal, rewrite, fixed, semantics, termination, arena, univalence, m4
-  - Symmetric difference: 1474 (only in in/in-25.md: 234, only in IMPLEMENTATION_PLAN.md: 1240)
+  - Symmetric difference: 1475 (only in in/in-25.md: 234, only in IMPLEMENTATION_PLAN.md: 1241)
     - Only in in/in-25.md: tree, descent, ordinals, theory, lemma, claim, methods, decreasing, systems, well, different, direct
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, add, null, key, full, program, denotation, must, txt, encoding
   - Wedge product (bigram intersection): 18 | top: md md, fixed points, ordinal indexed, min prism, canonical novelty, rewrite rules, proof theoretic, theoretic strength, glossary md, imply termination, m3 m4, md semantic
@@ -540,13 +540,13 @@ Methodology:
   - Wedge product (bigram intersection): 37 | top: canonical novelty, min prism, fixed points, md md, ordinal descent, finite semantic, fixed point, novelty monotone, prism claims, reviewer facing, well founded, ordinal measure
 - Compare: prism_vm.py
   - Intersection: 77 | top: ledger, arena, value, op, shape, set, md, state, zero, semantic, false, add
-  - Symmetric difference: 1795 (only in in/in-26.md: 246, only in prism_vm.py: 1549)
+  - Symmetric difference: 1825 (only in in/in-26.md: 246, only in prism_vm.py: 1579)
     - Only in in/in-26.md: agda, novelty, finite, forall, prove, arity, sigma, formalize, termination, closure, exists, proof
-    - Only in prism_vm.py: jnp, int32, self, count, dtype, int, none, a1, a2, astype, opcode, size
+    - Only in prism_vm.py: jnp, int32, self, count, int, dtype, a1, none, a2, astype, opcode, size
   - Wedge product (bigram intersection): 7 | top: suc zero, add mul, k1 k2, arena arena, op op, q q, canonical identity
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 128 | top: add, key, agda, semantic, canonical, q, ledger, full, md, univalence, arena, equality
-  - Symmetric difference: 1438 (only in in/in-26.md: 195, only in IMPLEMENTATION_PLAN.md: 1243)
+  - Symmetric difference: 1439 (only in in/in-26.md: 195, only in IMPLEMENTATION_PLAN.md: 1244)
     - Only in in/in-26.md: finite, forall, prove, sigma, formalize, closure, m, monotone, theorems, everything, fun, reviewers
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, null, program, denotation, must, txt, encoding, id, corrupt, cnf
   - Wedge product (bigram intersection): 25 | top: canonical novelty, min prism, md md, bspˢ gauge, proof roadmap, suc zero, agda proof, define canonical, fixed points, gauge symmetry, projection commutation, q q
@@ -560,35 +560,56 @@ Methodology:
     - Only in in/in-26.md: agda, semantic, novelty, finite, step, forall, prove, arity, ledger, set, sigma, e
   - Wedge product (bigram intersection): 3 | top: bspˢ gauge, erased q, gauge invariance
 - Compare: prism_vm.py
-  - Intersection: 155 | top: arena, count, none, size, opcode, value, uint32, morton, jax, ids, vm, array
-  - Symmetric difference: 1722 (only in in/in-27.md: 251, only in prism_vm.py: 1471)
+  - Intersection: 155 | top: arena, count, none, size, opcode, value, uint32, morton, ids, jax, vm, array
+  - Symmetric difference: 1752 (only in in/in-27.md: 251, only in prism_vm.py: 1501)
     - Only in in/in-27.md: entropy, gauge, geometric, holographic, assertion, implementation, k_, m5, p, property, renormˢ, aperture
-    - Only in prism_vm.py: jnp, int32, ledger, self, dtype, int, a1, a2, astype, arg1, ptr, op
-  - Wedge product (bigram intersection): 13 | top: denotation invariance, k p_buffer, projection q, spill p_buffer, arena namedtuple, arena tuple, invariant guard, k k, lax stop_gradient, must commute, p_buffer d_active, prism vm
+    - Only in prism_vm.py: jnp, int32, ledger, self, int, dtype, a1, a2, astype, arg1, op, ptr
+  - Wedge product (bigram intersection): 12 | top: denotation invariance, k p_buffer, projection q, spill p_buffer, arena namedtuple, arena tuple, k k, lax stop_gradient, must commute, p_buffer d_active, prism vm, sum hist
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 208 | top: key, must, q, denotation, canonical, id, implementation, arena, k, count, ids, m4
-  - Symmetric difference: 1361 (only in in/in-27.md: 198, only in IMPLEMENTATION_PLAN.md: 1163)
+  - Symmetric difference: 1362 (only in in/in-27.md: 198, only in IMPLEMENTATION_PLAN.md: 1164)
     - Only in in/in-27.md: holographic, assertion, axis, k_, p, property, z, aperture, band, check, curve, design
     - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, add, null, full, program, txt, encoding, corrupt, md, cnf
   - Wedge product (bigram intersection): 43 | top: denotation invariance, bspˢ gauge, entropy h, milestone gated, must commute, boundary crossings, canonical interning, h bits, invariant guard, arena namedtuple, behind prism_enable_servo, composite key
+## in/in-28.md
+- Unique tokens: 1460
+- Unique bigrams: 3376
+- Prior version: in/in-27.md
+  - Intersection: 190 | top: k, summary, python, servo, py, p, mask, buffer, active, high, system, control
+  - Symmetric difference: 1486 (only in in/in-28.md: 1270, only in in/in-27.md: 216)
+    - Only in in/in-28.md: details, strong, agda, semantics, see, latex, machine, servoobjects, servo_objects, mathrm, x, code
+    - Only in in/in-27.md: entropyₐ, h, p_buffer, geometric, holographic, order, assertion, d_active, packing, aligned, aperture, autonomic
+  - Wedge product (bigram intersection): 19 | top: k k, k n, k_ k_t, sum_ k, size k, axis bspˢ, bspˢ spatial, commutation q, glossary compliance, spatial layout, buffer zone, control law
+- Compare: prism_vm.py
+  - Intersection: 250 | top: jnp, k, arena, self, see, summary, count, semantics, int, astype, opcode, size
+  - Symmetric difference: 2616 (only in in/in-28.md: 1210, only in prism_vm.py: 1406)
+    - Only in in/in-28.md: details, strong, agda, python, latex, machine, servoobjects, servo_objects, mathrm, p, code, high
+    - Only in prism_vm.py: int32, ledger, dtype, a1, none, a2, arg1, op, ptr, idx, arg2, manifest
+  - Wedge product (bigram intersection): 39 | top: astype jnp, jnp uint32, arena rank, k k, mask k, jnp maximum, start jnp, arena servo, arena replace, jnp float32, uint32 mask, x x
+- Compare: IMPLEMENTATION_PLAN.md
+  - Intersection: 371 | top: k, summary, details, agda, semantics, see, python, py, servo, add, mask, key
+  - Symmetric difference: 2090 (only in in/in-28.md: 1089, only in IMPLEMENTATION_PLAN.md: 1001)
+    - Only in in/in-28.md: strong, latex, machine, servoobjects, servo_objects, mathrm, p, high, low, ge, adaptive, density
+    - Only in IMPLEMENTATION_PLAN.md: expected, pytest, tests, null, denotation, txt, encoding, id, corrupt, cnf, ledger, coordinate
+  - Wedge product (bigram intersection): 20 | top: e g, servo mask, x x, hot warm, sort key, via dynamic, warm cold, add new, control loop, erased q, fixed size, jax numpy
 ## in/in-27-update-audit.md
 - Unique tokens: 655
 - Unique bigrams: 1444
-- Prior version: in/in-27.md
-  - Intersection: 164 | top: bspˢ, sort, glossary, q, entropy, stability, stable, implementation, k, gauge, without, holographic
-  - Symmetric difference: 733 (only in in/in-27-update-audit.md: 491, only in in/in-27.md: 242)
-    - Only in in/in-27-update-audit.md: thresholds, test, still, explicit, correctness, need, update, calibration, formulas, md, revision, risk
-    - Only in in/in-27.md: size, spatial, n, assertion, k_, p, aperture, autonomic, curve, graph, hist, k_t
-  - Wedge product (bigram intersection): 54 | top: stable sort, guard band, holographic collapse, bspˢ gauge, z order, erased q, optimal packing, super particle, blind packing, composite key, denotation invariance, design target
+- Prior version: in/in-28.md
+  - Intersection: 228 | top: k, strong, summary, servo, buffer, active, code, stability, glossary, sort, thresholds, low
+  - Symmetric difference: 1659 (only in in/in-27-update-audit.md: 427, only in in/in-28.md: 1232)
+    - Only in in/in-27-update-audit.md: test, stable, still, holographic, correctness, normalization, requirement, calibration, packing, formulas, revision, tests
+    - Only in in/in-28.md: details, agda, semantics, see, python, latex, machine, servoobjects, py, servo_objects, mathrm, p
+  - Wedge product (bigram intersection): 13 | top: e g, erased q, spectral energy, active density, buffer pressure, uses jnp, control law, current implementation, current system, hysteresis stability, q servo, servo q
 - Compare: prism_vm.py
-  - Intersection: 175 | top: jnp, arena, f, morton, jax, host, true, md, sync, implementation_plan, bspˢ, test
-  - Symmetric difference: 1931 (only in in/in-27-update-audit.md: 480, only in prism_vm.py: 1451)
+  - Intersection: 175 | top: jnp, arena, f, morton, jax, host, true, md, sync, bspˢ, implementation_plan, test
+  - Symmetric difference: 1961 (only in in/in-27-update-audit.md: 480, only in prism_vm.py: 1481)
     - Only in in/in-27-update-audit.md: glossary, thresholds, entropy, still, implementation, without, explicitly, gauge, holographic, need, histogram, requirement
-    - Only in prism_vm.py: int32, ledger, self, count, dtype, int, none, a1, a2, astype, opcode, size
+    - Only in prism_vm.py: int32, ledger, self, count, int, dtype, a1, none, a2, astype, opcode, size
   - Wedge product (bigram intersection): 11 | top: implementation_plan md, bspˢ layout, jnp argsort, masked morton, denotation invariance, bspᵗ bspˢ, q q, explicit guard, projection q, must commute, p_buffer d_active
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 271 | top: expected, tests, add, key, sort, q, test, implementation, md, must, denotation, stable
-  - Symmetric difference: 1484 (only in in/in-27-update-audit.md: 384, only in IMPLEMENTATION_PLAN.md: 1100)
+  - Symmetric difference: 1485 (only in in/in-27-update-audit.md: 384, only in IMPLEMENTATION_PLAN.md: 1101)
     - Only in in/in-27-update-audit.md: still, holographic, need, histogram, requirement, calibration, band, formulas, revision, appendix, axis, design
     - Only in IMPLEMENTATION_PLAN.md: pytest, null, full, program, txt, canonical, encoding, corrupt, cnf, ledger, coordinate, m1
   - Wedge product (bigram intersection): 32 | top: stable sort, denotation invariance, e g, glossary md, bspˢ gauge, erased q, composite key, masked morton, must commute, q q, test obligations, gauge symmetry
@@ -597,14 +618,14 @@ Methodology:
 - Unique bigrams: 2176
 - Prior version: none
 - Compare: prism_vm.py
-  - Intersection: 260 | top: ledger, arena, count, tests, py, none, size, value, m1, op, q, ids
-  - Symmetric difference: 2024 (only in in/glossary.md: 658, only in prism_vm.py: 1366)
+  - Intersection: 260 | top: ledger, arena, count, tests, py, none, size, value, m1, op, ids, q
+  - Symmetric difference: 2054 (only in in/glossary.md: 658, only in prism_vm.py: 1396)
     - Only in in/glossary.md: obligations, commutation, axes, failure, meanings, qualified, desired, meaning, pretty, interpretation, test_m1_gate, p
-    - Only in prism_vm.py: jnp, int32, self, dtype, int, a1, a2, astype, opcode, arg1, ptr, idx
+    - Only in prism_vm.py: jnp, int32, self, int, dtype, a1, a2, astype, opcode, arg1, ptr, idx
   - Wedge product (bigram intersection): 53 | top: m4 tests, bspˢ layout, canonical ids, x y, test_coord_ops py, tests test_coord_ops, py test_arena_denotation_invariance_random_suite, test_arena_denotation_invariance py, tests test_arena_denotation_invariance, x x, bspᵗ bspˢ, canonical ledger
 - Compare: IMPLEMENTATION_PLAN.md
   - Intersection: 450 | top: tests, py, q, pytest, must, semantic, add, normative, canonical, key, test, vs
-  - Symmetric difference: 1389 (only in in/glossary.md: 468, only in IMPLEMENTATION_PLAN.md: 921)
+  - Symmetric difference: 1390 (only in in/glossary.md: 468, only in IMPLEMENTATION_PLAN.md: 922)
     - Only in in/glossary.md: meanings, qualified, desired, interpretation, test_m1_gate, p, test_invariants, ungated, axis, test_coord_ops, presheaf, test_candidate_cycle
     - Only in IMPLEMENTATION_PLAN.md: expected, program, txt, md, rank, per, tasks, implement, objective, baseline, guard, zero
   - Wedge product (bigram intersection): 155 | top: test obligations, m1 tests, denote q, pretty denote, canonical ids, full key, denotation invariance, key encoding, key equality, coordinate normalization, fixed width, pre step
