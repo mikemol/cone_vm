@@ -37,11 +37,17 @@ RULE_TABLE = jnp.array(
 )
 
 
-def _connect_ptrs(ports: jnp.ndarray, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray) -> jnp.ndarray:
-    node_a, port_a = decode_port(ptr_a)
-    node_b, port_b = decode_port(ptr_b)
-    ports = ports.at[node_a, port_a].set(ptr_b)
-    ports = ports.at[node_b, port_b].set(ptr_a)
+def _connect_ptrs(
+    ports: jnp.ndarray, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray
+) -> jnp.ndarray:
+    ptr_a_i = int(jax.device_get(ptr_a))
+    ptr_b_i = int(jax.device_get(ptr_b))
+    if ptr_a_i == 0 or ptr_b_i == 0:
+        return ports
+    node_a, port_a = decode_port(jnp.asarray(ptr_a_i, dtype=jnp.uint32))
+    node_b, port_b = decode_port(jnp.asarray(ptr_b_i, dtype=jnp.uint32))
+    ports = ports.at[node_a, port_a].set(jnp.uint32(ptr_b_i))
+    ports = ports.at[node_b, port_b].set(jnp.uint32(ptr_a_i))
     return ports
 
 
@@ -106,12 +112,17 @@ def ic_find_active_pairs(state: ICState) -> Tuple[jnp.ndarray, jnp.ndarray]:
     n = ports.shape[0]
     idx = jnp.arange(n, dtype=jnp.uint32)
     ptr = ports[:, 0]
+    is_connected = ptr != jnp.uint32(0)
     tgt_node, tgt_port = decode_port(ptr)
     is_principal = tgt_port == PORT_PRINCIPAL
-    back = ports[tgt_node, 0]
+    in_bounds = tgt_node < jnp.uint32(n)
+    safe_tgt = jnp.where(
+        is_connected & is_principal & in_bounds, tgt_node, jnp.uint32(0)
+    )
+    back = ports[safe_tgt, 0]
     back_node, back_port = decode_port(back)
     mutual = (back_node == idx) & (back_port == PORT_PRINCIPAL)
-    active = is_principal & mutual & (idx < tgt_node)
+    active = is_connected & is_principal & in_bounds & mutual & (idx < tgt_node)
     pairs = jnp.nonzero(active, size=n, fill_value=0)[0]
     return pairs.astype(jnp.uint32), active
 
@@ -275,6 +286,11 @@ def _free_nodes(state: ICState, nodes: jnp.ndarray) -> ICState:
         return state
     count = int(nodes.shape[0])
     free_top = int(state.free_top)
+    cap = int(state.free_stack.shape[0])
+    if free_top + count > cap:
+        raise ValueError(
+            "free_stack overflow (double-free or freeing unallocated nodes)"
+        )
     free_stack = state.free_stack
     free_stack = free_stack.at[free_top:free_top + count].set(nodes)
     return state._replace(free_stack=free_stack, free_top=jnp.uint32(free_top + count))
