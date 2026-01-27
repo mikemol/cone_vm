@@ -245,3 +245,27 @@ def test_ic_apply_active_pairs_mixed_templates():
     assert int(stats.template_counts[ic.TEMPLATE_COMMUTE]) == 1
     assert int(stats.alloc_nodes) == 4
     assert int(stats.freed_nodes) == 4
+
+
+def test_ic_apply_active_pairs_oom_on_alloc():
+    state = ic.ic_init(8)
+    state, ext = ic.ic_alloc(state, 4, ic.TYPE_CON)
+    ext_left, ext_right, ext_dup_left, ext_dup_right = map(int, ext)
+    state, (con_node,) = ic.ic_alloc(state, 1, ic.TYPE_CON)
+    state, (dup_node,) = ic.ic_alloc(state, 1, ic.TYPE_DUP)
+    con_node = int(con_node)
+    dup_node = int(dup_node)
+    state = ic.ic_wire(state, con_node, ic.PORT_PRINCIPAL, dup_node, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, con_node, ic.PORT_AUX_LEFT, ext_left, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, con_node, ic.PORT_AUX_RIGHT, ext_right, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, dup_node, ic.PORT_AUX_LEFT, ext_dup_left, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, dup_node, ic.PORT_AUX_RIGHT, ext_dup_right, ic.PORT_PRINCIPAL)
+    free_top_before = int(state.free_top)
+    state2, stats = ic.ic_apply_active_pairs(state)
+    assert bool(state2.oom)
+    assert int(state2.free_top) == free_top_before
+    assert int(state2.node_type[con_node]) == int(ic.TYPE_CON)
+    assert int(state2.node_type[dup_node]) == int(ic.TYPE_DUP)
+    assert int(stats.active_pairs) == 0
+    assert int(stats.alloc_nodes) == 0
+    assert int(stats.freed_nodes) == 0

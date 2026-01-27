@@ -902,8 +902,8 @@ layout and rule-table rewrites.
 
 Status: implementation underway (roadmap active). Current state:
 - M6–M8 complete in `ic_vm.py` + `tests/test_ic_vm.py` (data model, active-pair matching/compaction, rule table + wiring templates).
-- M9 partial: device-resident fixed-size alloc/free with `oom` guard; prefix-sum allocation still pending.
-- M10 partial: device-resident apply + reduce loop; full match/alloc/rewire/commit pipeline still pending.
+- M9 ✅: Device-resident prefix-sum allocation plan + FreeStack reuse/overflow guards with `oom` boundary (see `ic_apply_active_pairs` allocation planning + OOM test).
+- M10 partial: Device-resident apply + reduce loop; full match/alloc/rewire/commit pipeline still pending.
 
 Prereqs:
 - Complete m1 through m5 (BSP cycle verified and stable).
@@ -914,5 +914,5 @@ Planned steps (tests-first, pytest + program fixtures):
 - M6 ✅: Data model for NodeTypes/Ports/FreeStack and port encoding invariants.
 - M7 ✅: Active-pair matching + stream compaction (null: no active pairs).
 - M8 ✅: Rule table and wiring templates (annihilation/commutation/erasure).
-- M9 ⏳: Allocation via prefix sums + FreeStack reuse/overflow guards.
+- M9 ✅: Allocation via prefix sums + FreeStack reuse/overflow guards.
 - M10 ⏳: Match/alloc/rewire/commit kernel pipeline and end-to-end reductions.
