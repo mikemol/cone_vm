@@ -120,26 +120,18 @@ jobs:
     needs: [changes, policy-check, audit]
     if: needs.changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
+    env:
+      GHCUP_NONINTERACTIVE: "1"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - name: Install GHC + cabal
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ghc cabal-install
+      - name: Install mise toolchain
+        uses: jdx/mise-action@6d1e696aa24c1aa1bcc1adea0212707c71ab78a8
+        with:
+          version: 2026.1.7
+          install: true
       - name: Install Agda (cabal, pinned)
         run: |
-          set -euo pipefail
-          AGDA_VERSION="$(tr -d '[:space:]' < agda/AGDA_VERSION)"
-          if [ -z "$AGDA_VERSION" ]; then
-            echo "agda/AGDA_VERSION is empty" >&2
-            exit 1
-          fi
-          cabal update
-          cabal install "Agda-${AGDA_VERSION}" \
-            --installdir "$GITHUB_WORKSPACE/.tools/agda/bin" \
-            --install-method=copy \
-            --overwrite-policy=always
-          echo "$GITHUB_WORKSPACE/.tools/agda/bin" >> "$GITHUB_PATH"
+          scripts/install_agda.sh
       - name: Run Agda checker
         run: |
           scripts/check_agda.sh

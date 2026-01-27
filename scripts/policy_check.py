@@ -22,6 +22,7 @@ ALLOWED_ACTIONS = {
     "actions/setup-python",
     "actions/upload-artifact",
     "actions/download-artifact",
+    "jdx/mise-action",
 }
 REQUIRED_RUNNER_LABELS = {"self-hosted", "gpu", "local"}
 TRUSTED_BRANCHES = {"main", "stage"}
