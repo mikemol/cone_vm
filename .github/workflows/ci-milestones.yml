@@ -9,6 +9,7 @@ on:
       - ".github/workflows/**"
       - "ci_trigger.txt"
       - "**/*.md"
+      - "**/*.agda"
       - "tests/**"
       - "scripts/**"
       - "prism_vm.py"
@@ -114,6 +115,20 @@ jobs:
         with:
           name: audit
           path: artifacts/audit_in_versions.md
+
+  agda-check:
+    needs: [changes, policy-check, audit]
+    if: needs.changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Install Agda (apt)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y agda
+      - name: Run Agda checker
+        run: |
+          scripts/check_agda.sh
 
   tests:
     needs: [changes, policy-check, audit]
@@ -311,7 +326,7 @@ jobs:
 
   collect-report:
     runs-on: ubuntu-latest
-    needs: [changes, policy-check, audit, tests, tests-gpu]
+    needs: [changes, policy-check, audit, agda-check, tests, tests-gpu]
     if: always() && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5

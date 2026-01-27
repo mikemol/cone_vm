@@ -43,3 +43,7 @@ Thumbs.db
 
 # CI/local artifacts
 artifacts/
+
+# Local tooling
+.tools/
+dist-newstyle/

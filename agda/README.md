@@ -8,3 +8,18 @@ blocking on full formalization.
 Status: scaffold + basic lemmas (no CI integration).
 
 Suggested entrypoint: `agda/Prism/Prism.agda`.
+
+## Local setup (mise)
+
+Agda is installed via `cabal` under `mise` to keep toolchain versions pinned
+in `mise.toml` without committing binaries.
+
+1. Install toolchain:
+   - `mise install`
+2. Install Agda (downloads from Hackage):
+   - `scripts/install_agda.sh`
+3. Run the checker:
+   - `scripts/check_agda.sh`
+
+CI note: the checker will also use a system `agda` on PATH (or `AGDA_BIN` if
+set), so GitHub-hosted runners can install Agda via apt without `mise`.

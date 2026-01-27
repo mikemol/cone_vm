@@ -1,2 +1,4 @@
 [tools]
 python = "latest"
+ghc = "latest"
+cabal = "latest"
