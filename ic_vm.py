@@ -86,7 +86,9 @@ def ic_init(capacity: int) -> ICState:
     ports = jnp.zeros((capacity, 3), dtype=jnp.uint32)
     free_stack = jnp.arange(capacity - 1, -1, -1, dtype=jnp.uint32)
     # Node 0 is reserved (encode_port(0, PORT_PRINCIPAL) == 0 sentinel).
-    free_top = jnp.array(max(capacity - 1, 0), dtype=jnp.uint32)
+    free_top = jnp.array(
+        capacity if capacity < 3 else max(capacity - 1, 0), dtype=jnp.uint32
+    )
     oom = jnp.array(False, dtype=jnp.bool_)
     return ICState(
         node_type=node_type,
@@ -244,7 +246,7 @@ def ic_apply_erase(state: ICState, node_a: jnp.ndarray, node_b: jnp.ndarray) -> 
     ports = state.ports
     aux_left = ports[target, 1]
     aux_right = ports[target, 2]
-    state, eras = _alloc2(state)
+    state2, eras = _alloc2(state)
 
     def _do(s):
         s = _init_nodes(s, eras, TYPE_ERA)
@@ -263,7 +265,7 @@ def ic_apply_erase(state: ICState, node_a: jnp.ndarray, node_b: jnp.ndarray) -> 
         s = s._replace(node_type=node_type, ports=ports)
         return _free2(s, jnp.stack([era, target]).astype(jnp.uint32))
 
-    return jax.lax.cond(~state.oom, _do, lambda s: s, state)
+    return jax.lax.cond(state2.oom, lambda s: s, _do, state2)
 
 
 def ic_apply_commute(state: ICState, node_a: jnp.ndarray, node_b: jnp.ndarray) -> ICState:
@@ -276,7 +278,7 @@ def ic_apply_commute(state: ICState, node_a: jnp.ndarray, node_b: jnp.ndarray) -
     con_right = ports[con, 2]
     dup_left = ports[dup, 1]
     dup_right = ports[dup, 2]
-    state, ids4 = _alloc4(state)
+    state2, ids4 = _alloc4(state)
 
     def _do(s):
         dup_nodes = ids4[:2]
@@ -310,7 +312,7 @@ def ic_apply_commute(state: ICState, node_a: jnp.ndarray, node_b: jnp.ndarray) -
         s = s._replace(node_type=node_type, ports=ports)
         return _free2(s, jnp.stack([con, dup]).astype(jnp.uint32))
 
-    return jax.lax.cond(~state.oom, _do, lambda s: s, state)
+    return jax.lax.cond(state2.oom, lambda s: s, _do, state2)
 
 
 def ic_apply_template(
@@ -355,25 +357,17 @@ def ic_apply_active_pairs(state: ICState) -> Tuple[ICState, ICRewriteStats]:
         node_b = decode_port(s.ports[node_a, PORT_PRINCIPAL])[0]
         tmpl = ic_rule_for_types(s.node_type[node_a], s.node_type[node_b])[1]
         s2 = ic_apply_template(s, node_a, node_b, tmpl)
-        did_apply = (~s.oom) & (~s2.oom)
+        ok = (~s.oom) & (~s2.oom)
         tmpl_i = tmpl.astype(jnp.int32)
-        tmpl_counts = tmpl_counts.at[tmpl_i].add(
-            did_apply.astype(jnp.uint32)
+        tmpl_counts = tmpl_counts.at[tmpl_i].add(ok.astype(jnp.uint32))
+        alloc_delta = jnp.where(
+            (tmpl == TEMPLATE_ERASE) & ok, jnp.uint32(2), jnp.uint32(0)
         )
         alloc_delta = jnp.where(
-            (tmpl == TEMPLATE_ERASE) & did_apply, jnp.uint32(2), jnp.uint32(0)
-        )
-        alloc_delta = jnp.where(
-            (tmpl == TEMPLATE_COMMUTE) & did_apply, jnp.uint32(4), alloc_delta
+            (tmpl == TEMPLATE_COMMUTE) & ok, jnp.uint32(4), alloc_delta
         )
         freed_delta = jnp.where(
-            (tmpl == TEMPLATE_ERASE) & did_apply, jnp.uint32(2), jnp.uint32(0)
-        )
-        freed_delta = jnp.where(
-            (tmpl == TEMPLATE_COMMUTE) & did_apply, jnp.uint32(2), freed_delta
-        )
-        freed_delta = jnp.where(
-            (tmpl == TEMPLATE_ANNIHILATE) & did_apply, jnp.uint32(2), freed_delta
+            (tmpl != TEMPLATE_NONE) & ok, jnp.uint32(2), jnp.uint32(0)
         )
         return s2, alloc + alloc_delta, freed + freed_delta, tmpl_counts
 
