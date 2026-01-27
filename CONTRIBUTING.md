@@ -32,8 +32,7 @@ GitHub Actions settings for this repository.
 
 ## Agda proofs
 Agda checks run in a pinned container image. See `agda/README.md` for details.
-Local run (digest required):
+Local run:
 ```
-AGDA_IMAGE=ghcr.io/mikemol/act-ubuntu-agda@sha256:<digest> \
-  scripts/check_agda_container.sh
+scripts/check_agda_container.sh
 ```
