@@ -237,6 +237,57 @@ def ic_apply_erase(state: ICState, node_a: int, node_b: int) -> ICState:
 
 
 def ic_apply_commute(state: ICState, node_a: int, node_b: int) -> ICState:
-    # Commute: allocate placeholder nodes; wiring is a future step.
-    state, alloc = ic_alloc(state, int(RULE_ALLOC_COMMUTE), TYPE_DUP)
+    # Commute: con/dup cross-wiring (partial scaffold).
+    type_a = state.node_type[node_a]
+    type_b = state.node_type[node_b]
+    if type_a == TYPE_CON and type_b == TYPE_DUP:
+        con = node_a
+        dup = node_b
+    elif type_a == TYPE_DUP and type_b == TYPE_CON:
+        con = node_b
+        dup = node_a
+    else:
+        raise ValueError("ic_apply_commute expects a CON/DUP pair")
+    ports = state.ports
+    con_left = ports[con, 1]
+    con_right = ports[con, 2]
+    dup_left = ports[dup, 1]
+    dup_right = ports[dup, 2]
+    state, con_nodes = ic_alloc(state, 2, TYPE_CON)
+    state, dup_nodes = ic_alloc(state, 2, TYPE_DUP)
+    if con_nodes.size == 2 and dup_nodes.size == 2:
+        c0, c1 = con_nodes
+        d0, d1 = dup_nodes
+        ports = state.ports
+        ports = _connect_ptrs(
+            ports,
+            encode_port(c0, PORT_PRINCIPAL),
+            encode_port(d0, PORT_PRINCIPAL),
+        )
+        ports = _connect_ptrs(
+            ports,
+            encode_port(c1, PORT_PRINCIPAL),
+            encode_port(d1, PORT_PRINCIPAL),
+        )
+        ports = _connect_ptrs(ports, encode_port(c0, PORT_AUX_LEFT), dup_left)
+        ports = _connect_ptrs(ports, encode_port(c1, PORT_AUX_LEFT), dup_right)
+        ports = _connect_ptrs(ports, encode_port(d0, PORT_AUX_LEFT), con_left)
+        ports = _connect_ptrs(ports, encode_port(d1, PORT_AUX_LEFT), con_right)
+        ports = _connect_ptrs(
+            ports,
+            encode_port(c0, PORT_AUX_RIGHT),
+            encode_port(d0, PORT_AUX_RIGHT),
+        )
+        ports = _connect_ptrs(
+            ports,
+            encode_port(c1, PORT_AUX_RIGHT),
+            encode_port(d1, PORT_AUX_RIGHT),
+        )
+        ports = ports.at[con].set(jnp.uint32(0))
+        ports = ports.at[dup].set(jnp.uint32(0))
+        node_type = state.node_type
+        node_type = node_type.at[con].set(TYPE_FREE)
+        node_type = node_type.at[dup].set(TYPE_FREE)
+        state = state._replace(node_type=node_type, ports=ports)
+        state = _free_nodes(state, jnp.asarray([con, dup], dtype=jnp.uint32))
     return state
