@@ -38,6 +38,32 @@ def test_intern_nodes_reuses_existing():
     assert int(ledger1.count) == int(ledger2.count)
 
 
+def test_intern_nodes_reuses_shared_subtrees():
+    ledger = pv.init_ledger()
+
+    def _intern_one(ledger_in, op, a1, a2):
+        ids, ledger_out = pv.intern_nodes(
+            ledger_in,
+            jnp.array([op], dtype=jnp.int32),
+            jnp.array([a1], dtype=jnp.int32),
+            jnp.array([a2], dtype=jnp.int32),
+        )
+        return int(ids[0]), ledger_out
+
+    suc0, ledger = _intern_one(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    mul1, ledger = _intern_one(ledger, pv.OP_MUL, suc0, suc0)
+    add1, ledger = _intern_one(ledger, pv.OP_ADD, suc0, mul1)
+    count_after = int(ledger.count)
+
+    # Rebuild the same structure with swapped commutative args; expect no new nodes.
+    mul2, ledger = _intern_one(ledger, pv.OP_MUL, suc0, suc0)
+    add2, ledger = _intern_one(ledger, pv.OP_ADD, mul2, suc0)
+
+    assert mul2 == mul1
+    assert add2 == add1
+    assert int(ledger.count) == count_after
+
+
 def test_intern_nodes_order_invariant():
     triples_a = [
         (pv.OP_SUC, 1, 0),
