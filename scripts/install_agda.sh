@@ -8,21 +8,33 @@ VERSION_FILE="${AGDA_VERSION_FILE:-$ROOT/agda/AGDA_VERSION}"
 
 # Keep cabal state/config under the repo to avoid touching $HOME.
 export CABAL_DIR="${CABAL_DIR:-$TOOLS_DIR/cabal}"
-export CABAL_CONFIG="${CABAL_CONFIG:-$TOOLS_DIR/cabal/config}"
+export CABAL_CONFIG="${CABAL_CONFIG:-$CABAL_DIR/config}"
 export CABAL_REPO_CACHE="${CABAL_REPO_CACHE:-$CABAL_DIR/packages}"
 export CABAL_STORE_DIR="${CABAL_STORE_DIR:-$CABAL_DIR/store}"
 export CABAL_LOGS_DIR="${CABAL_LOGS_DIR:-$CABAL_DIR/logs}"
 
 mkdir -p "$CABAL_DIR" "$CABAL_REPO_CACHE" "$CABAL_STORE_DIR" "$CABAL_LOGS_DIR"
-mkdir -p "$(dirname "$CABAL_CONFIG")"
 
-cat >"$CABAL_CONFIG" <<EOF
-repository hackage.haskell.org
-  url: https://hackage.haskell.org/
-remote-repo-cache: ${CABAL_REPO_CACHE}
-store-dir: ${CABAL_STORE_DIR}
-logs-dir: ${CABAL_LOGS_DIR}
-EOF
+if [[ ! -f "$CABAL_CONFIG" ]]; then
+  mise exec -- cabal user-config init --config-file "$CABAL_CONFIG"
+fi
+
+# Ensure repo-local cache/store/logs in the cabal config.
+if grep -q "^remote-repo-cache:" "$CABAL_CONFIG"; then
+  sed -i "s|^remote-repo-cache:.*|remote-repo-cache: ${CABAL_REPO_CACHE}|" "$CABAL_CONFIG"
+else
+  printf "\nremote-repo-cache: %s\n" "$CABAL_REPO_CACHE" >> "$CABAL_CONFIG"
+fi
+if grep -q "^store-dir:" "$CABAL_CONFIG"; then
+  sed -i "s|^store-dir:.*|store-dir: ${CABAL_STORE_DIR}|" "$CABAL_CONFIG"
+else
+  printf "store-dir: %s\n" "$CABAL_STORE_DIR" >> "$CABAL_CONFIG"
+fi
+if grep -q "^logs-dir:" "$CABAL_CONFIG"; then
+  sed -i "s|^logs-dir:.*|logs-dir: ${CABAL_LOGS_DIR}|" "$CABAL_CONFIG"
+else
+  printf "logs-dir: %s\n" "$CABAL_LOGS_DIR" >> "$CABAL_CONFIG"
+fi
 
 if [[ -z "${AGDA_VERSION:-}" ]]; then
   if [[ -f "$VERSION_FILE" ]]; then
