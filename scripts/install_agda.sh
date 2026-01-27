@@ -22,7 +22,6 @@ repository hackage.haskell.org
 remote-repo-cache: ${CABAL_REPO_CACHE}
 store-dir: ${CABAL_STORE_DIR}
 logs-dir: ${CABAL_LOGS_DIR}
-index-state: HEAD
 EOF
 
 if [[ -z "${AGDA_VERSION:-}" ]]; then
