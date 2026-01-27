@@ -11,7 +11,7 @@ elif [[ -x "$AGDA_BIN_DEFAULT" ]]; then
 elif command -v agda >/dev/null 2>&1; then
   AGDA_BIN="$(command -v agda)"
 else
-  echo "Agda not installed. Run scripts/install_agda.sh or install agda in PATH." >&2
+  echo "Agda not installed. Use the container helper (scripts/check_agda_container.sh) or install agda in PATH." >&2
   exit 1
 fi
 
