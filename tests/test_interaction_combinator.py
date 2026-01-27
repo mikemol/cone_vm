@@ -18,3 +18,10 @@ def test_rule_table_empty_valid():
     assert table.lhs.shape == (0, 2)
     assert table.rhs_node_type.shape == (0, 2)
     assert table.rhs_port_map.shape == (0, 2, ic.PORT_ARITY)
+
+
+def test_port_encode_decode_roundtrip():
+    ref = ic.encode_port(7, ic.PORT_R)
+    node, port = ic.decode_port(ref)
+    assert node == 7
+    assert port == ic.PORT_R
