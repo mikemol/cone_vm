@@ -857,8 +857,8 @@ Ordered by semantic risk first, then determinism/observability, then performance
 - Read-only lookup fallback for `intern_nodes` stop path (CORRUPT/OOM). ✅
 
 **P1 — Determinism / observability**
-- Strict scatter variant (no drop sentinel) for tests/guards.
-- Deterministic gather behavior outside test mode (clamp or strict policy).
+- Strict scatter variant (no drop sentinel) for tests/guards. ✅
+- Deterministic gather behavior outside test mode (clamp policy). ✅
 - CNF-2 observability counters (`rewrite_child`, `changed`, `wrap_emit`).
 
 **P2 — Milestone integrity / test fidelity**
