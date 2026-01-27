@@ -28,3 +28,22 @@ def test_ic_find_active_pairs_principal_link():
     pairs, active = ic.ic_find_active_pairs(state)
     assert bool(active[0])
     assert int(pairs[0]) == 0
+
+
+def test_ic_compact_active_pairs_empty():
+    state = ic.ic_init(3)
+    compacted, count, active = ic.ic_compact_active_pairs(state)
+    assert int(count) == 0
+    assert not bool(active[0])
+    assert list(map(int, compacted)) == [0, 0, 0]
+
+
+def test_ic_compact_active_pairs_multiple():
+    state = ic.ic_init(4)
+    state = ic.ic_wire(state, 0, 0, 1, 0)
+    state = ic.ic_wire(state, 2, 0, 3, 0)
+    compacted, count, active = ic.ic_compact_active_pairs(state)
+    assert int(count) == 2
+    assert bool(active[0])
+    assert bool(active[2])
+    assert list(map(int, compacted[:2])) == [0, 2]

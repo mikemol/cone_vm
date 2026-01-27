@@ -76,3 +76,22 @@ def ic_find_active_pairs(state: ICState) -> Tuple[jnp.ndarray, jnp.ndarray]:
     active = is_principal & mutual & (idx < tgt_node)
     pairs = jnp.nonzero(active, size=n, fill_value=0)[0]
     return pairs.astype(jnp.uint32), active
+
+
+def _compact_mask(mask: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    size = mask.shape[0]
+    count = jnp.sum(mask).astype(jnp.uint32)
+    idx = jnp.nonzero(mask, size=size, fill_value=0)[0].astype(jnp.uint32)
+    valid = jnp.arange(size, dtype=jnp.uint32) < count
+    return idx, valid, count
+
+
+@jax.jit
+def ic_compact_active_pairs(
+    state: ICState,
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Return compacted active pair indices and a count."""
+    _, active = ic_find_active_pairs(state)
+    idx, valid, count = _compact_mask(active)
+    compacted = jnp.where(valid, idx, jnp.uint32(0))
+    return compacted, count, active
