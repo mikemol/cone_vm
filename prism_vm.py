@@ -259,15 +259,14 @@ def _scatter_guard_strict(indices, max_index, label):
 def _scatter_drop(target, indices, values, label):
     max_index = jnp.asarray(target.shape[0], dtype=jnp.int32)
     _scatter_guard(indices, max_index, label)
-    # NOTE: drop semantics allow sentinel indices for masked scatters; stricter
-    # enforcement is deferred to the roadmap in IMPLEMENTATION_PLAN.md.
+    # NOTE: drop semantics allow sentinel indices for masked scatters.
     return target.at[indices].set(values, mode="drop")
 
 
 def _scatter_strict(target, indices, values, label):
     max_index = jnp.asarray(target.shape[0], dtype=jnp.int32)
     _scatter_guard_strict(indices, max_index, label)
-    return target.at[indices].set(values)
+    return target.at[indices].set(values, mode="promise_in_bounds")
 
 
 def _guard_gather_index(idx, size, label):
@@ -3646,14 +3645,14 @@ def kernel_mul(manifest, ptr):
         def do_add(state):
             b_ops, b_a1, b_a2, b_count, b_oom, acc = state
             add_idx = b_count
-            b_ops = _scatter_drop(b_ops, add_idx, OP_ADD, "kernel_mul.b_ops")
+            b_ops = _scatter_strict(b_ops, add_idx, OP_ADD, "kernel_mul.b_ops")
             add_a1_raw = y
             add_a2_raw = acc
             add_swap = add_a2_raw < add_a1_raw
             add_a1 = jnp.where(add_swap, add_a2_raw, add_a1_raw)
             add_a2 = jnp.where(add_swap, add_a1_raw, add_a2_raw)
-            b_a1 = _scatter_drop(b_a1, add_idx, add_a1, "kernel_mul.b_a1")
-            b_a2 = _scatter_drop(b_a2, add_idx, add_a2, "kernel_mul.b_a2")
+            b_a1 = _scatter_strict(b_a1, add_idx, add_a1, "kernel_mul.b_a1")
+            b_a2 = _scatter_strict(b_a2, add_idx, add_a2, "kernel_mul.b_a2")
             b_count = b_count + 1
             add_manifest = Manifest(b_ops, b_a1, b_a2, b_count, b_oom)
             updated_manifest, next_acc = kernel_add(add_manifest, add_idx)
