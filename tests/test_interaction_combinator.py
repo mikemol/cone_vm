@@ -17,8 +17,9 @@ def test_rule_table_empty_valid():
     table = ic.init_rule_table_empty()
     ic.validate_rule_table(table)
     assert table.lhs.shape == (0, 2)
-    assert table.rhs_node_type.shape == (0, 2)
-    assert table.rhs_port_map.shape == (0, 2, ic.PORT_ARITY)
+    assert table.rhs_node_type.shape == (0, ic.MAX_NEW_NODES)
+    assert table.rhs_port_map.shape == (0, ic.MAX_NEW_NODES, ic.PORT_ARITY)
+    assert table.ext_port_map.shape == (0, ic.EXT_COUNT)
 
 
 def test_port_encode_decode_roundtrip():
@@ -75,12 +76,15 @@ def test_match_rules_symmetric_pair():
     count = jnp.int32(1)
     table = ic.RuleTable(
         lhs=jnp.array([[ic.IC_CON, ic.IC_DUP]], dtype=jnp.int8),
-        rhs_node_type=jnp.zeros((1, 2), dtype=jnp.int8),
-        rhs_port_map=jnp.zeros((1, 2, ic.PORT_ARITY), dtype=jnp.int32),
+        alloc_count=jnp.array([0], dtype=jnp.int32),
+        rhs_node_type=jnp.zeros((1, ic.MAX_NEW_NODES), dtype=jnp.int8),
+        rhs_port_map=jnp.zeros((1, ic.MAX_NEW_NODES, ic.PORT_ARITY), dtype=jnp.int32),
+        ext_port_map=jnp.zeros((1, ic.EXT_COUNT), dtype=jnp.int32),
     )
-    rule_idx, matched = ic.match_active_pairs(state, pairs, count, table)
+    rule_idx, matched, swapped = ic.match_active_pairs(state, pairs, count, table)
     assert int(rule_idx[0]) == 0
     assert bool(matched[0])
+    assert bool(swapped[0])
 
 
 def test_match_rules_empty_table():
@@ -90,9 +94,10 @@ def test_match_rules_empty_table():
     pairs = jnp.array([[0, 1]], dtype=jnp.int32)
     count = jnp.int32(1)
     table = ic.init_rule_table_empty()
-    rule_idx, matched = ic.match_active_pairs(state, pairs, count, table)
+    rule_idx, matched, swapped = ic.match_active_pairs(state, pairs, count, table)
     assert int(rule_idx[0]) == -1
     assert not bool(matched[0])
+    assert not bool(swapped[0])
 
 
 def test_match_rules_respects_count():
@@ -103,11 +108,34 @@ def test_match_rules_respects_count():
     count = jnp.int32(1)
     table = ic.RuleTable(
         lhs=jnp.array([[ic.IC_CON, ic.IC_DUP]], dtype=jnp.int8),
-        rhs_node_type=jnp.zeros((1, 2), dtype=jnp.int8),
-        rhs_port_map=jnp.zeros((1, 2, ic.PORT_ARITY), dtype=jnp.int32),
+        alloc_count=jnp.array([0], dtype=jnp.int32),
+        rhs_node_type=jnp.zeros((1, ic.MAX_NEW_NODES), dtype=jnp.int8),
+        rhs_port_map=jnp.zeros((1, ic.MAX_NEW_NODES, ic.PORT_ARITY), dtype=jnp.int32),
+        ext_port_map=jnp.zeros((1, ic.EXT_COUNT), dtype=jnp.int32),
     )
-    rule_idx, matched = ic.match_active_pairs(state, pairs, count, table)
+    rule_idx, matched, swapped = ic.match_active_pairs(state, pairs, count, table)
     assert int(rule_idx[0]) == 0
     assert bool(matched[0])
     assert int(rule_idx[1]) == -1
     assert not bool(matched[1])
+    assert not bool(swapped[1])
+
+
+def test_rule_table_core_commutation_template():
+    table = ic.init_rule_table_core()
+    ic.validate_rule_table(table)
+    lhs = table.lhs
+    match = (lhs[:, 0] == ic.IC_DUP) & (lhs[:, 1] == ic.IC_CON)
+    idx = int(jnp.argmax(match))
+    assert int(table.alloc_count[idx]) == 4
+    assert list(table.rhs_node_type[idx]) == [
+        ic.IC_CON,
+        ic.IC_CON,
+        ic.IC_DUP,
+        ic.IC_DUP,
+    ]
+    assert list(table.rhs_port_map[idx, 0]) == [ic.EXT_A_L, 2, 3]
+    assert list(table.rhs_port_map[idx, 1]) == [ic.EXT_A_R, 2, 3]
+    assert list(table.rhs_port_map[idx, 2]) == [ic.EXT_B_L, 0, 1]
+    assert list(table.rhs_port_map[idx, 3]) == [ic.EXT_B_R, 0, 1]
+    assert list(table.ext_port_map[idx]) == [0, 1, 2, 3]
