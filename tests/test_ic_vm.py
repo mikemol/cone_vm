@@ -15,6 +15,88 @@ def test_ic_port_encode_decode_roundtrip():
     assert int(out_port) == int(port)
 
 
+def test_ic_wire_jax_roundtrip():
+    state = ic.ic_init(4)
+    state = ic.ic_wire_jax(state, jnp.uint32(1), jnp.uint32(0), jnp.uint32(2), jnp.uint32(0))
+    n1, p1 = ic.decode_port(state.ports[1, 0])
+    n2, p2 = ic.decode_port(state.ports[2, 0])
+    assert int(n1) == 2
+    assert int(p1) == int(ic.PORT_PRINCIPAL)
+    assert int(n2) == 1
+    assert int(p2) == int(ic.PORT_PRINCIPAL)
+
+
+def test_ic_wire_jax_safe_noop():
+    state = ic.ic_init(4)
+    ports_before = state.ports
+    state = ic.ic_wire_jax_safe(
+        state, jnp.uint32(0), jnp.uint32(0), jnp.uint32(2), jnp.uint32(0)
+    )
+    assert jnp.array_equal(state.ports, ports_before)
+
+
+def test_ic_wire_pairs_jax_basic():
+    state = ic.ic_init(6)
+    state = ic.ic_wire_pairs_jax(
+        state,
+        jnp.array([1, 3], dtype=jnp.uint32),
+        jnp.array([0, 1], dtype=jnp.uint32),
+        jnp.array([2, 4], dtype=jnp.uint32),
+        jnp.array([0, 2], dtype=jnp.uint32),
+    )
+    n1, p1 = ic.decode_port(state.ports[1, 0])
+    n2, p2 = ic.decode_port(state.ports[2, 0])
+    assert int(n1) == 2
+    assert int(p1) == int(ic.PORT_PRINCIPAL)
+    assert int(n2) == 1
+    assert int(p2) == int(ic.PORT_PRINCIPAL)
+    n3, p3 = ic.decode_port(state.ports[3, 1])
+    n4, p4 = ic.decode_port(state.ports[4, 2])
+    assert int(n3) == 4
+    assert int(p3) == int(ic.PORT_AUX_RIGHT)
+    assert int(n4) == 3
+    assert int(p4) == int(ic.PORT_AUX_LEFT)
+
+
+def test_ic_wire_ptr_pairs_jax_null_skip():
+    state = ic.ic_init(4)
+    ptr_a = jnp.array(
+        [
+            ic.encode_port(jnp.uint32(1), jnp.uint32(0)),
+            jnp.uint32(0),
+        ],
+        dtype=jnp.uint32,
+    )
+    ptr_b = jnp.array(
+        [
+            ic.encode_port(jnp.uint32(2), jnp.uint32(0)),
+            ic.encode_port(jnp.uint32(3), jnp.uint32(0)),
+        ],
+        dtype=jnp.uint32,
+    )
+    state = ic.ic_wire_ptr_pairs_jax(state, ptr_a, ptr_b)
+    n1, p1 = ic.decode_port(state.ports[1, 0])
+    n2, p2 = ic.decode_port(state.ports[2, 0])
+    assert int(n1) == 2
+    assert int(p1) == int(ic.PORT_PRINCIPAL)
+    assert int(n2) == 1
+    assert int(p2) == int(ic.PORT_PRINCIPAL)
+    assert int(state.ports[3, 0]) == 0
+
+
+def test_ic_wire_star_jax_leafs_connect():
+    state = ic.ic_init(5)
+    leaf_nodes = jnp.array([2, 3], dtype=jnp.uint32)
+    leaf_ports = jnp.array([0, 0], dtype=jnp.uint32)
+    state = ic.ic_wire_star_jax(
+        state, jnp.uint32(1), jnp.uint32(0), leaf_nodes, leaf_ports
+    )
+    for leaf in (2, 3):
+        node, port = ic.decode_port(state.ports[leaf, 0])
+        assert int(node) == 1
+        assert int(port) == int(ic.PORT_PRINCIPAL)
+
+
 def test_ic_init_free_stack():
     state = ic.ic_init(4)
     assert state.free_top == 3

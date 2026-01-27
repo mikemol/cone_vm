@@ -210,6 +210,141 @@ def ic_wire(
 
 
 @jax.jit
+def ic_wire_jax(
+    state: ICState,
+    node_a: jnp.ndarray,
+    port_a: jnp.ndarray,
+    node_b: jnp.ndarray,
+    port_b: jnp.ndarray,
+) -> ICState:
+    """Device-only wire: connect (node, port) <-> (node, port)."""
+    node_a = jnp.asarray(node_a, dtype=jnp.uint32)
+    port_a = jnp.asarray(port_a, dtype=jnp.uint32)
+    node_b = jnp.asarray(node_b, dtype=jnp.uint32)
+    port_b = jnp.asarray(port_b, dtype=jnp.uint32)
+    ptr_a = encode_port(node_a, port_a)
+    ptr_b = encode_port(node_b, port_b)
+    ports = state.ports
+    ports = ports.at[node_a, port_a].set(ptr_b)
+    ports = ports.at[node_b, port_b].set(ptr_a)
+    return state._replace(ports=ports)
+
+
+@jax.jit
+def ic_wire_ptrs_jax(
+    state: ICState, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray
+) -> ICState:
+    """Device-only wire given two encoded pointers (NULL-safe)."""
+    ports = _connect_ptrs(state.ports, ptr_a, ptr_b)
+    return state._replace(ports=ports)
+
+
+@jax.jit
+def ic_wire_jax_safe(
+    state: ICState,
+    node_a: jnp.ndarray,
+    port_a: jnp.ndarray,
+    node_b: jnp.ndarray,
+    port_b: jnp.ndarray,
+) -> ICState:
+    """Device-only wire that no-ops on NULL endpoints."""
+    ptr_a = encode_port(jnp.asarray(node_a, jnp.uint32), jnp.asarray(port_a, jnp.uint32))
+    ptr_b = encode_port(jnp.asarray(node_b, jnp.uint32), jnp.asarray(port_b, jnp.uint32))
+    return ic_wire_ptrs_jax(state, ptr_a, ptr_b)
+
+
+@jax.jit
+def ic_wire_pairs_jax(
+    state: ICState,
+    node_a: jnp.ndarray,
+    port_a: jnp.ndarray,
+    node_b: jnp.ndarray,
+    port_b: jnp.ndarray,
+) -> ICState:
+    """Batch wire: connect (node_a[i], port_a[i]) <-> (node_b[i], port_b[i])."""
+    node_a = jnp.asarray(node_a, dtype=jnp.uint32)
+    port_a = jnp.asarray(port_a, dtype=jnp.uint32)
+    node_b = jnp.asarray(node_b, dtype=jnp.uint32)
+    port_b = jnp.asarray(port_b, dtype=jnp.uint32)
+
+    n_nodes = state.ports.shape[0]
+    n_nodes_u = jnp.uint32(n_nodes)
+    na = jnp.minimum(node_a, n_nodes_u - jnp.uint32(1))
+    nb = jnp.minimum(node_b, n_nodes_u - jnp.uint32(1))
+    pa = port_a & jnp.uint32(0x3)
+    pb = port_b & jnp.uint32(0x3)
+
+    ptr_a = encode_port(na, pa)
+    ptr_b = encode_port(nb, pb)
+    do = (ptr_a != jnp.uint32(0)) & (ptr_b != jnp.uint32(0))
+
+    safe_node = jnp.uint32(0)
+    safe_port = jnp.uint32(0)
+    na_s = jnp.where(do, na, safe_node)
+    pa_s = jnp.where(do, pa, safe_port)
+    nb_s = jnp.where(do, nb, safe_node)
+    pb_s = jnp.where(do, pb, safe_port)
+
+    ports = state.ports
+    val_a = jnp.where(do, ptr_b, ports[safe_node, safe_port])
+    val_b = jnp.where(do, ptr_a, ports[safe_node, safe_port])
+    ports = ports.at[na_s, pa_s].set(val_a, mode="drop")
+    ports = ports.at[nb_s, pb_s].set(val_b, mode="drop")
+    return state._replace(ports=ports)
+
+
+@jax.jit
+def ic_wire_ptr_pairs_jax(
+    state: ICState, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray
+) -> ICState:
+    """Batch wire given encoded pointers (NULL-safe)."""
+    ptr_a = jnp.asarray(ptr_a, dtype=jnp.uint32)
+    ptr_b = jnp.asarray(ptr_b, dtype=jnp.uint32)
+    do = (ptr_a != jnp.uint32(0)) & (ptr_b != jnp.uint32(0))
+
+    na, pa = decode_port(ptr_a)
+    nb, pb = decode_port(ptr_b)
+
+    n_nodes = state.ports.shape[0]
+    n_nodes_u = jnp.uint32(n_nodes)
+    na = jnp.minimum(na, n_nodes_u - jnp.uint32(1))
+    nb = jnp.minimum(nb, n_nodes_u - jnp.uint32(1))
+    pa = pa & jnp.uint32(0x3)
+    pb = pb & jnp.uint32(0x3)
+
+    safe_node = jnp.uint32(0)
+    safe_port = jnp.uint32(0)
+    na_s = jnp.where(do, na, safe_node)
+    pa_s = jnp.where(do, pa, safe_port)
+    nb_s = jnp.where(do, nb, safe_node)
+    pb_s = jnp.where(do, pb, safe_port)
+
+    ports = state.ports
+    val_a = jnp.where(do, ptr_b, ports[safe_node, safe_port])
+    val_b = jnp.where(do, ptr_a, ports[safe_node, safe_port])
+    ports = ports.at[na_s, pa_s].set(val_a, mode="drop")
+    ports = ports.at[nb_s, pb_s].set(val_b, mode="drop")
+    return state._replace(ports=ports)
+
+
+@jax.jit
+def ic_wire_star_jax(
+    state: ICState,
+    center_node: jnp.ndarray,
+    center_port: jnp.ndarray,
+    leaf_nodes: jnp.ndarray,
+    leaf_ports: jnp.ndarray,
+) -> ICState:
+    """Wire a single center endpoint to many leaf endpoints (device-only)."""
+    center_node = jnp.asarray(center_node, dtype=jnp.uint32)
+    center_port = jnp.asarray(center_port, dtype=jnp.uint32)
+    leaf_nodes = jnp.asarray(leaf_nodes, dtype=jnp.uint32)
+    leaf_ports = jnp.asarray(leaf_ports, dtype=jnp.uint32)
+    k = leaf_nodes.shape[0]
+    node_a = jnp.full((k,), center_node, dtype=jnp.uint32)
+    port_a = jnp.full((k,), center_port, dtype=jnp.uint32)
+    return ic_wire_pairs_jax(state, node_a, port_a, leaf_nodes, leaf_ports)
+@jax.jit
 def ic_find_active_pairs(state: ICState) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Return indices of nodes in active principal-principal pairs."""
     ports = state.ports
