@@ -1,9 +1,8 @@
 """
-Interaction Combinator (IC) engine scaffolding.
+Interaction Combinator (IC) engine scaffold for the in-8 tensor/rule-table track.
 
-This is a minimal data-model placeholder for the in-8 tensor/rule-table track.
-It intentionally avoids operational semantics until the rule table and port
-wiring pipeline are formalized.
+Implements the core data model (ports, free stack), rule-table templates, and
+branchless rewrite planning/apply paths for active-pair reduction.
 """
 
 from __future__ import annotations

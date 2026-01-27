@@ -878,7 +878,7 @@ Ordered by semantic risk first, then verification depth, then hygiene.
 - CD morphisms / hyperpair semantics beyond coord opcodes; add lattice‑law tests for CD‑lifted ops. ✅
 - Novelty / hyperoperator fixed‑point instrumentation or bounded checks (Min(Prism) expansion). ✅
 - Agda proofs (actual theorems) for univalence/gauge/novelty/finite closure/fixed points. ✅
-- in-8 interaction‑combinator engine implementation (rule table + port encoding + rewrite kernel).
+- in-8 interaction‑combinator engine implementation (rule table + port encoding + rewrite kernel). ✅
 
 ## Deliverables
 - `prism_vm.py`: new `PrismVM_BSP` and arena ops.
