@@ -111,7 +111,10 @@ def rewrite_one_step(
     if not bool(matched[0]):
         return arena, jnp.array(False)
     arena, plan = build_rewrite_plan(arena, pair, rule_idx[0], swapped[0], table)
+    if not bool(plan.alloc_ok):
+        return arena, jnp.array(False)
     arena = apply_rewrite_plan(arena, plan)
+    arena = free_nodes(arena, pair)
     return arena, jnp.array(True)
 
 
@@ -302,6 +305,35 @@ def allocate_from_arena(
         state=arena.state, free_stack=arena.free_stack, free_count=new_free_count
     )
     return new_arena, new_ids.astype(jnp.int32), alloc_ok
+
+
+def free_nodes(arena: ICArena, ids: jnp.ndarray) -> ICArena:
+    ids = jnp.asarray(ids, dtype=jnp.int32)
+    num = jnp.asarray(ids.shape[0], dtype=jnp.int32)
+    cap = jnp.asarray(arena.free_stack.shape[0], dtype=jnp.int32)
+    free_count = arena.free_count
+    space = jnp.maximum(cap - free_count, 0)
+    num_free = jnp.minimum(num, space)
+    idx = jnp.arange(num, dtype=jnp.int32)
+    use = idx < num_free
+    stack_pos = free_count + idx
+    safe_pos = jnp.clip(stack_pos, 0, cap - 1)
+    free_stack = arena.free_stack
+    new_vals = jnp.where(use, ids, free_stack[safe_pos])
+    free_stack = free_stack.at[safe_pos].set(new_vals)
+    free_count = free_count + num_free
+
+    safe_ids = jnp.where(use, ids, jnp.int32(0))
+    node_type = arena.state.node_type.at[safe_ids].set(
+        jnp.where(use, IC_FREE, arena.state.node_type[0])
+    )
+    port = arena.state.port
+    for port_idx in range(PORT_ARITY):
+        port = port.at[safe_ids, port_idx].set(
+            jnp.where(use, jnp.int32(0), port[0, port_idx])
+        )
+    state = ICState(node_type=node_type, port=port)
+    return ICArena(state=state, free_stack=free_stack, free_count=free_count)
 
 
 def init_rule_table_empty() -> RuleTable:

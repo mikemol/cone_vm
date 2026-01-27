@@ -326,3 +326,6 @@ def test_rewrite_one_step_commutation():
     new_arena, changed = ic.rewrite_one_step(arena, table)
     assert bool(changed)
     assert int(new_arena.state.node_type[6]) == ic.IC_CON
+    assert int(new_arena.state.node_type[a]) == ic.IC_FREE
+    assert int(new_arena.state.node_type[b]) == ic.IC_FREE
+    assert int(new_arena.free_count) == 2
