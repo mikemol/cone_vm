@@ -98,6 +98,23 @@ def apply_rewrite_plan(arena: ICArena, plan: RewritePlan) -> ICArena:
     return ICArena(state=new_state, free_stack=arena.free_stack, free_count=arena.free_count)
 
 
+def rewrite_one_step(
+    arena: ICArena, table: RuleTable
+) -> tuple[ICArena, jnp.ndarray]:
+    pairs, count = find_active_pairs(arena.state)
+    if int(count) == 0:
+        return arena, jnp.array(False)
+    pair = pairs[0]
+    rule_idx, matched, swapped = match_active_pairs(
+        arena.state, pairs, count, table
+    )
+    if not bool(matched[0]):
+        return arena, jnp.array(False)
+    arena, plan = build_rewrite_plan(arena, pair, rule_idx[0], swapped[0], table)
+    arena = apply_rewrite_plan(arena, plan)
+    return arena, jnp.array(True)
+
+
 def encode_port(node_idx: int, port_idx: int) -> int:
     if port_idx < 0 or port_idx >= PORT_ARITY:
         raise ValueError("port_idx out of range")
