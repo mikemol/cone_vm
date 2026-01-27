@@ -17,17 +17,17 @@ def test_ic_port_encode_decode_roundtrip():
 
 def test_ic_init_free_stack():
     state = ic.ic_init(4)
-    assert state.free_top == 4
+    assert state.free_top == 3
     assert list(map(int, state.free_stack)) == [3, 2, 1, 0]
     assert state.ports.shape == (4, 3)
 
 
 def test_ic_find_active_pairs_principal_link():
-    state = ic.ic_init(2)
-    state = ic.ic_wire(state, 0, 0, 1, 0)
+    state = ic.ic_init(3)
+    state = ic.ic_wire(state, 1, 0, 2, 0)
     pairs, active = ic.ic_find_active_pairs(state)
-    assert bool(active[0])
-    assert int(pairs[0]) == 0
+    assert bool(active[1])
+    assert int(pairs[0]) == 1
 
 
 def test_ic_compact_active_pairs_empty():
@@ -39,14 +39,14 @@ def test_ic_compact_active_pairs_empty():
 
 
 def test_ic_compact_active_pairs_multiple():
-    state = ic.ic_init(4)
-    state = ic.ic_wire(state, 0, 0, 1, 0)
-    state = ic.ic_wire(state, 2, 0, 3, 0)
+    state = ic.ic_init(5)
+    state = ic.ic_wire(state, 1, 0, 2, 0)
+    state = ic.ic_wire(state, 3, 0, 4, 0)
     compacted, count, active = ic.ic_compact_active_pairs(state)
     assert int(count) == 2
-    assert bool(active[0])
-    assert bool(active[2])
-    assert list(map(int, compacted[:2])) == [0, 2]
+    assert bool(active[1])
+    assert bool(active[3])
+    assert list(map(int, compacted[:2])) == [1, 3]
 
 
 def test_ic_rule_table_alloc_counts():
@@ -65,32 +65,32 @@ def test_ic_rule_table_commutes_symmetry():
 
 
 def test_ic_select_template_annihilate():
-    state = ic.ic_init(2)
+    state = ic.ic_init(3)
     node_type = state.node_type
-    node_type = node_type.at[0].set(ic.TYPE_CON)
     node_type = node_type.at[1].set(ic.TYPE_CON)
+    node_type = node_type.at[2].set(ic.TYPE_CON)
     state = state._replace(node_type=node_type)
-    tmpl = ic.ic_select_template(state, 0, 1)
+    tmpl = ic.ic_select_template(state, 1, 2)
     assert int(tmpl) == int(ic.TEMPLATE_ANNIHILATE)
 
 
 def test_ic_apply_annihilate_rewires_aux():
-    state = ic.ic_init(4)
+    state = ic.ic_init(5)
     node_type = state.node_type
-    node_type = node_type.at[0].set(ic.TYPE_CON)
     node_type = node_type.at[1].set(ic.TYPE_CON)
     node_type = node_type.at[2].set(ic.TYPE_CON)
     node_type = node_type.at[3].set(ic.TYPE_CON)
+    node_type = node_type.at[4].set(ic.TYPE_CON)
     state = state._replace(node_type=node_type)
-    state = ic.ic_wire(state, 0, ic.PORT_PRINCIPAL, 1, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 0, ic.PORT_AUX_LEFT, 2, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 1, ic.PORT_PRINCIPAL, 2, ic.PORT_PRINCIPAL)
     state = ic.ic_wire(state, 1, ic.PORT_AUX_LEFT, 3, ic.PORT_PRINCIPAL)
-    state = ic.ic_apply_annihilate(state, 0, 1)
-    n2, p2 = ic.decode_port(state.ports[2, 0])
-    n3, p3 = ic.decode_port(state.ports[3, 0])
-    assert int(n2) == 3
+    state = ic.ic_wire(state, 2, ic.PORT_AUX_LEFT, 4, ic.PORT_PRINCIPAL)
+    state = ic.ic_apply_annihilate(state, 1, 2)
+    n2, p2 = ic.decode_port(state.ports[3, 0])
+    n3, p3 = ic.decode_port(state.ports[4, 0])
+    assert int(n2) == 4
     assert int(p2) == int(ic.PORT_PRINCIPAL)
-    assert int(n3) == 2
+    assert int(n3) == 3
     assert int(p3) == int(ic.PORT_PRINCIPAL)
 
 
@@ -118,12 +118,12 @@ def test_ic_apply_erase_frees_nodes():
 
 
 def test_ic_apply_commute_allocates_nodes():
-    state = ic.ic_init(6)
+    state = ic.ic_init(7)
     state, (left,) = ic.ic_alloc(state, 1, ic.TYPE_CON)
     state, (right,) = ic.ic_alloc(state, 1, ic.TYPE_DUP)
     before_top = int(state.free_top)
     state = ic.ic_apply_commute(state, int(left), int(right))
-    assert int(state.free_top) == before_top - 4
+    assert int(state.free_top) == before_top - 2
 
 
 def test_ic_alloc_underflow_raises():
@@ -134,7 +134,7 @@ def test_ic_alloc_underflow_raises():
 
 
 def test_ic_apply_commute_rewires_ports():
-    state = ic.ic_init(10)
+    state = ic.ic_init(12)
     state, ext = ic.ic_alloc(state, 4, ic.TYPE_CON)
     ext_left, ext_right, ext_dup_left, ext_dup_right = map(int, ext)
     state, (con_node,) = ic.ic_alloc(state, 1, ic.TYPE_CON)
@@ -183,37 +183,37 @@ def test_ic_apply_commute_rewires_ports():
 
 
 def test_ic_apply_active_pairs_batch():
-    state = ic.ic_init(12)
-    node_type = state.node_type.at[:12].set(ic.TYPE_CON)
+    state = ic.ic_init(13)
+    node_type = state.node_type.at[:13].set(ic.TYPE_CON)
     state = state._replace(node_type=node_type)
     # Pair 1
-    state = ic.ic_wire(state, 0, ic.PORT_PRINCIPAL, 1, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 0, ic.PORT_AUX_LEFT, 2, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 0, ic.PORT_AUX_RIGHT, 3, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 1, ic.PORT_AUX_LEFT, 4, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 1, ic.PORT_AUX_RIGHT, 5, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 1, ic.PORT_PRINCIPAL, 2, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 1, ic.PORT_AUX_LEFT, 3, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 1, ic.PORT_AUX_RIGHT, 4, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 2, ic.PORT_AUX_LEFT, 5, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 2, ic.PORT_AUX_RIGHT, 6, ic.PORT_PRINCIPAL)
     # Pair 2
-    state = ic.ic_wire(state, 6, ic.PORT_PRINCIPAL, 7, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 6, ic.PORT_AUX_LEFT, 8, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 6, ic.PORT_AUX_RIGHT, 9, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 7, ic.PORT_AUX_LEFT, 10, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 7, ic.PORT_AUX_RIGHT, 11, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 7, ic.PORT_PRINCIPAL, 8, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 7, ic.PORT_AUX_LEFT, 9, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 7, ic.PORT_AUX_RIGHT, 10, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 8, ic.PORT_AUX_LEFT, 11, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 8, ic.PORT_AUX_RIGHT, 12, ic.PORT_PRINCIPAL)
     state, stats = ic.ic_apply_active_pairs(state)
     assert int(stats.active_pairs) == 2
     assert int(stats.template_counts[ic.TEMPLATE_ANNIHILATE]) == 2
-    for node in (0, 1, 6, 7):
+    for node in (1, 2, 7, 8):
         assert int(state.node_type[node]) == int(ic.TYPE_FREE)
-    n2, p2 = ic.decode_port(state.ports[2, 0])
-    n4, p4 = ic.decode_port(state.ports[4, 0])
-    assert int(n2) == 4
+    n2, p2 = ic.decode_port(state.ports[3, 0])
+    n4, p4 = ic.decode_port(state.ports[5, 0])
+    assert int(n2) == 5
     assert int(p2) == int(ic.PORT_PRINCIPAL)
-    assert int(n4) == 2
+    assert int(n4) == 3
     assert int(p4) == int(ic.PORT_PRINCIPAL)
-    n3, p3 = ic.decode_port(state.ports[3, 0])
-    n5, p5 = ic.decode_port(state.ports[5, 0])
-    assert int(n3) == 5
+    n3, p3 = ic.decode_port(state.ports[4, 0])
+    n5, p5 = ic.decode_port(state.ports[6, 0])
+    assert int(n3) == 6
     assert int(p3) == int(ic.PORT_PRINCIPAL)
-    assert int(n5) == 3
+    assert int(n5) == 4
     assert int(p5) == int(ic.PORT_PRINCIPAL)
 
 
@@ -230,15 +230,15 @@ def test_ic_apply_active_pairs_mixed_templates():
     state = ic.ic_wire(state, con_node, ic.PORT_AUX_RIGHT, ext_right, ic.PORT_PRINCIPAL)
     state = ic.ic_wire(state, dup_node, ic.PORT_AUX_LEFT, ext_dup_left, ic.PORT_PRINCIPAL)
     state = ic.ic_wire(state, dup_node, ic.PORT_AUX_RIGHT, ext_dup_right, ic.PORT_PRINCIPAL)
-    node_type = state.node_type
-    node_type = node_type.at[8].set(ic.TYPE_CON)
-    node_type = node_type.at[9].set(ic.TYPE_CON)
-    state = state._replace(node_type=node_type)
-    state = ic.ic_wire(state, 8, ic.PORT_PRINCIPAL, 9, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 8, ic.PORT_AUX_LEFT, 10, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 8, ic.PORT_AUX_RIGHT, 11, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 9, ic.PORT_AUX_LEFT, 12, ic.PORT_PRINCIPAL)
-    state = ic.ic_wire(state, 9, ic.PORT_AUX_RIGHT, 13, ic.PORT_PRINCIPAL)
+    state, ann_ext = ic.ic_alloc(state, 4, ic.TYPE_CON)
+    ann_left, ann_right, ann_dup_left, ann_dup_right = map(int, ann_ext)
+    state, pair_nodes = ic.ic_alloc(state, 2, ic.TYPE_CON)
+    left_node, right_node = map(int, pair_nodes)
+    state = ic.ic_wire(state, left_node, ic.PORT_PRINCIPAL, right_node, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, left_node, ic.PORT_AUX_LEFT, ann_left, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, left_node, ic.PORT_AUX_RIGHT, ann_right, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, right_node, ic.PORT_AUX_LEFT, ann_dup_left, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, right_node, ic.PORT_AUX_RIGHT, ann_dup_right, ic.PORT_PRINCIPAL)
     state, stats = ic.ic_apply_active_pairs(state)
     assert int(stats.active_pairs) == 2
     assert int(stats.template_counts[ic.TEMPLATE_ANNIHILATE]) == 1
