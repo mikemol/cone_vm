@@ -13,8 +13,7 @@ Suggested entrypoint: `agda/Prism/Prism.agda`.
 
 Agda runs via the pinned container image for fast, reproducible checks.
 
-1. Export the image digest (or pass inline):
-   - `export AGDA_IMAGE=ghcr.io/mikemol/act-ubuntu-agda@sha256:<digest>`
+1. Ensure the image digest is set (defaults to `agda/AGDA_IMAGE`).
 2. Run the checker:
    - `scripts/check_agda_container.sh`
 
@@ -22,4 +21,5 @@ CI note: Agda checks run inside the same pinned container image.
 
 Agda version pin:
 - The pinned version lives in `agda/AGDA_VERSION`.
-- The container image is built with that version; keep them in sync.
+- The container image digest lives in `agda/AGDA_IMAGE`.
+- Keep the workflow image digest and `agda/AGDA_IMAGE` in sync.

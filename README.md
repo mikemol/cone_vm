@@ -114,8 +114,7 @@ mise exec -- pytest
 Agda checks run in a pinned container image. See `agda/README.md` for the
 current digest and full instructions. Quick local run:
 ```
-AGDA_IMAGE=ghcr.io/mikemol/act-ubuntu-agda@sha256:<digest> \
-  scripts/check_agda_container.sh
+scripts/check_agda_container.sh
 ```
 
 ## Telemetry
