@@ -12,9 +12,11 @@ Expected xfails (gated above m1):
 ## Prioritized Punch-List (Current)
 Ordered by semantic risk first, then verification depth, then hygiene.
 
-**P0 — Semantic/core correctness**
-- Explicit `q` projection boundary for Arena/Manifest (glossary §17/§21).
-- Hyperstrata / micro-strata visibility beyond the fixed 3-strata cycle.
+**P0 — Semantic/core correctness** ✅
+- Explicit `q` projection boundary for Arena/Manifest (glossary §17/§21). ✅
+  (See `tests/test_q_projection.py`.)
+- Hyperstrata / micro-strata visibility beyond the fixed 3-strata cycle. ✅
+  (See `tests/test_candidate_cycle.py::test_cycle_candidates_wrap_microstrata_validate`.)
 
 **P1 — Verification depth / semantic completeness** ✅
 - Min(Prism) full harness: `canon_state` + bounded enumeration + projection commutation. ✅
@@ -28,7 +30,7 @@ Ordered by semantic risk first, then verification depth, then hygiene.
 - Agda proof roadmap execution (in-26). ✅
 - in-8 interaction-combinator engine pivot (tensor/rule-table path). ✅
 
-**P3 — Formalization + next-architecture track (Current)**
+**P3 — Formalization + next-architecture track** ✅
 - in-19 staging/site topology: define/encode micro‑strata (`t`) + tile (`τ`) semantics and visibility rules. ✅
 - CD morphisms / hyperpair semantics beyond coord opcodes; add lattice‑law tests for CD‑lifted ops. ✅
 - Novelty / hyperoperator fixed‑point instrumentation or bounded checks (Min(Prism) expansion). ✅
