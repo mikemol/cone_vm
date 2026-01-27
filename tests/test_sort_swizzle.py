@@ -101,3 +101,17 @@ def test_swizzle_does_not_create_new_edges():
         assert int(new_ops[new_idx]) == int(old_ops[old_idx])
         assert int(new_a1[new_idx]) == exp_a1
         assert int(new_a2[new_idx]) == exp_a2
+
+
+def _skip_if_no_debug_callback():
+    if not pv._HAS_DEBUG_CALLBACK:
+        pytest.skip("jax.debug.callback not available")
+
+
+def test_swizzle_guard_rejects_oob_args():
+    _skip_if_no_debug_callback()
+    arena = _arena_with_edges()
+    arena = arena._replace(arg1=arena.arg1.at[2].set(100), count=jnp.array(4, dtype=jnp.int32))
+    with pytest.raises(RuntimeError, match=r"swizzle\.args"):
+        sorted_arena, _ = pv.op_sort_and_swizzle_with_perm(arena)
+        sorted_arena.opcode.block_until_ready()
