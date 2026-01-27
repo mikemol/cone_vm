@@ -40,5 +40,5 @@ Ordered by semantic risk first, then verification depth, then hygiene.
 **P4 — Verification hardening + next backend** ⏳
 - No‑copy / alpha‑equivalence tests for ledger sharing (in‑17). ✅
 - CQRS replay harness beyond Min(Prism) (optional audit mode). ✅
-- Agda boundary theorems (no‑termination / negative capability). ⏳
+- Agda boundary theorems (no‑termination / negative capability). ✅
 - Interaction‑combinator backend (in‑8) beyond roadmap: data model + kernel prototype. ⏳
