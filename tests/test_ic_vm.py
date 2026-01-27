@@ -95,7 +95,7 @@ def test_ic_apply_annihilate_rewires_aux():
 
 
 def test_ic_apply_erase_frees_nodes():
-    state = ic.ic_init(6)
+    state = ic.ic_init(7)
     state, (bin_node,) = ic.ic_alloc(state, 1, ic.TYPE_CON)
     state, aux_nodes = ic.ic_alloc(state, 2, ic.TYPE_CON)
     state, (era_node,) = ic.ic_alloc(state, 1, ic.TYPE_ERA)
