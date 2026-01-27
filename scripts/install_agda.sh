@@ -25,8 +25,16 @@ echo "Installing Agda ${AGDA_VERSION} via cabal (downloads from Hackage)..."
 mise exec -- cabal update
 mise exec -- cabal install "Agda-${AGDA_VERSION}" \
   --installdir "$BIN_DIR" \
-  --install-method=copy \
+  --install-method=symlink \
   --overwrite-policy=always
 
 echo "Agda installed:"
 "$BIN_DIR/agda" --version
+
+AGDA_DIR="$("$BIN_DIR/agda" --print-agda-dir 2>/dev/null || true)"
+if [[ -n "$AGDA_DIR" && -f "$AGDA_DIR/Agda/Builtin/Vec.agda" ]]; then
+  echo "Agda prim dir: $AGDA_DIR"
+else
+  echo "Warning: Agda prim dir not found (Agda.Builtin.Vec missing)" >&2
+  echo "AGDA_DIR resolved to: ${AGDA_DIR:-<empty>}" >&2
+fi
