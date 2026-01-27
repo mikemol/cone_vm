@@ -120,18 +120,10 @@ jobs:
     needs: [changes, policy-check, audit]
     if: needs.changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
-    env:
-      GHCUP_NONINTERACTIVE: "1"
+    container:
+      image: ghcr.io/mikemol/act-ubuntu-agda@sha256:3a38b951385dbd12ea9140137c1d26ac6be62df503e2fed1f1bfe94c14ed6393
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-      - name: Install mise toolchain
-        uses: jdx/mise-action@6d1e696aa24c1aa1bcc1adea0212707c71ab78a8
-        with:
-          version: 2026.1.7
-          install: true
-      - name: Install Agda (cabal, pinned)
-        run: |
-          scripts/install_agda.sh
       - name: Run Agda checker
         run: |
           scripts/check_agda.sh
