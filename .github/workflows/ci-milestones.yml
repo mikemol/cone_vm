@@ -125,6 +125,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - name: Verify Agda image version
+        shell: bash
         run: |
           set -euo pipefail
           expected="$(tr -d ' \t\r\n' < agda/AGDA_VERSION)"
