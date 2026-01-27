@@ -1,7 +1,8 @@
 import jax
 import jax.numpy as jnp
-from functools import partial
 from typing import NamedTuple, Tuple
+
+from prism_core import alloc as _alloc
 
 # Interaction-combinator (IC) graph + safety helpers.
 
@@ -38,104 +39,20 @@ def _safe_uint32(value) -> jnp.ndarray:
     return jnp.asarray(value, dtype=jnp.uint32)
 
 
-def _alloc_raw(state: ICState, count: int) -> Tuple[ICState, jnp.ndarray, jnp.ndarray]:
-    if count > state.free_stack.shape[0]:
-        return state, jnp.zeros((count,), dtype=jnp.uint32), jnp.bool_(False)
-    top = state.free_top.astype(jnp.int32)
-    ok = (top >= count) & (~state.oom) & (~state.corrupt)
-
-    def _do(s):
-        start = top - count
-        ids = jax.lax.dynamic_slice(s.free_stack, (start,), (count,))
-        return s._replace(free_top=jnp.uint32(start)), ids.astype(jnp.uint32), jnp.bool_(True)
-
-    def _fail(s):
-        return s, jnp.zeros((count,), dtype=jnp.uint32), jnp.bool_(False)
-
-    return jax.lax.cond(ok, _do, _fail, state)
-
-
-def _alloc_pad(state: ICState, count: int) -> Tuple[ICState, jnp.ndarray, jnp.ndarray]:
-    state2, ids, ok = _alloc_raw(state, count)
-    if count == 0:
-        ids4 = jnp.zeros((4,), dtype=jnp.uint32)
-    elif count == 1:
-        ids4 = jnp.concatenate([ids, jnp.zeros((3,), dtype=jnp.uint32)], axis=0)
-    elif count == 2:
-        ids4 = jnp.concatenate([ids, jnp.zeros((2,), dtype=jnp.uint32)], axis=0)
-    elif count == 4:
-        ids4 = ids
-    else:
-        ids4 = jnp.zeros((4,), dtype=jnp.uint32)
-        ok = jnp.bool_(False)
-    return state2, ids4, ok
-
-
-def _init_nodes_jax(
-    state: ICState, ids4: jnp.ndarray, count: jnp.ndarray, node_type: jnp.uint8
-) -> ICState:
-    mask = jnp.arange(4, dtype=jnp.int32) < count.astype(jnp.int32)
-    node_type_curr = state.node_type[ids4]
-    node_type_update = jnp.where(mask, node_type, node_type_curr)
-    node_type_arr = state.node_type.at[ids4].set(node_type_update)
-    ports_curr = state.ports[ids4]
-    ports_update = jnp.where(mask[:, None], jnp.uint32(0), ports_curr)
-    ports_arr = state.ports.at[ids4].set(ports_update)
-    return state._replace(node_type=node_type_arr, ports=ports_arr)
-
-
 def _init_nodes(state: ICState, nodes: jnp.ndarray, node_type: jnp.uint8) -> ICState:
     node_type_arr = state.node_type.at[nodes].set(node_type)
     ports = state.ports.at[nodes].set(jnp.uint32(0))
     return state._replace(node_type=node_type_arr, ports=ports)
 
-
-@partial(jax.jit, static_argnames=("set_oom_on_fail",))
-def ic_alloc_jax(
-    state: ICState,
-    count: jnp.ndarray,
-    node_type: jnp.uint8,
-    set_oom_on_fail: bool = False,
-) -> Tuple[ICState, jnp.ndarray, jnp.ndarray]:
-    """Device-only allocator for construction (no host sync)."""
-    c = jnp.asarray(count, dtype=jnp.int32)
-    idx = jnp.where(
-        c == 0,
-        0,
-        jnp.where(c == 1, 1, jnp.where(c == 2, 2, jnp.where(c == 4, 3, 4))),
-    ).astype(jnp.int32)
-
-    def _case0(s):
-        return _alloc_pad(s, 0)
-
-    def _case1(s):
-        return _alloc_pad(s, 1)
-
-    def _case2(s):
-        return _alloc_pad(s, 2)
-
-    def _case4(s):
-        return _alloc_pad(s, 4)
-
-    def _bad(s):
-        return s, jnp.zeros((4,), dtype=jnp.uint32), jnp.bool_(False)
-
-    def _run(s):
-        return jax.lax.switch(idx, (_case0, _case1, _case2, _case4, _bad), s)
-
-    def _halt(s):
-        return s, jnp.zeros((4,), dtype=jnp.uint32), jnp.bool_(False)
-
-    state2, ids4, ok = jax.lax.cond(state.corrupt, _halt, _run, state)
-    if set_oom_on_fail:
-        state2 = state2._replace(oom=state2.oom | ((~ok) & (~state.corrupt)))
-
-    def _do_init(s):
-        return _init_nodes_jax(s, ids4, c, node_type)
-
-    do_init = ok & (c > 0)
-    state2 = jax.lax.cond(do_init, _do_init, lambda s: s, state2)
-    return state2, ids4, ok
+# Allocator aliases (shared implementation in prism_core.alloc).
+ic_alloc_jax = _alloc.alloc_jax
+_alloc2 = _alloc.alloc2
+_alloc4 = _alloc.alloc4
+_free2 = _alloc.free2
+_host_flag = _alloc.host_flag
+_alloc_nodes = _alloc.alloc_nodes
+ic_alloc = _alloc.alloc_host
+_free_nodes = _alloc.free_nodes
 
 
 def encode_port(node_idx: jnp.ndarray, port_idx: jnp.ndarray) -> jnp.ndarray:
@@ -385,115 +302,6 @@ def ic_compact_active_pairs(
     idx, valid, count = _compact_mask(active)
     compacted = jnp.where(valid, idx, jnp.uint32(0))
     return compacted, count, active
-
-
-def _alloc2(state: ICState) -> Tuple[ICState, jnp.ndarray]:
-    top = state.free_top.astype(jnp.int32)
-    ok = (top >= 2) & (~state.oom) & (~state.corrupt)
-
-    def _do(s):
-        start = top - 2
-        ids = jax.lax.dynamic_slice(s.free_stack, (start,), (2,))
-        return s._replace(free_top=jnp.uint32(start)), ids.astype(jnp.uint32)
-
-    def _fail(s):
-        def _keep(s_in):
-            return s_in
-
-        def _oom(s_in):
-            return s_in._replace(oom=jnp.bool_(True))
-
-        s2 = jax.lax.cond(s.corrupt, _keep, _oom, s)
-        return s2, jnp.zeros((2,), dtype=jnp.uint32)
-
-    return jax.lax.cond(ok, _do, _fail, state)
-
-
-def _alloc4(state: ICState) -> Tuple[ICState, jnp.ndarray]:
-    top = state.free_top.astype(jnp.int32)
-    ok = (top >= 4) & (~state.oom) & (~state.corrupt)
-
-    def _do(s):
-        start = top - 4
-        ids = jax.lax.dynamic_slice(s.free_stack, (start,), (4,))
-        return s._replace(free_top=jnp.uint32(start)), ids.astype(jnp.uint32)
-
-    def _fail(s):
-        def _keep(s_in):
-            return s_in
-
-        def _oom(s_in):
-            return s_in._replace(oom=jnp.bool_(True))
-
-        s2 = jax.lax.cond(s.corrupt, _keep, _oom, s)
-        return s2, jnp.zeros((4,), dtype=jnp.uint32)
-
-    return jax.lax.cond(ok, _do, _fail, state)
-
-
-def _free2(state: ICState, nodes: jnp.ndarray) -> ICState:
-    top = state.free_top.astype(jnp.int32)
-    cap = state.free_stack.shape[0]
-    ok = (top + 2) <= cap
-
-    def _do(s):
-        fs = s.free_stack
-        fs = fs.at[top + 0].set(nodes[0])
-        fs = fs.at[top + 1].set(nodes[1])
-        return s._replace(free_stack=fs, free_top=jnp.uint32(top + 2))
-
-    def _fail(s):
-        def _keep(s_in):
-            return s_in
-
-        def _corrupt(s_in):
-            return s_in._replace(corrupt=jnp.bool_(True))
-
-        return jax.lax.cond(s.corrupt, _keep, _corrupt, s)
-
-    return jax.lax.cond(ok & (~state.oom) & (~state.corrupt), _do, _fail, state)
-
-
-def _host_flag(value: jnp.ndarray) -> bool:
-    return bool(jax.device_get(value))
-
-
-def _alloc_nodes(state: ICState, count: int) -> Tuple[ICState, jnp.ndarray]:
-    n = int(count)
-    if n == 0:
-        return state, jnp.zeros((0,), dtype=jnp.uint32)
-    if _host_flag(state.corrupt):
-        return state, jnp.zeros((n,), dtype=jnp.uint32)
-    free_top = int(state.free_top)
-    if free_top < n or _host_flag(state.oom):
-        return state._replace(oom=jnp.bool_(True)), jnp.zeros((n,), dtype=jnp.uint32)
-    idx = state.free_stack[free_top - n:free_top]
-    free_top = free_top - n
-    return state._replace(free_top=jnp.uint32(free_top)), idx
-
-
-def ic_alloc(state: ICState, count: int, node_type: jnp.uint8) -> Tuple[ICState, jnp.ndarray]:
-    state, nodes = _alloc_nodes(state, count)
-    if nodes.size == 0 or _host_flag(state.oom) or _host_flag(state.corrupt):
-        return state, nodes
-    node_type_arr = state.node_type.at[nodes].set(node_type)
-    ports = state.ports.at[nodes].set(jnp.uint32(0))
-    return state._replace(node_type=node_type_arr, ports=ports), nodes
-
-
-def _free_nodes(state: ICState, nodes: jnp.ndarray) -> ICState:
-    if nodes.size == 0:
-        return state
-    if _host_flag(state.corrupt):
-        return state
-    count = int(nodes.shape[0])
-    free_top = int(state.free_top)
-    cap = int(state.free_stack.shape[0])
-    if free_top + count > cap:
-        return state._replace(corrupt=jnp.bool_(True))
-    free_stack = state.free_stack
-    free_stack = free_stack.at[free_top:free_top + count].set(nodes)
-    return state._replace(free_stack=free_stack, free_top=jnp.uint32(free_top + count))
 
 
 __all__ = [
