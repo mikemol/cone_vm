@@ -421,7 +421,6 @@ def _guard_slot0_perm(perm, inv_perm, label):
     jax.debug.callback(_raise, ok, p0, i0)
 
 
-# NOTE: zero-row (id=1) invariant guard is deferred; see IMPLEMENTATION_PLAN.md.
 def _guard_null_row(opcode, arg1, arg2, label):
     if not _guards_enabled():
         return
@@ -437,6 +436,23 @@ def _guard_null_row(opcode, arg1, arg2, label):
             )
 
     jax.debug.callback(_raise, ok, op0, a10, a20)
+
+
+def _guard_zero_row(opcode, arg1, arg2, label):
+    if not _guards_enabled():
+        return
+    op1 = opcode[1]
+    a11 = arg1[1]
+    a21 = arg2[1]
+    ok = (op1 == OP_ZERO) & (a11 == 0) & (a21 == 0)
+
+    def _raise(ok_val, op1_val, a11_val, a21_val):
+        if not ok_val:
+            raise RuntimeError(
+                f"guard failed: {label} op1={int(op1_val)} a1={int(a11_val)} a2={int(a21_val)}"
+            )
+
+    jax.debug.callback(_raise, ok, op1, a11, a21)
 
 
 def _guard_zero_args(mask, arg1, arg2, label):
@@ -1084,12 +1100,22 @@ def _apply_stratum_q(
     canon_ids: CommittedIds,
     label: str,
 ) -> ProvisionalIds:
+    expected = jnp.maximum(jnp.asarray(stratum.count, dtype=jnp.int32), 0)
+    actual = jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32)
+    if _guards_enabled():
+        mismatch = expected != actual
+
+        def _raise(bad_val, exp_val, act_val):
+            if bad_val:
+                raise RuntimeError(
+                    f"guard failed: {label} count={int(exp_val)} canon_ids={int(act_val)}"
+                )
+
+        jax.debug.callback(_raise, mismatch, expected, actual)
     if canon_ids.a.shape[0] == 0:
         return ids
     start = jnp.asarray(stratum.start, dtype=jnp.int32)
-    # NOTE: assumes canon_ids length matches stratum.count for this commit path;
-    # if stratum batching changes, use stratum.count and add a guard (see plan).
-    count = jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32)
+    count = expected
     in_range = (ids.a >= start) & (ids.a < start + count)
     idx = jnp.where(in_range, ids.a - start, jnp.int32(0))
     mapped = safe_gather_1d(canon_ids.a, idx, label)
@@ -2170,14 +2196,32 @@ def intern_nodes(ledger, batch_or_ops, a1=None, a2=None):
     # NOTE: stop path returns zeros today; read-only lookup fallback is deferred.
 
     # Once invalid, interning must not allocate or mutate state (m1 guardrail).
+    # Stop path performs read-only lookup for existing keys (m1).
     # See IMPLEMENTATION_PLAN.md (m1 guardrails).
-    def _skip(_):
-        return jnp.zeros_like(proposed_ops), ledger
+    def _lookup_existing(_):
+        ops, a1, a2 = batch
+        ops, a1, a2 = _key_safe_normalize_nodes(ops, a1, a2)
+        bad_key, _ = _checked_pack_key(ops, a1, a2, ledger.count)
+        ops = jnp.where(bad_key, jnp.int32(0), ops)
+        a1 = jnp.where(bad_key, jnp.int32(0), a1)
+        a2 = jnp.where(bad_key, jnp.int32(0), a2)
+
+        def _lookup_one(op, a1_val, a2_val):
+            return _lookup_node_id(ledger, op, a1_val, a2_val)
+
+        ids, found = jax.vmap(_lookup_one)(ops, a1, a2)
+        ids = jnp.where(found & (~bad_key), ids, jnp.int32(0))
+        ids = jnp.where(ops == OP_NULL, jnp.int32(0), ids)
+        return ids, ledger
 
     def _do(_):
         return _intern_nodes_impl(ledger, batch)
 
-    return lax.cond(stop, _skip, _do, operand=None)
+    ids, new_ledger = lax.cond(stop, _lookup_existing, _do, operand=None)
+    _guard_zero_row(
+        new_ledger.opcode, new_ledger.arg1, new_ledger.arg2, "intern_nodes.row1"
+    )
+    return ids, new_ledger
 
 def _active_prefix_count(arena) -> HostInt:
     size = arena.rank.shape[0]
