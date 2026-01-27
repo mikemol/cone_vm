@@ -70,6 +70,34 @@ class RewritePlan:
     ext_values: jnp.ndarray
 
 
+def apply_rewrite_plan(arena: ICArena, plan: RewritePlan) -> ICArena:
+    state = arena.state
+    if not bool(plan.alloc_ok):
+        return arena
+    active_mask = jnp.arange(MAX_NEW_NODES, dtype=jnp.int32) < plan.alloc_count
+    ids = plan.new_ids
+    valid_ids = active_mask & (ids >= 0)
+    safe_ids = jnp.where(valid_ids, ids, jnp.int32(0))
+    new_node_type = state.node_type.at[safe_ids].set(
+        jnp.where(valid_ids, plan.new_types, state.node_type[0])
+    )
+    new_ports = state.port
+    for port_idx in range(PORT_ARITY):
+        values = plan.new_ports[:, port_idx]
+        new_ports = new_ports.at[safe_ids, port_idx].set(
+            jnp.where(valid_ids, values, new_ports[0, port_idx])
+        )
+    ext_nodes = plan.ext_targets[:, 0]
+    ext_ports = plan.ext_targets[:, 1]
+    ext_valid = (ext_nodes >= 0) & (plan.ext_values != jnp.int32(0))
+    ext_nodes_safe = jnp.where(ext_valid, ext_nodes, jnp.int32(0))
+    ext_ports_safe = jnp.where(ext_valid, ext_ports, jnp.int32(0))
+    ext_values_safe = jnp.where(ext_valid, plan.ext_values, new_ports[0, 0])
+    new_ports = new_ports.at[ext_nodes_safe, ext_ports_safe].set(ext_values_safe)
+    new_state = ICState(node_type=new_node_type, port=new_ports)
+    return ICArena(state=new_state, free_stack=arena.free_stack, free_count=arena.free_count)
+
+
 def encode_port(node_idx: int, port_idx: int) -> int:
     if port_idx < 0 or port_idx >= PORT_ARITY:
         raise ValueError("port_idx out of range")
