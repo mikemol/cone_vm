@@ -173,6 +173,20 @@ def ic_apply_template(
     raise ValueError(f"Unsupported template_id={tmpl}")
 
 
+def ic_apply_active_pairs(state: ICState) -> Tuple[ICState, jnp.ndarray]:
+    """Apply rewrite templates to all active pairs in the current batch."""
+    pairs, count, _ = ic_compact_active_pairs(state)
+    count_i = int(count)
+    if count_i == 0:
+        return state, jnp.uint32(0)
+    pair_nodes = jax.device_get(pairs[:count_i])
+    partner_nodes = jax.device_get(decode_port(state.ports[pair_nodes, 0])[0])
+    for node_a, node_b in zip(pair_nodes, partner_nodes):
+        tmpl = ic_select_template(state, int(node_a), int(node_b))
+        state = ic_apply_template(state, int(node_a), int(node_b), tmpl)
+    return state, jnp.uint32(count_i)
+
+
 def _alloc_nodes(state: ICState, count: jnp.ndarray) -> Tuple[ICState, jnp.ndarray]:
     n = int(count)
     if n == 0:
