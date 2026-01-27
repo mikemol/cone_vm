@@ -862,8 +862,9 @@ Ordered by semantic risk first, then determinism/observability, then performance
 - CNF-2 observability counters (`rewrite_child`, `changed`, `wrap_emit`). ✅
 
 **P2 — Milestone integrity / test fidelity**
-- Host-slice validation for `validate_stratum_no_within_refs`.
-- Value-bound guards for swizzled args in test mode.
+**P2 — Milestone integrity / test fidelity (complete)**
+- Host-slice validation for `validate_stratum_no_within_refs`. ✅
+- Value-bound guards for swizzled args in test mode. ✅
 
 **P3 — Performance / scalability**
 - Per-op merges in interner to avoid full-array merge per batch.

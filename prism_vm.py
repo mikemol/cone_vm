@@ -494,6 +494,25 @@ def _guard_zero_args(mask, arg1, arg2, label):
     jax.debug.callback(_raise, bad)
 
 
+def _guard_swizzle_args(arg1, arg2, live, count, label):
+    if not _guards_enabled():
+        return
+    if live.size == 0:
+        return
+    count_i = jnp.asarray(count, dtype=jnp.int32)
+    bad1 = live & (arg1 != 0) & ((arg1 < 0) | (arg1 >= count_i))
+    bad2 = live & (arg2 != 0) & ((arg2 < 0) | (arg2 >= count_i))
+    bad = jnp.any(bad1 | bad2)
+
+    def _raise(bad_val, count_val):
+        if bad_val:
+            raise RuntimeError(
+                f"guard failed: {label} args out of bounds (count={int(count_val)})"
+            )
+
+    jax.debug.callback(_raise, bad, count_i)
+
+
 _coord_norm_probe_count = 0
 
 
@@ -1156,6 +1175,21 @@ def validate_stratum_no_within_refs_jax(ledger, stratum):
     return ok_a1 & ok_a2
 
 def validate_stratum_no_within_refs(ledger, stratum) -> HostBool:
+    if _guards_enabled():
+        start = max(0, _host_int_value(stratum.start))
+        count = max(0, _host_int_value(stratum.count))
+        if count == 0:
+            return HostBool(True)
+        ledger_count = _host_int_value(ledger.count)
+        end = min(start + count, ledger_count)
+        if end <= start:
+            return HostBool(True)
+        # SYNC: host reads only the stratum slice for validation (m2).
+        a1 = jax.device_get(ledger.arg1[start:end])
+        a2 = jax.device_get(ledger.arg2[start:end])
+        ok_a1 = bool((a1 < start).all())
+        ok_a2 = bool((a2 < start).all())
+        return HostBool(ok_a1 and ok_a2)
     # SYNC: host bool() reads device result for validation (m1).
     return _host_bool(validate_stratum_no_within_refs_jax(ledger, stratum))
 
@@ -2395,6 +2429,9 @@ def _apply_perm_and_swizzle(arena, perm):
     # See IMPLEMENTATION_PLAN.md (m3 denotation invariance).
     _guard_slot0_perm(perm, inv_perm, "swizzle.perm")
     _guard_null_row(new_ops, swizzled_arg1, swizzled_arg2, "swizzle.row0")
+    _guard_swizzle_args(
+        swizzled_arg1, swizzled_arg2, live, arena.count, "swizzle.args"
+    )
     return (
         Arena(
             new_ops,
