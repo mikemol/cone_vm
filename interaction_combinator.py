@@ -39,6 +39,20 @@ class RuleTable:
     rhs_port_map: jnp.ndarray
 
 
+def encode_port(node_idx: int, port_idx: int) -> int:
+    if port_idx < 0 or port_idx >= PORT_ARITY:
+        raise ValueError("port_idx out of range")
+    if node_idx < 0:
+        raise ValueError("node_idx out of range")
+    return node_idx * PORT_ARITY + port_idx
+
+
+def decode_port(ref: int) -> tuple[int, int]:
+    if ref < 0:
+        raise ValueError("ref out of range")
+    return ref // PORT_ARITY, ref % PORT_ARITY
+
+
 def init_ic_state(capacity: int) -> ICState:
     node_type = jnp.full((capacity,), IC_ERA, dtype=jnp.int8)
     port = jnp.zeros((capacity, PORT_ARITY), dtype=jnp.int32)
