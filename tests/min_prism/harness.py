@@ -51,6 +51,33 @@ def novelty_set(ledger):
     return set(canon_state_ledger(ledger)[0])
 
 
+def fixed_point_steps_intrinsic(ledger, root_id, max_steps=8):
+    """Run intrinsic cycles until novelty stabilizes or max_steps reached."""
+    frontier = jnp.array([int(root_id)], dtype=jnp.int32)
+    prev = novelty_set(ledger)
+    for step in range(max_steps):
+        ledger, frontier = pv.cycle_intrinsic(ledger, frontier)
+        curr = novelty_set(ledger)
+        if curr == prev:
+            return step + 1, ledger, frontier, True
+        prev = curr
+    return max_steps, ledger, frontier, False
+
+
+def fixed_point_steps_cnf2(ledger, root_id, max_steps=8):
+    """Run CNF-2 cycles until novelty stabilizes or max_steps reached."""
+    frontier = pv._committed_ids(jnp.array([int(root_id)], dtype=jnp.int32))
+    prev = novelty_set(ledger)
+    for step in range(max_steps):
+        ledger, frontier_prov, _, q_map = pv.cycle_candidates(ledger, frontier)
+        frontier = pv.apply_q(q_map, frontier_prov)
+        curr = novelty_set(ledger)
+        if curr == prev:
+            return step + 1, ledger, frontier, True
+        prev = curr
+    return max_steps, ledger, frontier, False
+
+
 def project_ledger(ledger, max_id):
     key = _structural_keyer(ledger)
     ordered = _ordered_keys(ledger)
