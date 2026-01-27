@@ -185,6 +185,17 @@ def _alloc_nodes(state: ICState, count: jnp.ndarray) -> Tuple[ICState, jnp.ndarr
     return state._replace(free_top=jnp.uint32(free_top)), idx
 
 
+def ic_alloc(
+    state: ICState, count: int, node_type: jnp.uint8
+) -> Tuple[ICState, jnp.ndarray]:
+    state, nodes = _alloc_nodes(state, jnp.asarray(count, dtype=jnp.uint32))
+    if nodes.size == 0:
+        return state, nodes
+    node_type_arr = state.node_type.at[nodes].set(node_type)
+    ports = state.ports.at[nodes].set(jnp.uint32(0))
+    return state._replace(node_type=node_type_arr, ports=ports), nodes
+
+
 def _free_nodes(state: ICState, nodes: jnp.ndarray) -> ICState:
     if nodes.size == 0:
         return state
@@ -196,18 +207,36 @@ def _free_nodes(state: ICState, nodes: jnp.ndarray) -> ICState:
 
 
 def ic_apply_erase(state: ICState, node_a: int, node_b: int) -> ICState:
-    # Erase: free the binary node; allocator path is exercised by tests.
-    node_type = state.node_type
-    node_type = node_type.at[node_a].set(TYPE_FREE)
-    node_type = node_type.at[node_b].set(TYPE_FREE)
-    state = state._replace(node_type=node_type)
-    return _free_nodes(state, jnp.asarray([node_a, node_b], dtype=jnp.uint32))
+    # Erase: replace binary node with two erasers on auxiliary wires.
+    type_a = state.node_type[node_a]
+    type_b = state.node_type[node_b]
+    if type_a == TYPE_ERA:
+        era = node_a
+        target = node_b
+    elif type_b == TYPE_ERA:
+        era = node_b
+        target = node_a
+    else:
+        raise ValueError("ic_apply_erase expects an ERA node")
+    ports = state.ports
+    aux_left = ports[target, 1]
+    aux_right = ports[target, 2]
+    state, eras = ic_alloc(state, 2, TYPE_ERA)
+    if eras.size == 2:
+        ports = state.ports
+        ports = _connect_ptrs(ports, encode_port(eras[0], PORT_PRINCIPAL), aux_left)
+        ports = _connect_ptrs(ports, encode_port(eras[1], PORT_PRINCIPAL), aux_right)
+        ports = ports.at[era].set(jnp.uint32(0))
+        ports = ports.at[target].set(jnp.uint32(0))
+        node_type = state.node_type
+        node_type = node_type.at[era].set(TYPE_FREE)
+        node_type = node_type.at[target].set(TYPE_FREE)
+        state = state._replace(node_type=node_type, ports=ports)
+        state = _free_nodes(state, jnp.asarray([era, target], dtype=jnp.uint32))
+    return state
 
 
 def ic_apply_commute(state: ICState, node_a: int, node_b: int) -> ICState:
     # Commute: allocate placeholder nodes; wiring is a future step.
-    state, alloc = _alloc_nodes(state, RULE_ALLOC_COMMUTE)
-    node_type = state.node_type
-    if alloc.size == 4:
-        node_type = node_type.at[alloc].set(TYPE_DUP)
-    return state._replace(node_type=node_type)
+    state, alloc = ic_alloc(state, int(RULE_ALLOC_COMMUTE), TYPE_DUP)
+    return state
