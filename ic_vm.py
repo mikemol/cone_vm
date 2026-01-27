@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+from functools import partial
 from typing import NamedTuple, Tuple
 
 # Interaction-combinator (IC) backend scaffold (in-8).
@@ -73,6 +74,98 @@ def _safe_uint32(value) -> jnp.ndarray:
     return jnp.asarray(value, dtype=jnp.uint32)
 
 
+def _alloc_raw(state: ICState, count: int) -> Tuple[ICState, jnp.ndarray, jnp.ndarray]:
+    top = state.free_top.astype(jnp.int32)
+    ok = (top >= count) & (~state.oom)
+
+    def _do(s):
+        start = top - count
+        ids = jax.lax.dynamic_slice(s.free_stack, (start,), (count,))
+        return s._replace(free_top=jnp.uint32(start)), ids.astype(jnp.uint32), jnp.bool_(True)
+
+    def _fail(s):
+        return s, jnp.zeros((count,), dtype=jnp.uint32), jnp.bool_(False)
+
+    return jax.lax.cond(ok, _do, _fail, state)
+
+
+def _alloc_pad(state: ICState, count: int) -> Tuple[ICState, jnp.ndarray, jnp.ndarray]:
+    if count > state.free_stack.shape[0]:
+        return state, jnp.zeros((4,), dtype=jnp.uint32), jnp.bool_(False)
+    state2, ids, ok = _alloc_raw(state, count)
+    if count == 0:
+        ids4 = jnp.zeros((4,), dtype=jnp.uint32)
+    elif count == 1:
+        ids4 = jnp.concatenate([ids, jnp.zeros((3,), dtype=jnp.uint32)], axis=0)
+    elif count == 2:
+        ids4 = jnp.concatenate([ids, jnp.zeros((2,), dtype=jnp.uint32)], axis=0)
+    elif count == 4:
+        ids4 = ids
+    else:
+        ids4 = jnp.zeros((4,), dtype=jnp.uint32)
+        ok = jnp.bool_(False)
+    return state2, ids4, ok
+
+
+def _init_nodes_jax(
+    state: ICState, ids4: jnp.ndarray, count: jnp.ndarray, node_type: jnp.uint8
+) -> ICState:
+    mask = jnp.arange(4, dtype=jnp.int32) < count.astype(jnp.int32)
+    ids_safe = ids4
+    node_type_curr = state.node_type[ids_safe]
+    node_type_update = jnp.where(mask, node_type, node_type_curr)
+    node_type_arr = state.node_type.at[ids_safe].set(node_type_update)
+    ports_curr = state.ports[ids_safe]
+    ports_update = jnp.where(mask[:, None], jnp.uint32(0), ports_curr)
+    ports_arr = state.ports.at[ids_safe].set(ports_update)
+    return state._replace(node_type=node_type_arr, ports=ports_arr)
+
+
+@partial(jax.jit, static_argnames=("set_oom_on_fail",))
+def ic_alloc_jax(
+    state: ICState,
+    count: jnp.ndarray,
+    node_type: jnp.uint8,
+    set_oom_on_fail: bool = False,
+) -> Tuple[ICState, jnp.ndarray, jnp.ndarray]:
+    """Device-only allocator for construction (no host sync)."""
+    c = jnp.asarray(count, dtype=jnp.int32)
+    idx = jnp.where(
+        c == 0,
+        0,
+        jnp.where(
+            c == 1, 1, jnp.where(c == 2, 2, jnp.where(c == 4, 3, 4))
+        ),
+    ).astype(jnp.int32)
+
+    def _case0(s):
+        return _alloc_pad(s, 0)
+
+    def _case1(s):
+        return _alloc_pad(s, 1)
+
+    def _case2(s):
+        return _alloc_pad(s, 2)
+
+    def _case4(s):
+        return _alloc_pad(s, 4)
+
+    def _bad(s):
+        return s, jnp.zeros((4,), dtype=jnp.uint32), jnp.bool_(False)
+
+    state2, ids4, ok = jax.lax.switch(
+        idx, (_case0, _case1, _case2, _case4, _bad), state
+    )
+    if set_oom_on_fail:
+        state2 = state2._replace(oom=state2.oom | (~ok))
+
+    def _do_init(s):
+        return _init_nodes_jax(s, ids4, c, node_type)
+
+    do_init = ok & (c > 0)
+    state2 = jax.lax.cond(do_init, _do_init, lambda s: s, state2)
+    return state2, ids4, ok
+
 def encode_port(node_idx: jnp.ndarray, port_idx: jnp.ndarray) -> jnp.ndarray:
     return (node_idx.astype(jnp.uint32) << jnp.uint32(2)) | port_idx.astype(
         jnp.uint32
@@ -90,9 +183,7 @@ def ic_init(capacity: int) -> ICState:
     ports = jnp.zeros((capacity, 3), dtype=jnp.uint32)
     free_stack = jnp.arange(capacity - 1, -1, -1, dtype=jnp.uint32)
     # Node 0 is reserved (encode_port(0, PORT_PRINCIPAL) == 0 sentinel).
-    free_top = jnp.array(
-        capacity if capacity < 3 else max(capacity - 1, 0), dtype=jnp.uint32
-    )
+    free_top = jnp.array(max(capacity - 1, 0), dtype=jnp.uint32)
     oom = jnp.array(False, dtype=jnp.bool_)
     return ICState(
         node_type=node_type,
