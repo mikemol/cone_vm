@@ -112,6 +112,17 @@ def test_ic_find_active_pairs_principal_link():
     assert int(pairs[0]) == 1
 
 
+def test_ic_corrupt_on_port3_halts():
+    state = ic.ic_init(4)
+    bad_ptr = ic.encode_port(jnp.uint32(1), jnp.uint32(3))
+    ports = state.ports.at[1, ic.PORT_PRINCIPAL].set(bad_ptr)
+    state = state._replace(ports=ports)
+    state2, stats = ic.ic_apply_active_pairs(state)
+    assert bool(state2.corrupt)
+    assert int(stats.active_pairs) == 0
+    assert int(state2.ports[1, ic.PORT_PRINCIPAL]) == int(bad_ptr)
+
+
 def test_ic_compact_active_pairs_empty():
     state = ic.ic_init(3)
     compacted, count, active = ic.ic_compact_active_pairs(state)
@@ -208,11 +219,12 @@ def test_ic_apply_commute_allocates_nodes():
     assert int(state.free_top) == before_top - 2
 
 
-def test_ic_alloc_underflow_raises():
+def test_ic_alloc_underflow_sets_oom():
     state = ic.ic_init(3)
     state, _ = ic.ic_alloc(state, 2, ic.TYPE_CON)
-    with pytest.raises(ValueError):
-        ic.ic_alloc(state, 1, ic.TYPE_CON)
+    state, nodes = ic.ic_alloc(state, 1, ic.TYPE_CON)
+    assert bool(state.oom)
+    assert list(map(int, nodes)) == [0]
 
 
 def test_ic_apply_commute_rewires_ports():
