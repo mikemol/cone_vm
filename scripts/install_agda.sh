@@ -2,8 +2,21 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN_DIR="$ROOT/.tools/agda/bin"
+TOOLS_DIR="$ROOT/.tools"
+BIN_DIR="$TOOLS_DIR/agda/bin"
 VERSION_FILE="${AGDA_VERSION_FILE:-$ROOT/agda/AGDA_VERSION}"
+
+# Keep cabal state/config under the repo to avoid touching $HOME.
+export CABAL_DIR="${CABAL_DIR:-$TOOLS_DIR/cabal}"
+export CABAL_CONFIG="${CABAL_CONFIG:-$TOOLS_DIR/cabal/config}"
+mkdir -p "$CABAL_DIR"
+mkdir -p "$(dirname "$CABAL_CONFIG")"
+if [[ ! -f "$CABAL_CONFIG" ]]; then
+  cat >"$CABAL_CONFIG" <<'EOF'
+repository hackage.haskell.org
+  url: https://hackage.haskell.org/
+EOF
+fi
 
 if [[ -z "${AGDA_VERSION:-}" ]]; then
   if [[ -f "$VERSION_FILE" ]]; then
