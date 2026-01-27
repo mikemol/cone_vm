@@ -1882,19 +1882,17 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     max_count = jnp.int32(MAX_COUNT)
     available = jnp.maximum(max_count - count, 0)
     available = jnp.where(base_oom | base_corrupt, jnp.int32(0), available)
-    idx_all = jnp.arange(L_b0.shape[0], dtype=jnp.int32)
-    valid_all = idx_all < count
     if _OP_BUCKETS_FULL_RANGE:
         op_start = jnp.zeros(256, dtype=jnp.int32)
         op_end = jnp.full((256,), count, dtype=jnp.int32)
     else:
         # Bucket existing keys by opcode byte to narrow search ranges.
-        op_counts = _bincount_256(
-            L_b0.astype(jnp.int32),
-            valid_all.astype(jnp.int32),
-        )
-        op_start = jnp.cumsum(op_counts) - op_counts
-        op_end = op_start + op_counts
+        # Use searchsorted on the sorted opcode column to avoid full scans.
+        op_values = jnp.arange(256, dtype=jnp.uint8)
+        op_start = jnp.searchsorted(L_b0, op_values, side="left").astype(jnp.int32)
+        op_end = jnp.searchsorted(L_b0, op_values, side="right").astype(jnp.int32)
+        op_start = jnp.minimum(op_start, count)
+        op_end = jnp.minimum(op_end, count)
     # NOTE: opcode buckets are a precursor to per-op merges; full-array merge
     # remains an m1 tradeoff (see IMPLEMENTATION_PLAN.md).
 
@@ -2089,6 +2087,136 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         )
         return out_b0, out_b1, out_b2, out_b3, out_b4, out_ids
 
+    def _merge_sorted_keys_bucketed(
+        old_b0,
+        old_b1,
+        old_b2,
+        old_b3,
+        old_b4,
+        old_ids,
+        old_count,
+        new_b0,
+        new_b1,
+        new_b2,
+        new_b3,
+        new_b4,
+        new_ids,
+        new_items,
+        op_start,
+        op_end,
+    ):
+        out_b0 = jnp.full_like(old_b0, max_key)
+        out_b1 = jnp.full_like(old_b1, max_key)
+        out_b2 = jnp.full_like(old_b2, max_key)
+        out_b3 = jnp.full_like(old_b3, max_key)
+        out_b4 = jnp.full_like(old_b4, max_key)
+        out_ids = jnp.zeros_like(old_ids)
+        total = old_count + new_items
+        _guard_max(total, jnp.int32(old_b0.shape[0]), "merge.total")
+
+        op_values = jnp.arange(256, dtype=jnp.uint8)
+        new_op_start = jnp.searchsorted(new_b0, op_values, side="left").astype(
+            jnp.int32
+        )
+        new_op_end = jnp.searchsorted(new_b0, op_values, side="right").astype(
+            jnp.int32
+        )
+        new_op_start = jnp.minimum(new_op_start, new_items)
+        new_op_end = jnp.minimum(new_op_end, new_items)
+        new_counts = new_op_end - new_op_start
+        prefix_new = jnp.cumsum(new_counts) - new_counts
+
+        def _merge_op(op_idx, state):
+            b0, b1, b2, b3, b4, ids = state
+            old_lo = op_start[op_idx]
+            old_hi = op_end[op_idx]
+            new_lo = new_op_start[op_idx]
+            new_hi = new_op_end[op_idx]
+            old_len = old_hi - old_lo
+            new_len = new_hi - new_lo
+            total_len = old_len + new_len
+            dest_lo = old_lo + prefix_new[op_idx]
+
+            def _merge_body(k, carry):
+                i, j, b0, b1, b2, b3, b4, ids = carry
+                old_valid = i < old_len
+                new_valid = j < new_len
+                old_idx = old_lo + i
+                new_idx = new_lo + j
+
+                old0 = jnp.where(old_valid, old_b0[old_idx], max_key)
+                old1 = jnp.where(old_valid, old_b1[old_idx], max_key)
+                old2 = jnp.where(old_valid, old_b2[old_idx], max_key)
+                old3 = jnp.where(old_valid, old_b3[old_idx], max_key)
+                old4 = jnp.where(old_valid, old_b4[old_idx], max_key)
+
+                new0 = jnp.where(new_valid, new_b0[new_idx], max_key)
+                new1 = jnp.where(new_valid, new_b1[new_idx], max_key)
+                new2 = jnp.where(new_valid, new_b2[new_idx], max_key)
+                new3 = jnp.where(new_valid, new_b3[new_idx], max_key)
+                new4 = jnp.where(new_valid, new_b4[new_idx], max_key)
+
+                new_less = _lex_less(
+                    new0,
+                    new1,
+                    new2,
+                    new3,
+                    new4,
+                    old0,
+                    old1,
+                    old2,
+                    old3,
+                    old4,
+                )
+                take_new = jnp.where(old_valid & new_valid, new_less, new_valid)
+
+                picked0 = jnp.where(take_new, new0, old0)
+                picked1 = jnp.where(take_new, new1, old1)
+                picked2 = jnp.where(take_new, new2, old2)
+                picked3 = jnp.where(take_new, new3, old3)
+                picked4 = jnp.where(take_new, new4, old4)
+
+                old_id = jnp.where(old_valid, old_ids[old_idx], jnp.int32(0))
+                new_id = jnp.where(new_valid, new_ids[new_idx], jnp.int32(0))
+                picked_id = jnp.where(take_new, new_id, old_id)
+
+                out_idx = dest_lo + k
+                b0 = b0.at[out_idx].set(picked0)
+                b1 = b1.at[out_idx].set(picked1)
+                b2 = b2.at[out_idx].set(picked2)
+                b3 = b3.at[out_idx].set(picked3)
+                b4 = b4.at[out_idx].set(picked4)
+                ids = ids.at[out_idx].set(picked_id)
+
+                i = jnp.where(take_new, i, i + 1)
+                j = jnp.where(take_new, j + 1, j)
+                return (i, j, b0, b1, b2, b3, b4, ids)
+
+            def _run_merge(state):
+                b0_in, b1_in, b2_in, b3_in, b4_in, ids_in = state
+                init = (
+                    jnp.int32(0),
+                    jnp.int32(0),
+                    b0_in,
+                    b1_in,
+                    b2_in,
+                    b3_in,
+                    b4_in,
+                    ids_in,
+                )
+                _, _, b0_out, b1_out, b2_out, b3_out, b4_out, ids_out = (
+                    lax.fori_loop(0, total_len, _merge_body, init)
+                )
+                return (b0_out, b1_out, b2_out, b3_out, b4_out, ids_out)
+
+            return lax.cond(total_len > 0, _run_merge, lambda s: s, state)
+
+        init_state = (out_b0, out_b1, out_b2, out_b3, out_b4, out_ids)
+        out_b0, out_b1, out_b2, out_b3, out_b4, out_ids = lax.fori_loop(
+            0, jnp.int32(256), _merge_op, init_state
+        )
+        return out_b0, out_b1, out_b2, out_b3, out_b4, out_ids
+
     def _allocate(_):
         # Allocate new ids (subject to capacity) and write node payloads.
         spawn = is_new.astype(jnp.int32)
@@ -2211,7 +2339,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
                 new_keys_b3_sorted,
                 new_keys_b4_sorted,
                 new_ids_sorted,
-            ) = _merge_sorted_keys(
+            ) = _merge_sorted_keys_bucketed(
                 L_b0,
                 L_b1,
                 L_b2,
@@ -2226,6 +2354,8 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
                 new_entry_b4_sorted,
                 new_entry_ids_sorted,
                 num_new,
+                op_start,
+                op_end,
             )
 
             new_ledger = Ledger(

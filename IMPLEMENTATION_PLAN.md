@@ -798,7 +798,8 @@ Performance checks:
 - **Full-array ledger scans**: fixed-shape interning touches `LEDGER_CAPACITY`-sized
   buffers even when `count` is small (intentional for JIT stability in m1).
   m4 mitigations: introduce a smaller `MAX_CAPACITY` for production runs,
-  maintain per-op counts incrementally to avoid full `_bincount_256`, and/or
+  maintain per-op counts incrementally; `keys_b0_sorted` now uses `searchsorted`
+  to avoid full `_bincount_256` in the interner. ✅
   stage prefix-only scans via dynamic slice + pad.
 - **Pointer invalidation**: treat root pointer as part of state, remap every
   sort, and verify in tests.
@@ -835,12 +836,11 @@ tracking against the roadmap.
 - `_coord_norm_id_jax` repeats lookups per step; batch coord normalization.
 - Coord normalization uses `vmap` over a `cond`/loop; refactor to a single
   SIMD-style loop over the coord subset.
-- Opcode buckets are precursors to per-op merges; global merge remains an m1
-  tradeoff.
+- Opcode buckets now feed per-op merges; global merge no longer required.
 - Overflow checks depend on `requested_new`; add a secondary guard on `num_new`.
 - Overflow is treated as CORRUPT in m1 (semantic id cap == capacity); split
   OOM handling if semantics decouple.
-- `_merge_sorted_keys` is a global merge (m1 tradeoff); optimize per-op merges.
+- Per-op merge implemented via `_merge_sorted_keys_bucketed` (bucketed merge). ✅
 - Add a guard for `new_count` vs backing array length if `max_count` decouples.
 - `intern_nodes` stop path performs a read-only lookup fallback (implemented).
 - `_active_prefix_count` clamps to size; add an explicit overflow guard.
@@ -867,8 +867,8 @@ Ordered by semantic risk first, then determinism/observability, then performance
 - Value-bound guards for swizzled args in test mode. ✅
 
 **P3 — Performance / scalability**
-- Per-op merges in interner to avoid full-array merge per batch.
-- Per-op counts to avoid full `_bincount_256` each pass.
+- Per-op merges in interner to avoid full-array merge per batch. ✅
+- Per-op counts to avoid full `_bincount_256` each pass. ✅
 - Prefix-only scans via dynamic slice + pad (avoid full `LEDGER_CAPACITY` sweep).
 - Batch coord normalization (replace `vmap(cond)` with SIMD-style loop).
 - Batch/cache host-only coord helpers to avoid per-scalar device reads.
