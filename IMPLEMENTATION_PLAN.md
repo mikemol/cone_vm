@@ -847,6 +847,41 @@ tracking against the roadmap.
 - Add value-bound guards for swizzled args in test mode.
 - Remove the duplicate "JAX Kernels" section header.
 
+## Prioritized Punch-List (Current State)
+Ordered by semantic risk first, then determinism/observability, then performance.
+
+**P0 — Semantic safety / correctness**
+- No-silent-clipping guard in `intern_nodes` (secondary guard on `num_new`).
+- Explicit zero-row (id=1) invariant guard.
+- `_apply_stratum_q` length guard for `canon_ids` vs `stratum.count`.
+- Read-only lookup fallback for `intern_nodes` stop path (CORRUPT/OOM).
+
+**P1 — Determinism / observability**
+- Strict scatter variant (no drop sentinel) for tests/guards.
+- Deterministic gather behavior outside test mode (clamp or strict policy).
+- CNF-2 observability counters (`rewrite_child`, `changed`, `wrap_emit`).
+
+**P2 — Milestone integrity / test fidelity**
+- Host-slice validation for `validate_stratum_no_within_refs`.
+- Value-bound guards for swizzled args in test mode.
+
+**P3 — Performance / scalability**
+- Per-op merges in interner to avoid full-array merge per batch.
+- Per-op counts to avoid full `_bincount_256` each pass.
+- Prefix-only scans via dynamic slice + pad (avoid full `LEDGER_CAPACITY` sweep).
+- Batch coord normalization (replace `vmap(cond)` with SIMD-style loop).
+- Batch/cache host-only coord helpers to avoid per-scalar device reads.
+
+**P4 — Hygiene / clarity**
+- Clarify `_lookup_node_id` tuple unpacking.
+- Overflow guard for `_active_prefix_count`.
+- Remove duplicate "JAX Kernels" header (if not already resolved).
+
+**P5 — Roadmap extensions**
+- Min(Prism) harness + projection commutation (in-18).
+- Agda proof roadmap execution (in-26).
+- M6–M10 interaction-combinator engine (in-8 pivot).
+
 ## Deliverables
 - `prism_vm.py`: new `PrismVM_BSP` and arena ops.
 - `tests/`: new fixtures for cycle-based evaluation.
