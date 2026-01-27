@@ -124,6 +124,19 @@ jobs:
       image: ghcr.io/mikemol/act-ubuntu-agda@sha256:3a38b951385dbd12ea9140137c1d26ac6be62df503e2fed1f1bfe94c14ed6393
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Verify Agda image version
+        run: |
+          set -euo pipefail
+          expected="$(tr -d ' \t\r\n' < agda/AGDA_VERSION)"
+          if [[ -z "$expected" ]]; then
+            echo "AGDA_VERSION is empty" >&2
+            exit 1
+          fi
+          actual="$(agda --version | head -n1 | sed -E 's/.*([0-9]+\.[0-9]+(\.[0-9]+)?).*/\\1/')"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "Agda image version mismatch: expected ${expected}, got ${actual}" >&2
+            exit 1
+          fi
       - name: Run Agda checker
         run: |
           scripts/check_agda.sh

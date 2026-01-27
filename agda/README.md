@@ -9,21 +9,17 @@ Status: scaffold + basic lemmas (no CI integration).
 
 Suggested entrypoint: `agda/Prism/Prism.agda`.
 
-## Local setup (mise)
+## Local setup (container)
 
-Agda is installed via `cabal` under `mise` to keep toolchain versions pinned
-in `mise.toml` without committing binaries.
+Agda runs via the pinned container image for fast, reproducible checks.
 
-1. Install toolchain:
-   - `mise install`
-2. Install Agda (downloads from Hackage):
-   - `scripts/install_agda.sh`
-3. Run the checker:
-   - `scripts/check_agda.sh`
+1. Export the image digest (or pass inline):
+   - `export AGDA_IMAGE=ghcr.io/mikemol/act-ubuntu-agda@sha256:<digest>`
+2. Run the checker:
+   - `scripts/check_agda_container.sh`
 
-CI note: the checker will also use a system `agda` on PATH (or `AGDA_BIN` if
-set), so GitHub-hosted runners can install Agda via apt without `mise`.
+CI note: Agda checks run inside the same pinned container image.
 
 Agda version pin:
 - The pinned version lives in `agda/AGDA_VERSION`.
-- `scripts/install_agda.sh` respects `AGDA_VERSION` or that file.
+- The container image is built with that version; keep them in sync.
