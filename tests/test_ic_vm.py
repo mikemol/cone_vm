@@ -62,3 +62,33 @@ def test_ic_rule_table_commutes_symmetry():
     left = ic.ic_rule_for_types(ic.TYPE_CON, ic.TYPE_DUP)
     right = ic.ic_rule_for_types(ic.TYPE_DUP, ic.TYPE_CON)
     assert tuple(map(int, left)) == tuple(map(int, right))
+
+
+def test_ic_select_template_annihilate():
+    state = ic.ic_init(2)
+    node_type = state.node_type
+    node_type = node_type.at[0].set(ic.TYPE_CON)
+    node_type = node_type.at[1].set(ic.TYPE_CON)
+    state = state._replace(node_type=node_type)
+    tmpl = ic.ic_select_template(state, 0, 1)
+    assert int(tmpl) == int(ic.TEMPLATE_ANNIHILATE)
+
+
+def test_ic_apply_annihilate_rewires_aux():
+    state = ic.ic_init(4)
+    node_type = state.node_type
+    node_type = node_type.at[0].set(ic.TYPE_CON)
+    node_type = node_type.at[1].set(ic.TYPE_CON)
+    node_type = node_type.at[2].set(ic.TYPE_CON)
+    node_type = node_type.at[3].set(ic.TYPE_CON)
+    state = state._replace(node_type=node_type)
+    state = ic.ic_wire(state, 0, ic.PORT_PRINCIPAL, 1, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 0, ic.PORT_AUX_LEFT, 2, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, 1, ic.PORT_AUX_LEFT, 3, ic.PORT_PRINCIPAL)
+    state = ic.ic_apply_annihilate(state, 0, 1)
+    n2, p2 = ic.decode_port(state.ports[2, 0])
+    n3, p3 = ic.decode_port(state.ports[3, 0])
+    assert int(n2) == 3
+    assert int(p2) == int(ic.PORT_PRINCIPAL)
+    assert int(n3) == 2
+    assert int(p3) == int(ic.PORT_PRINCIPAL)

@@ -37,6 +37,14 @@ RULE_TABLE = jnp.array(
 )
 
 
+def _connect_ptrs(ports: jnp.ndarray, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray) -> jnp.ndarray:
+    node_a, port_a = decode_port(ptr_a)
+    node_b, port_b = decode_port(ptr_b)
+    ports = ports.at[node_a, port_a].set(ptr_b)
+    ports = ports.at[node_b, port_b].set(ptr_a)
+    return ports
+
+
 class ICState(NamedTuple):
     node_type: jnp.ndarray
     ports: jnp.ndarray
@@ -126,3 +134,36 @@ def ic_rule_for_types(type_a: jnp.ndarray, type_b: jnp.ndarray) -> jnp.ndarray:
     a = type_a.astype(jnp.uint32)
     b = type_b.astype(jnp.uint32)
     return RULE_TABLE[a, b]
+
+
+def ic_select_template(state: ICState, node_a: int, node_b: int) -> jnp.ndarray:
+    type_a = state.node_type[node_a]
+    type_b = state.node_type[node_b]
+    return ic_rule_for_types(type_a, type_b)[1]
+
+
+def ic_apply_annihilate(state: ICState, node_a: int, node_b: int) -> ICState:
+    ports = state.ports
+    a_left = ports[node_a, 1]
+    a_right = ports[node_a, 2]
+    b_left = ports[node_b, 1]
+    b_right = ports[node_b, 2]
+    ports = _connect_ptrs(ports, a_left, b_left)
+    ports = _connect_ptrs(ports, a_right, b_right)
+    ports = ports.at[node_a].set(jnp.uint32(0))
+    ports = ports.at[node_b].set(jnp.uint32(0))
+    node_type = state.node_type
+    node_type = node_type.at[node_a].set(TYPE_FREE)
+    node_type = node_type.at[node_b].set(TYPE_FREE)
+    return state._replace(ports=ports, node_type=node_type)
+
+
+def ic_apply_template(
+    state: ICState, node_a: int, node_b: int, template_id: jnp.ndarray
+) -> ICState:
+    tmpl = int(template_id)
+    if tmpl == int(TEMPLATE_NONE):
+        return state
+    if tmpl == int(TEMPLATE_ANNIHILATE):
+        return ic_apply_annihilate(state, node_a, node_b)
+    raise ValueError(f"Unsupported template_id={tmpl}")
