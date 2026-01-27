@@ -95,23 +95,39 @@ def test_ic_apply_annihilate_rewires_aux():
 
 
 def test_ic_apply_erase_frees_nodes():
-    state = ic.ic_init(2)
-    node_type = state.node_type
-    node_type = node_type.at[0].set(ic.TYPE_CON)
-    node_type = node_type.at[1].set(ic.TYPE_ERA)
-    state = state._replace(node_type=node_type)
-    state = ic.ic_apply_erase(state, 0, 1)
-    assert int(state.node_type[0]) == int(ic.TYPE_FREE)
-    assert int(state.node_type[1]) == int(ic.TYPE_FREE)
-    assert int(state.free_top) == 4
+    state = ic.ic_init(6)
+    state, (bin_node,) = ic.ic_alloc(state, 1, ic.TYPE_CON)
+    state, aux_nodes = ic.ic_alloc(state, 2, ic.TYPE_CON)
+    state, (era_node,) = ic.ic_alloc(state, 1, ic.TYPE_ERA)
+    aux_left, aux_right = map(int, aux_nodes)
+    bin_node = int(bin_node)
+    era_node = int(era_node)
+    state = ic.ic_wire(state, bin_node, ic.PORT_PRINCIPAL, era_node, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, bin_node, ic.PORT_AUX_LEFT, aux_left, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, bin_node, ic.PORT_AUX_RIGHT, aux_right, ic.PORT_PRINCIPAL)
+    free_top_before = int(state.free_top)
+    state = ic.ic_apply_erase(state, era_node, bin_node)
+    assert int(state.free_top) == free_top_before
+    era_indices = jnp.nonzero(state.node_type == ic.TYPE_ERA, size=2)[0]
+    assert int(era_indices[0]) != era_node
+    assert int(era_indices[1]) != era_node
+    for aux in (aux_left, aux_right):
+        node, port = ic.decode_port(state.ports[aux, 0])
+        assert int(port) == int(ic.PORT_PRINCIPAL)
+        assert int(node) in {int(era_indices[0]), int(era_indices[1])}
 
 
 def test_ic_apply_commute_allocates_nodes():
     state = ic.ic_init(6)
-    node_type = state.node_type
-    node_type = node_type.at[0].set(ic.TYPE_CON)
-    node_type = node_type.at[1].set(ic.TYPE_DUP)
-    state = state._replace(node_type=node_type)
+    state, (left,) = ic.ic_alloc(state, 1, ic.TYPE_CON)
+    state, (right,) = ic.ic_alloc(state, 1, ic.TYPE_DUP)
     before_top = int(state.free_top)
-    state = ic.ic_apply_commute(state, 0, 1)
+    state = ic.ic_apply_commute(state, int(left), int(right))
     assert int(state.free_top) == before_top - 4
+
+
+def test_ic_alloc_underflow_raises():
+    state = ic.ic_init(2)
+    state, _ = ic.ic_alloc(state, 2, ic.TYPE_CON)
+    with pytest.raises(ValueError):
+        ic.ic_alloc(state, 1, ic.TYPE_CON)
