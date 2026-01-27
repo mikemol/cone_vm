@@ -153,7 +153,10 @@ def ic_init(capacity: int) -> ICState:
     ports = jnp.zeros((capacity, 3), dtype=jnp.uint32)
     free_stack = jnp.arange(capacity - 1, -1, -1, dtype=jnp.uint32)
     # Node 0 is reserved (encode_port(0, PORT_PRINCIPAL) == 0 sentinel).
-    free_top = jnp.array(max(capacity - 1, 0), dtype=jnp.uint32)
+    free_top = jnp.array(
+        capacity if capacity < 3 else max(capacity - 1, 0),
+        dtype=jnp.uint32,
+    )
     oom = jnp.array(False, dtype=jnp.bool_)
     corrupt = jnp.array(False, dtype=jnp.bool_)
     return ICState(

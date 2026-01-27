@@ -903,7 +903,7 @@ layout and rule-table rewrites.
 Status: implementation underway (roadmap active). Current state:
 - M6–M8 complete in `ic_vm.py` + `tests/test_ic_vm.py` (data model, active-pair matching/compaction, rule table + wiring templates).
 - M9 ✅: Device-resident prefix-sum allocation plan + FreeStack reuse/overflow guards with `oom` boundary (see `ic_apply_active_pairs` allocation planning + OOM test).
-- M10 partial: Device-resident apply + reduce loop; full match/alloc/rewire/commit pipeline still pending.
+- M10 ✅: Device-resident match/alloc/rewire/commit pipeline + reduce loop with end-to-end reduction tests (`tests/test_ic_vm.py`).
 
 Prereqs:
 - Complete m1 through m5 (BSP cycle verified and stable).

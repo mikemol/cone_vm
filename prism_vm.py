@@ -1004,6 +1004,13 @@ def _project_graph_to_ledger(
                 jnp.array([child2], dtype=jnp.int32),
             ),
         )
+        mapping[idx_i] = int(ids[0])
+        visiting.remove(idx_i)
+        return mapping[idx_i]
+
+    root_out = _project(int(root_idx))
+    _host_raise_if_bad(ledger, f"{label}: projection exceeded ledger capacity")
+    return ledger, _ledger_id(root_out)
 
 
 __all__ = [
@@ -1108,13 +1115,6 @@ __all__ = [
     "run_program_lines_bsp",
     "repl",
 ]
-        mapping[idx_i] = int(ids[0])
-        visiting.remove(idx_i)
-        return mapping[idx_i]
-
-    root_out = _project(int(root_idx))
-    _host_raise_if_bad(ledger, f"{label}: projection exceeded ledger capacity")
-    return ledger, _ledger_id(root_out)
 
 
 def project_manifest_to_ledger(manifest, root_ptr, ledger=None, limit=None):
