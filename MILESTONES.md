@@ -37,8 +37,8 @@ Ordered by semantic risk first, then verification depth, then hygiene.
 - Agda proofs (actual theorems) for univalence/gauge/novelty/finite closure/fixed points. ✅
 - in-8 interaction‑combinator engine implementation (rule table + port encoding + rewrite kernel). ✅
 
-**P4 — Verification hardening + next backend** ⏳
+**P4 — Verification hardening + next backend** ✅
 - No‑copy / alpha‑equivalence tests for ledger sharing (in‑17). ✅
 - CQRS replay harness beyond Min(Prism) (optional audit mode). ✅
 - Agda boundary theorems (no‑termination / negative capability). ✅
-- Interaction‑combinator backend (in‑8) beyond roadmap: data model + kernel prototype. ⏳
+- Interaction‑combinator backend (in‑8) beyond roadmap: data model + kernel prototype. ✅
