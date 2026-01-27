@@ -752,15 +752,21 @@ m5:
 
 ## Testing Plan
 ### Milestone Test Selection
-- CLI: use per-milestone configs (e.g., `pytest -c pytest.m2.ini`) or set
-  `PRISM_MILESTONE=m2` to activate the milestone gate in `conftest.py`.
+- CLI (banded): per-milestone configs use `--milestone-band` so each band is
+  exclusive; running `m1`→`m5` covers the full suite without reruns.
+  - `pytest -c pytest.m2.ini` runs only tests marked `m2`.
+  - `pytest -c pytest.m1.ini` runs `m1` plus unmarked tests (via
+    `--include-unmarked`).
+- CLI (inclusive): `pytest --milestone=m2` runs all tests at or below `m2`.
 - VS Code: edit `.vscode/pytest.env` to set `PRISM_MILESTONE=m2`, then refresh
   the Testing panel; gating reads the env (or `.pytest-milestone`) in
   `conftest.py` and uses `pytest.ini`.
-- Gating: tests are marked `m1`..`m6`; the milestone gate skips any test with
-  a higher marker than the selected milestone.
-- See `in/in-15.md` for the milestone-gated testing workflow and VS Code
-  integration details.
+  - For banded selection in VS Code, set
+    `PYTEST_ADDOPTS=--milestone-band=m2` (add `--include-unmarked` for `m1`).
+- Marking: tests are tagged `m1`..`m6` with the **earliest** milestone that
+  must pass. Unmarked tests must be assigned; `m1` is the only band that
+  includes unmarked tests by default.
+- See `in/in-15.md` for the milestone-gated workflow details.
 Unit tests (ordered by dependency):
 - Root remap correctness after any permutation/sort.
 - Strata discipline: newly created nodes only reference prior strata.
