@@ -185,6 +185,11 @@ MAX_COUNT = MAX_ID + 1  # Next-free upper bound; equals LEDGER_CAPACITY.
 if LEDGER_CAPACITY >= MAX_KEY_NODES:
     raise ValueError("LEDGER_CAPACITY exceeds 16-bit key packing")
 MAX_COORD_STEPS = 8
+_PREFIX_SCAN_CHUNK = int(os.environ.get("PRISM_PREFIX_SCAN_CHUNK", "4096") or 4096)
+if _PREFIX_SCAN_CHUNK <= 0:
+    _PREFIX_SCAN_CHUNK = LEDGER_CAPACITY
+if _PREFIX_SCAN_CHUNK > LEDGER_CAPACITY:
+    _PREFIX_SCAN_CHUNK = LEDGER_CAPACITY
 _TEST_GUARDS = os.environ.get("PRISM_TEST_GUARDS", "").strip().lower() in (
     "1",
     "true",
@@ -1162,17 +1167,24 @@ def validate_stratum_no_within_refs_jax(ledger, stratum):
     # See IMPLEMENTATION_PLAN.md (m2 strata discipline).
     start = stratum.start
     count = jnp.maximum(stratum.count, 0)
-    ids = jnp.arange(ledger.arg1.shape[0], dtype=jnp.int32)
-    # Mask to live region only; static shape keeps JIT happy while ignoring junk.
-    # NOTE: full-shape scan is an m1 tradeoff; host-slice validation is deferred
-    # to IMPLEMENTATION_PLAN.md.
-    live = ids < ledger.count.astype(jnp.int32)
-    mask = live & (ids >= start) & (ids < start + count)
-    a1 = ledger.arg1[ids]
-    a2 = ledger.arg2[ids]
-    ok_a1 = jnp.all(jnp.where(mask, a1 < start, True))
-    ok_a2 = jnp.all(jnp.where(mask, a2 < start, True))
-    return ok_a1 & ok_a2
+    ledger_count = ledger.count.astype(jnp.int32)
+    chunk = jnp.int32(_PREFIX_SCAN_CHUNK)
+    max_start = jnp.int32(ledger.arg1.shape[0] - _PREFIX_SCAN_CHUNK)
+    max_start = jnp.maximum(max_start, jnp.int32(0))
+    num_chunks = (ledger_count + chunk - 1) // chunk
+
+    def _scan_chunk(i, ok):
+        base = jnp.minimum(i * chunk, max_start)
+        a1 = lax.dynamic_slice_in_dim(ledger.arg1, base, _PREFIX_SCAN_CHUNK)
+        a2 = lax.dynamic_slice_in_dim(ledger.arg2, base, _PREFIX_SCAN_CHUNK)
+        ids = base + jnp.arange(_PREFIX_SCAN_CHUNK, dtype=jnp.int32)
+        live = ids < ledger_count
+        mask = live & (ids >= start) & (ids < start + count)
+        ok_a1 = jnp.all(jnp.where(mask, a1 < start, True))
+        ok_a2 = jnp.all(jnp.where(mask, a2 < start, True))
+        return ok & ok_a1 & ok_a2
+
+    return lax.fori_loop(0, num_chunks, _scan_chunk, jnp.bool_(True))
 
 def validate_stratum_no_within_refs(ledger, stratum) -> HostBool:
     if _guards_enabled():
