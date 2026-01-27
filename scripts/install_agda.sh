@@ -16,13 +16,13 @@ export CABAL_LOGS_DIR="${CABAL_LOGS_DIR:-$CABAL_DIR/logs}"
 mkdir -p "$CABAL_DIR" "$CABAL_REPO_CACHE" "$CABAL_STORE_DIR" "$CABAL_LOGS_DIR"
 
 if [[ ! -f "$CABAL_CONFIG" ]]; then
-  mise exec -- cabal user-config init --config-file "$CABAL_CONFIG"
+  mise exec -- cabal user-config init
 fi
 
 # Ensure the config includes hackage root keys; regenerate if missing.
 if ! grep -q "^root-keys:" "$CABAL_CONFIG"; then
   rm -f "$CABAL_CONFIG"
-  mise exec -- cabal user-config init --config-file "$CABAL_CONFIG"
+  mise exec -- cabal user-config init
 fi
 
 # Ensure repo-local cache/store/logs in the cabal config.
