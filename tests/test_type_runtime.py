@@ -4,6 +4,8 @@ import jax.numpy as jnp
 
 import prism_vm as pv
 
+pytestmark = pytest.mark.m2
+
 pytest.importorskip("jaxtyping")
 pytest.importorskip("beartype")
 

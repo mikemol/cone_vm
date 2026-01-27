@@ -1,6 +1,10 @@
 import subprocess
 import sys
 
+import pytest
+
+pytestmark = pytest.mark.m1
+
 
 def _run_delta(args):
     result = subprocess.run(

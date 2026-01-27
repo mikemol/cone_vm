@@ -37,6 +37,26 @@ def _parse_milestone(value):
     return int(value)
 
 
+def _parse_milestone_selector(value):
+    if not value:
+        return None
+    value = value.strip().lower()
+    if value.startswith("m"):
+        value = value[1:]
+    if value.endswith("+"):
+        return (_parse_milestone(value[:-1]), None)
+    if value.endswith("-"):
+        return (None, _parse_milestone(value[:-1]))
+    if ".." in value:
+        lo, hi = value.split("..", 1)
+        return (_parse_milestone(lo), _parse_milestone(hi))
+    if "-" in value:
+        lo, hi = value.split("-", 1)
+        return (_parse_milestone(lo), _parse_milestone(hi))
+    milestone = _parse_milestone(value)
+    return (milestone, milestone)
+
+
 def _read_milestone_file(path):
     try:
         lines = Path(path).read_text().splitlines()
@@ -72,12 +92,29 @@ def pytest_addoption(parser):
         default=_milestone_default(),
         help="run tests up to a milestone (m1-m6)",
     )
+    parser.addoption(
+        "--milestone-band",
+        action="store",
+        default="",
+        help="run tests in a milestone band (m3, m2-4, m3+, m3-)",
+    )
+    parser.addoption(
+        "--include-unmarked",
+        action="store_true",
+        default=False,
+        help="include unmarked tests when using --milestone-band",
+    )
 
 
 def pytest_configure(config):
     for name, desc in _MARKER_DESCRIPTIONS.items():
         config.addinivalue_line("markers", f"{name}: {desc}")
-    milestone = _parse_milestone(config.getoption("--milestone"))
+    selector = _parse_milestone_selector(config.getoption("--milestone-band"))
+    if selector is not None:
+        low, high = selector
+        milestone = high if high is not None else low
+    else:
+        milestone = _parse_milestone(config.getoption("--milestone"))
     if milestone is None:
         return
     os.environ["PRISM_MILESTONE"] = f"m{milestone}"
@@ -121,16 +158,26 @@ def _set_default_device(request):
 
 
 def pytest_collection_modifyitems(config, items):
+    selector = _parse_milestone_selector(config.getoption("--milestone-band"))
     milestone = _parse_milestone(config.getoption("--milestone"))
-    if milestone is None:
+    if selector is None and milestone is None:
         return
+    include_unmarked = config.getoption("--include-unmarked")
     deselected = []
     for item in items:
         markers = [m.name for m in item.iter_markers() if m.name in MILESTONE_MARKERS]
         if not markers:
+            if selector is not None and not include_unmarked:
+                deselected.append(item)
             continue
         required = max(int(m[1:]) for m in markers)
-        if milestone < required:
+        if selector is not None:
+            low, high = selector
+            if low is not None and required < low:
+                deselected.append(item)
+            elif high is not None and required > high:
+                deselected.append(item)
+        elif milestone is not None and milestone < required:
             deselected.append(item)
     if deselected:
         config.hook.pytest_deselected(items=deselected)

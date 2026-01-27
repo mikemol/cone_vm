@@ -2,6 +2,10 @@ import json
 import subprocess
 import sys
 
+import pytest
+
+pytestmark = pytest.mark.m1
+
 
 def _run_trace_analyze(args):
     return subprocess.run(

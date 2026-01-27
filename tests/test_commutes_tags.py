@@ -1,6 +1,10 @@
 import re
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.m1
+
 
 COMMUTES_RE = re.compile(r"# COMMUTES: .*\[test: ([^\]]+)\]")
 
