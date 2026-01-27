@@ -8,6 +8,11 @@ from tests import harness
 pytestmark = pytest.mark.m1
 
 
+def _skip_if_no_debug_callback():
+    if not pv._HAS_DEBUG_CALLBACK:
+        pytest.skip("jax.debug.callback not available")
+
+
 def test_add_zero_equivalence_baseline_vs_ledger():
     exprs = [
         "(add zero (suc zero))",
@@ -134,6 +139,19 @@ def test_corrupt_is_sticky_and_non_mutating():
         assert bool(jnp.array_equal(before, after))
 
 
+def test_zero_row_guard_trips():
+    assert pv._TEST_GUARDS, "PRISM_TEST_GUARDS must be enabled for guard tests"
+    _skip_if_no_debug_callback()
+    ledger = pv.init_ledger()
+    ledger = ledger._replace(opcode=ledger.opcode.at[1].set(pv.OP_ADD))
+    ops = jnp.array([pv.OP_SUC], dtype=jnp.int32)
+    a1 = jnp.array([pv.ZERO_PTR], dtype=jnp.int32)
+    a2 = jnp.array([0], dtype=jnp.int32)
+    with pytest.raises(RuntimeError, match=r"intern_nodes.row1"):
+        ids, new_ledger = pv.intern_nodes(ledger, ops, a1, a2)
+        new_ledger.count.block_until_ready()
+
+
 def _seed_snapshot(ledger):
     return (
         ledger.opcode[:2],
@@ -185,6 +203,20 @@ def test_intern_stop_path_on_oom_is_sticky():
         assert bool(ledger.oom)
         assert int(ids[0]) == 0
         _assert_seed_snapshot(ledger, snapshot)
+
+
+def test_intern_stop_path_lookup_returns_existing_id():
+    ledger = pv.init_ledger()
+    ops = jnp.array([pv.OP_SUC], dtype=jnp.int32)
+    a1 = jnp.array([pv.ZERO_PTR], dtype=jnp.int32)
+    a2 = jnp.array([0], dtype=jnp.int32)
+    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    existing_id = int(ids[0])
+    ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
+    ids2, ledger2 = pv.intern_nodes(ledger, ops, a1, a2)
+    assert int(ids2[0]) == existing_id
+    assert bool(ledger2.oom)
+    assert int(ledger2.count) == int(ledger.count)
 
 
 def test_intern_overflow_trips_corrupt_without_partial_alloc():

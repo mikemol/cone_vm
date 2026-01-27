@@ -842,7 +842,7 @@ tracking against the roadmap.
   OOM handling if semantics decouple.
 - `_merge_sorted_keys` is a global merge (m1 tradeoff); optimize per-op merges.
 - Add a guard for `new_count` vs backing array length if `max_count` decouples.
-- `intern_nodes` stop path returns zeros; add a read-only lookup fallback.
+- `intern_nodes` stop path performs a read-only lookup fallback (implemented).
 - `_active_prefix_count` clamps to size; add an explicit overflow guard.
 - Add value-bound guards for swizzled args in test mode.
 - Remove the duplicate "JAX Kernels" section header.
@@ -850,11 +850,11 @@ tracking against the roadmap.
 ## Prioritized Punch-List (Current State)
 Ordered by semantic risk first, then determinism/observability, then performance.
 
-**P0 — Semantic safety / correctness**
-- No-silent-clipping guard in `intern_nodes` (secondary guard on `num_new`).
-- Explicit zero-row (id=1) invariant guard.
-- `_apply_stratum_q` length guard for `canon_ids` vs `stratum.count`.
-- Read-only lookup fallback for `intern_nodes` stop path (CORRUPT/OOM).
+**P0 — Semantic safety / correctness (complete)**
+- No-silent-clipping guard in `intern_nodes` (secondary guard on `num_new`). ✅
+- Explicit zero-row (id=1) invariant guard. ✅
+- `_apply_stratum_q` length guard for `canon_ids` vs `stratum.count`. ✅
+- Read-only lookup fallback for `intern_nodes` stop path (CORRUPT/OOM). ✅
 
 **P1 — Determinism / observability**
 - Strict scatter variant (no drop sentinel) for tests/guards.
