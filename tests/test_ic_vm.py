@@ -131,3 +131,38 @@ def test_ic_alloc_underflow_raises():
     state, _ = ic.ic_alloc(state, 2, ic.TYPE_CON)
     with pytest.raises(ValueError):
         ic.ic_alloc(state, 1, ic.TYPE_CON)
+
+
+def test_ic_apply_commute_rewires_ports():
+    state = ic.ic_init(10)
+    state, ext = ic.ic_alloc(state, 4, ic.TYPE_CON)
+    ext_left, ext_right, ext_dup_left, ext_dup_right = map(int, ext)
+    state, (con_node,) = ic.ic_alloc(state, 1, ic.TYPE_CON)
+    state, (dup_node,) = ic.ic_alloc(state, 1, ic.TYPE_DUP)
+    con_node = int(con_node)
+    dup_node = int(dup_node)
+    state = ic.ic_wire(state, con_node, ic.PORT_PRINCIPAL, dup_node, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, con_node, ic.PORT_AUX_LEFT, ext_left, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, con_node, ic.PORT_AUX_RIGHT, ext_right, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, dup_node, ic.PORT_AUX_LEFT, ext_dup_left, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, dup_node, ic.PORT_AUX_RIGHT, ext_dup_right, ic.PORT_PRINCIPAL)
+    before_top = int(state.free_top)
+    expected_con = state.free_stack[before_top - 2:before_top]
+    expected_dup = state.free_stack[before_top - 4:before_top - 2]
+    state = ic.ic_apply_commute(state, con_node, dup_node)
+    assert int(state.node_type[con_node]) == int(ic.TYPE_FREE)
+    assert int(state.node_type[dup_node]) == int(ic.TYPE_FREE)
+    c0, c1 = map(int, expected_con)
+    d0, d1 = map(int, expected_dup)
+    node, port = ic.decode_port(state.ports[ext_dup_left, 0])
+    assert int(node) == c0
+    assert int(port) == int(ic.PORT_AUX_LEFT)
+    node, port = ic.decode_port(state.ports[ext_dup_right, 0])
+    assert int(node) == c1
+    assert int(port) == int(ic.PORT_AUX_LEFT)
+    node, port = ic.decode_port(state.ports[ext_left, 0])
+    assert int(node) == d0
+    assert int(port) == int(ic.PORT_AUX_LEFT)
+    node, port = ic.decode_port(state.ports[ext_right, 0])
+    assert int(node) == d1
+    assert int(port) == int(ic.PORT_AUX_LEFT)
