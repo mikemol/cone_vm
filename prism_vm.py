@@ -2002,8 +2002,9 @@ def _lookup_node_id(ledger, op, a1, a2):
             return (lo_i, hi_i)
 
         # NOTE: lax.while_loop returns (lo, hi); pos is the final lo bound.
-        # Clarify tuple unpacking if refactored (see IMPLEMENTATION_PLAN.md).
-        pos, _ = lax.while_loop(cond, body, (lo, hi))
+        # hi_final is unused but kept explicit for readability.
+        pos, hi_final = lax.while_loop(cond, body, (lo, hi))
+        _ = hi_final
         safe_pos = jnp.minimum(pos, count - 1)
         # safe_pos is bounds-only; treat as valid only when pos < count.
         # count > 0 is enforced by the outer cond; keep that guard if refactoring.
@@ -2711,8 +2712,13 @@ def _active_prefix_count(arena) -> HostInt:
     size = arena.rank.shape[0]
     # SYNC: host reads device scalar for active count (m1).
     count = _host_int(arena.count)
-    # NOTE: clamp to size hides overflow; explicit guard is deferred to plan.
-    return _host_int(size) if int(count) > size else count
+    count_i = int(count)
+    if _TEST_GUARDS and count_i > size:
+        raise RuntimeError(
+            f"arena.count overflow: {count_i} exceeds arena size {size}"
+        )
+    # NOTE: clamp to size hides overflow outside test mode; guard above in tests.
+    return _host_int(size) if count_i > size else count
 
 
 def _root_struct_hash_host(ops, a1, a2, root_i, count, limit):
@@ -3495,8 +3501,6 @@ def cycle(
     arena = op_interact(arena)
     return arena, root_arr
 
-# --- 3. JAX Kernels (Static) ---
-# NOTE: duplicate section header retained for now; cleanup is deferred.
 # --- 3. JAX Kernels (Static) ---
 @jit
 def kernel_add(manifest, ptr):
