@@ -19,6 +19,12 @@ if [[ ! -f "$CABAL_CONFIG" ]]; then
   mise exec -- cabal user-config init --config-file "$CABAL_CONFIG"
 fi
 
+# Ensure the config includes hackage root keys; regenerate if missing.
+if ! grep -q "^root-keys:" "$CABAL_CONFIG"; then
+  rm -f "$CABAL_CONFIG"
+  mise exec -- cabal user-config init --config-file "$CABAL_CONFIG"
+fi
+
 # Ensure repo-local cache/store/logs in the cabal config.
 if grep -q "^remote-repo-cache:" "$CABAL_CONFIG"; then
   sed -i "s|^remote-repo-cache:.*|remote-repo-cache: ${CABAL_REPO_CACHE}|" "$CABAL_CONFIG"
