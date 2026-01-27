@@ -139,3 +139,114 @@ def test_rule_table_core_commutation_template():
     assert list(table.rhs_port_map[idx, 2]) == [ic.EXT_B_L, 0, 1]
     assert list(table.rhs_port_map[idx, 3]) == [ic.EXT_B_R, 0, 1]
     assert list(table.ext_port_map[idx]) == [0, 1, 2, 3]
+
+
+def test_build_rewrite_plan_commutation():
+    state = ic.init_ic_state(10)
+    a = 0
+    b = 1
+    x, y, u, v = 2, 3, 4, 5
+    node_type = state.node_type
+    node_type = node_type.at[a].set(ic.IC_DUP)
+    node_type = node_type.at[b].set(ic.IC_CON)
+    node_type = node_type.at[x].set(ic.IC_CON)
+    node_type = node_type.at[y].set(ic.IC_CON)
+    node_type = node_type.at[u].set(ic.IC_CON)
+    node_type = node_type.at[v].set(ic.IC_CON)
+
+    def link(port, n0, p0, n1, p1):
+        port = port.at[n0, p0].set(ic.encode_port(n1, p1))
+        port = port.at[n1, p1].set(ic.encode_port(n0, p0))
+        return port
+
+    port = state.port
+    port = link(port, a, ic.PORT_P, b, ic.PORT_P)
+    port = link(port, a, ic.PORT_L, x, ic.PORT_P)
+    port = link(port, a, ic.PORT_R, y, ic.PORT_P)
+    port = link(port, b, ic.PORT_L, u, ic.PORT_P)
+    port = link(port, b, ic.PORT_R, v, ic.PORT_P)
+    state = ic.ICState(node_type=node_type, port=port)
+
+    free_stack = jnp.array([6, 7, 8, 9] + [0] * 6, dtype=jnp.int32)
+    arena = ic.ICArena(state=state, free_stack=free_stack, free_count=jnp.int32(4))
+
+    table = ic.init_rule_table_core()
+    rule_idx, matched, swapped = ic.match_active_pairs(
+        state, jnp.array([[a, b]], dtype=jnp.int32), jnp.int32(1), table
+    )
+    assert bool(matched[0])
+    arena, plan = ic.build_rewrite_plan(
+        arena, jnp.array([a, b], dtype=jnp.int32), rule_idx[0], swapped[0], table
+    )
+    assert bool(plan.alloc_ok)
+    assert list(plan.new_ids) == [6, 7, 8, 9]
+    assert list(plan.new_types) == [ic.IC_CON, ic.IC_CON, ic.IC_DUP, ic.IC_DUP]
+    ext_refs = jnp.array(
+        [
+            ic.encode_port(x, ic.PORT_P),
+            ic.encode_port(y, ic.PORT_P),
+            ic.encode_port(u, ic.PORT_P),
+            ic.encode_port(v, ic.PORT_P),
+        ],
+        dtype=jnp.int32,
+    )
+    assert int(plan.new_ports[0, ic.PORT_P]) == int(ext_refs[0])
+    assert int(plan.new_ports[1, ic.PORT_P]) == int(ext_refs[1])
+    assert int(plan.new_ports[2, ic.PORT_P]) == int(ext_refs[2])
+    assert int(plan.new_ports[3, ic.PORT_P]) == int(ext_refs[3])
+    assert int(plan.new_ports[0, ic.PORT_L]) == ic.encode_port(8, ic.PORT_L)
+    assert int(plan.new_ports[0, ic.PORT_R]) == ic.encode_port(9, ic.PORT_R)
+    assert list(plan.ext_values) == [
+        ic.encode_port(6, ic.PORT_P),
+        ic.encode_port(7, ic.PORT_P),
+        ic.encode_port(8, ic.PORT_P),
+        ic.encode_port(9, ic.PORT_P),
+    ]
+
+
+def test_build_rewrite_plan_annihilation():
+    state = ic.init_ic_state(8)
+    a = 0
+    b = 1
+    x, y, u, v = 2, 3, 4, 5
+    node_type = state.node_type
+    node_type = node_type.at[a].set(ic.IC_CON)
+    node_type = node_type.at[b].set(ic.IC_CON)
+    node_type = node_type.at[x].set(ic.IC_CON)
+    node_type = node_type.at[y].set(ic.IC_CON)
+    node_type = node_type.at[u].set(ic.IC_CON)
+    node_type = node_type.at[v].set(ic.IC_CON)
+
+    def link(port, n0, p0, n1, p1):
+        port = port.at[n0, p0].set(ic.encode_port(n1, p1))
+        port = port.at[n1, p1].set(ic.encode_port(n0, p0))
+        return port
+
+    port = state.port
+    port = link(port, a, ic.PORT_P, b, ic.PORT_P)
+    port = link(port, a, ic.PORT_L, x, ic.PORT_P)
+    port = link(port, a, ic.PORT_R, y, ic.PORT_P)
+    port = link(port, b, ic.PORT_L, u, ic.PORT_P)
+    port = link(port, b, ic.PORT_R, v, ic.PORT_P)
+    state = ic.ICState(node_type=node_type, port=port)
+
+    arena = ic.ICArena(state=state, free_stack=jnp.arange(8, dtype=jnp.int32), free_count=jnp.int32(0))
+    table = ic.init_rule_table_core()
+    rule_idx, matched, swapped = ic.match_active_pairs(
+        state, jnp.array([[a, b]], dtype=jnp.int32), jnp.int32(1), table
+    )
+    assert bool(matched[0])
+    arena, plan = ic.build_rewrite_plan(
+        arena, jnp.array([a, b], dtype=jnp.int32), rule_idx[0], swapped[0], table
+    )
+    ext_refs = jnp.array(
+        [
+            ic.encode_port(x, ic.PORT_P),
+            ic.encode_port(y, ic.PORT_P),
+            ic.encode_port(u, ic.PORT_P),
+            ic.encode_port(v, ic.PORT_P),
+        ],
+        dtype=jnp.int32,
+    )
+    expected = [int(ext_refs[2]), int(ext_refs[3]), int(ext_refs[0]), int(ext_refs[1])]
+    assert list(plan.ext_values) == expected
