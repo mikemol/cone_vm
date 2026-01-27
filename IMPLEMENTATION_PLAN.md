@@ -854,41 +854,24 @@ tracking against the roadmap.
 - Add value-bound guards for swizzled args in test mode.
 - Remove the duplicate "JAX Kernels" section header.
 
-## Prioritized Punch-List (Current State)
-Ordered by semantic risk first, then determinism/observability, then performance.
+## Prioritized Punch-List (Next)
+Ordered by semantic risk first, then verification depth, then hygiene.
 
-**P0 — Semantic safety / correctness (complete)**
-- No-silent-clipping guard in `intern_nodes` (secondary guard on `num_new`). ✅
-- Explicit zero-row (id=1) invariant guard. ✅
-- `_apply_stratum_q` length guard for `canon_ids` vs `stratum.count`. ✅
-- Read-only lookup fallback for `intern_nodes` stop path (CORRUPT/OOM). ✅
+**P0 — Semantic/core correctness**
+- Explicit `q` projection boundary for Arena/Manifest (glossary §17/§21).
+- Hyperstrata / micro-strata visibility beyond the fixed 3-strata cycle.
 
-**P1 — Determinism / observability (complete)**
-- Strict scatter variant (no drop sentinel) for tests/guards. ✅
-- Deterministic gather behavior outside test mode (clamp policy). ✅
-- CNF-2 observability counters (`rewrite_child`, `changed`, `wrap_emit`). ✅
+**P1 — Verification depth / semantic completeness**
+- Min(Prism) full harness: `canon_state` + bounded enumeration + projection commutation.
+- Event-sourced/CQRS interner model (read-model rebuild path; in-12/13).
+- Hyperlattice / lattice-stable join tests (in-20).
 
-**P2 — Milestone integrity / test fidelity**
-**P2 — Milestone integrity / test fidelity (complete)**
-- Host-slice validation for `validate_stratum_no_within_refs`. ✅
-- Value-bound guards for swizzled args in test mode. ✅
-
-**P3 — Performance / scalability**
-- Per-op merges in interner to avoid full-array merge per batch. ✅
-- Per-op counts to avoid full `_bincount_256` each pass. ✅
-- Prefix-only scans via dynamic slice + pad (avoid full `LEDGER_CAPACITY` sweep). ✅
-- Batch coord normalization (replace `vmap(cond)` with SIMD-style loop). ✅
-- Batch/cache host-only coord helpers to avoid per-scalar device reads. ✅
-
-**P4 — Hygiene / clarity**
+**P2 — Hygiene / clarity / roadmap housekeeping**
 - Clarify `_lookup_node_id` tuple unpacking.
 - Overflow guard for `_active_prefix_count`.
 - Remove duplicate "JAX Kernels" header (if not already resolved).
-
-**P5 — Roadmap extensions**
-- Min(Prism) harness + projection commutation (in-18).
 - Agda proof roadmap execution (in-26).
-- M6–M10 interaction-combinator engine (in-8 pivot).
+- in-8 interaction-combinator engine pivot (tensor/rule-table path).
 
 ## Deliverables
 - `prism_vm.py`: new `PrismVM_BSP` and arena ops.
