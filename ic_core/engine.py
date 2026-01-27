@@ -129,7 +129,7 @@ def ic_reduce(
             freed_nodes=stats.freed_nodes + batch.freed_nodes,
             template_counts=stats.template_counts + batch.template_counts,
         )
-        return s2, stats, steps + 1, batch.active_pairs
+        return s2, stats, steps + 1, jnp.int32(batch.active_pairs)
 
     init = (state, zero_stats, jnp.int32(0), jnp.int32(1))
     s_out, stats_out, steps_out, _ = jax.lax.while_loop(cond, body, init)

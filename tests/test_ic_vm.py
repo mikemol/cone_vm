@@ -394,3 +394,35 @@ def test_ic_alloc_jax_fail_sets_oom():
     )
     assert not bool(ok)
     assert bool(state2.oom)
+
+
+def test_ic_reduce_annihilate_pair():
+    state = ic.ic_init(6)
+    state, pair_nodes = ic.ic_alloc(state, 2, ic.TYPE_CON)
+    left_node, right_node = map(int, pair_nodes)
+    state, aux_nodes = ic.ic_alloc(state, 2, ic.TYPE_CON)
+    aux_left, aux_right = map(int, aux_nodes)
+    state = ic.ic_wire(state, left_node, ic.PORT_PRINCIPAL, right_node, ic.PORT_PRINCIPAL)
+    state = ic.ic_wire(state, left_node, ic.PORT_AUX_LEFT, aux_left, ic.PORT_AUX_LEFT)
+    state = ic.ic_wire(state, right_node, ic.PORT_AUX_LEFT, aux_right, ic.PORT_AUX_LEFT)
+    state2, stats, steps = ic.ic_reduce(state, max_steps=5)
+    assert int(steps) == 2
+    assert int(stats.active_pairs) == 1
+    assert int(stats.template_counts[ic.TEMPLATE_ANNIHILATE]) == 1
+    assert int(stats.alloc_nodes) == 0
+    assert int(stats.freed_nodes) == 2
+    assert int(state2.node_type[left_node]) == int(ic.TYPE_FREE)
+    assert int(state2.node_type[right_node]) == int(ic.TYPE_FREE)
+    _, active = ic.ic_find_active_pairs(state2)
+    assert not bool(active[left_node])
+
+
+def test_ic_reduce_halts_on_corrupt():
+    state = ic.ic_init(4)
+    bad_ptr = ic.encode_port(jnp.uint32(1), jnp.uint32(3))
+    ports = state.ports.at[1, ic.PORT_PRINCIPAL].set(bad_ptr)
+    state = state._replace(ports=ports)
+    state2, stats, steps = ic.ic_reduce(state, max_steps=3)
+    assert bool(state2.corrupt)
+    assert int(steps) == 0
+    assert int(stats.active_pairs) == 0
