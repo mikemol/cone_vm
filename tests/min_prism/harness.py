@@ -128,3 +128,34 @@ def _rebuild_ledger_from_keys(keys):
     for key in sorted(keys):
         emit(key)
     return new_ledger, key_map
+
+
+def rebuild_ledger_from_keys(keys):
+    return _rebuild_ledger_from_keys(keys)
+
+
+def enumerate_keys(max_depth=2, ops=None):
+    if ops is None:
+        ops = [pv.OP_SUC, pv.OP_ADD, pv.OP_MUL]
+    key_null = (pv.OP_NULL, (), ())
+    key_zero = (pv.OP_ZERO, key_null, key_null)
+    unary_ops = {pv.OP_SUC}
+    binary_ops = {pv.OP_ADD, pv.OP_MUL, pv.OP_SORT}
+
+    levels = {0: {key_null, key_zero}}
+    for depth in range(1, max_depth + 1):
+        prior = set().union(*levels.values())
+        new = set()
+        for op in ops:
+            if op in unary_ops:
+                for k1 in prior:
+                    new.add((op, k1, key_null))
+            elif op in binary_ops:
+                for k1 in prior:
+                    for k2 in prior:
+                        a1, a2 = k1, k2
+                        if op in _COMMUTATIVE_OPS and a2 < a1:
+                            a1, a2 = a2, a1
+                        new.add((op, a1, a2))
+        levels[depth] = new
+    return set().union(*levels.values())
