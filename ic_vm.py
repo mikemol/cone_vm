@@ -13,6 +13,29 @@ PORT_PRINCIPAL = jnp.uint32(0)
 PORT_AUX_LEFT = jnp.uint32(1)
 PORT_AUX_RIGHT = jnp.uint32(2)
 
+RULE_ALLOC_ANNIHILATE = jnp.uint32(0)
+RULE_ALLOC_ERASE = jnp.uint32(2)
+RULE_ALLOC_COMMUTE = jnp.uint32(4)
+
+TEMPLATE_NONE = jnp.uint32(0)
+TEMPLATE_ANNIHILATE = jnp.uint32(1)
+TEMPLATE_ERASE = jnp.uint32(2)
+TEMPLATE_COMMUTE = jnp.uint32(3)
+
+RULE_TABLE = jnp.array(
+    [
+        # FREE with anything is no-op.
+        [[0, 0], [0, 0], [0, 0], [0, 0]],
+        # ERA interactions.
+        [[0, 0], [0, 1], [2, 2], [2, 2]],
+        # CON interactions.
+        [[0, 0], [2, 2], [0, 1], [4, 3]],
+        # DUP interactions.
+        [[0, 0], [2, 2], [4, 3], [0, 1]],
+    ],
+    dtype=jnp.uint32,
+)
+
 
 class ICState(NamedTuple):
     node_type: jnp.ndarray
@@ -95,3 +118,11 @@ def ic_compact_active_pairs(
     idx, valid, count = _compact_mask(active)
     compacted = jnp.where(valid, idx, jnp.uint32(0))
     return compacted, count, active
+
+
+@jax.jit
+def ic_rule_for_types(type_a: jnp.ndarray, type_b: jnp.ndarray) -> jnp.ndarray:
+    """Lookup rule vector [alloc_count, template_id] for a type pair."""
+    a = type_a.astype(jnp.uint32)
+    b = type_b.astype(jnp.uint32)
+    return RULE_TABLE[a, b]

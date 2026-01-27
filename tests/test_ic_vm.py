@@ -47,3 +47,18 @@ def test_ic_compact_active_pairs_multiple():
     assert bool(active[0])
     assert bool(active[2])
     assert list(map(int, compacted[:2])) == [0, 2]
+
+
+def test_ic_rule_table_alloc_counts():
+    alloc_same = ic.ic_rule_for_types(ic.TYPE_CON, ic.TYPE_CON)
+    alloc_commute = ic.ic_rule_for_types(ic.TYPE_CON, ic.TYPE_DUP)
+    alloc_erase = ic.ic_rule_for_types(ic.TYPE_ERA, ic.TYPE_CON)
+    assert int(alloc_same[0]) == int(ic.RULE_ALLOC_ANNIHILATE)
+    assert int(alloc_commute[0]) == int(ic.RULE_ALLOC_COMMUTE)
+    assert int(alloc_erase[0]) == int(ic.RULE_ALLOC_ERASE)
+
+
+def test_ic_rule_table_commutes_symmetry():
+    left = ic.ic_rule_for_types(ic.TYPE_CON, ic.TYPE_DUP)
+    right = ic.ic_rule_for_types(ic.TYPE_DUP, ic.TYPE_CON)
+    assert tuple(map(int, left)) == tuple(map(int, right))
