@@ -127,7 +127,7 @@ def test_ic_apply_commute_allocates_nodes():
 
 
 def test_ic_alloc_underflow_raises():
-    state = ic.ic_init(2)
+    state = ic.ic_init(3)
     state, _ = ic.ic_alloc(state, 2, ic.TYPE_CON)
     with pytest.raises(ValueError):
         ic.ic_alloc(state, 1, ic.TYPE_CON)
@@ -269,3 +269,34 @@ def test_ic_apply_active_pairs_oom_on_alloc():
     assert int(stats.active_pairs) == 0
     assert int(stats.alloc_nodes) == 0
     assert int(stats.freed_nodes) == 0
+
+
+def test_ic_alloc_jax_success():
+    state = ic.ic_init(6)
+    state2, ids4, ok = ic.ic_alloc_jax(state, jnp.int32(2), ic.TYPE_CON)
+    assert bool(ok)
+    assert int(state2.free_top) == int(state.free_top) - 2
+    assert int(ids4[0]) != 0
+    assert int(ids4[1]) != 0
+    assert int(ids4[2]) == 0
+    assert int(ids4[3]) == 0
+    for node in (int(ids4[0]), int(ids4[1])):
+        assert int(state2.node_type[node]) == int(ic.TYPE_CON)
+
+
+def test_ic_alloc_jax_fail_no_oom():
+    state = ic.ic_init(3)
+    state2, ids4, ok = ic.ic_alloc_jax(state, jnp.int32(4), ic.TYPE_CON)
+    assert not bool(ok)
+    assert int(state2.free_top) == int(state.free_top)
+    assert not bool(state2.oom)
+    assert int(ids4[0]) == 0
+
+
+def test_ic_alloc_jax_fail_sets_oom():
+    state = ic.ic_init(3)
+    state2, _, ok = ic.ic_alloc_jax(
+        state, jnp.int32(4), ic.TYPE_CON, set_oom_on_fail=True
+    )
+    assert not bool(ok)
+    assert bool(state2.oom)
