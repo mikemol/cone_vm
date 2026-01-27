@@ -144,6 +144,22 @@ def rewrite_batch(
     return arena, jnp.array(rewrites, dtype=jnp.int32)
 
 
+def rewrite_n_steps(
+    arena: ICArena,
+    table: RuleTable,
+    steps: int,
+    max_pairs: int | None = None,
+) -> tuple[ICArena, jnp.ndarray]:
+    total = 0
+    for _ in range(int(steps)):
+        arena, rewrites = rewrite_batch(arena, table, max_pairs=max_pairs)
+        step_count = int(rewrites)
+        total += step_count
+        if step_count == 0:
+            break
+    return arena, jnp.array(total, dtype=jnp.int32)
+
+
 def encode_port(node_idx: int, port_idx: int) -> int:
     if port_idx < 0 or port_idx >= PORT_ARITY:
         raise ValueError("port_idx out of range")
