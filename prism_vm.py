@@ -1517,13 +1517,10 @@ def _key_safe_normalize_nodes(ops, a1, a2):
     return ops, a1_swapped, a2_swapped
 
 
-def _coord_norm_id_jax(ledger, coord_id):
-    # CDᵣ + Normalize𝚌
-    # Debug-only probe to detect vmap scope; see tests/test_coord_norm_probe.py.
+def _coord_norm_id_jax_core(ledger, coord_id):
+    # CDᵣ + Normalize𝚌 (core, no probe)
     # NOTE: repeated lookups per step are an m1/m4 tradeoff; batching is
     # tracked in IMPLEMENTATION_PLAN.md.
-    if _guards_enabled():
-        jax.debug.callback(_coord_norm_probe_tick, jnp.int32(1), ordered=True)
     leaf_zero_id, leaf_zero_found = _lookup_node_id(
         ledger,
         jnp.int32(OP_COORD_ZERO),
@@ -1569,6 +1566,20 @@ def _coord_norm_id_jax(ledger, coord_id):
         return cid
 
     return lax.fori_loop(0, MAX_COORD_STEPS, body, coord_id)
+
+
+@jit
+def _coord_norm_id_jax(ledger, coord_id):
+    # CDᵣ + Normalize𝚌
+    # Debug-only probe to detect normalization scope; see tests/test_coord_norm_probe.py.
+    if _guards_enabled():
+        jax.debug.callback(_coord_norm_probe_tick, jnp.int32(1), ordered=True)
+    return _coord_norm_id_jax_core(ledger, coord_id)
+
+
+@jit
+def _coord_norm_id_jax_noprobe(ledger, coord_id):
+    return _coord_norm_id_jax_core(ledger, coord_id)
 
 
 @jit
@@ -1807,34 +1818,19 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     def _norm(args):
         proposed_a1, proposed_a2 = args
         coord_enabled = is_coord_pair.astype(jnp.int32)
-        coord_idx, coord_valid, _ = _candidate_indices(coord_enabled)
-        coord_idx_safe = jnp.where(coord_valid, coord_idx, 0)
-        coord_a1 = proposed_a1[coord_idx_safe]
-        coord_a2 = proposed_a2[coord_idx_safe]
+        coord_idx, coord_valid, coord_count = _candidate_indices(coord_enabled)
 
-        def _maybe_norm(cid, do_norm):
-            def _do(_):
-                return _coord_norm_id_jax(ledger, cid)
+        def _norm_body(i, state):
+            a1_arr, a2_arr = state
+            idx = coord_idx[i]
+            a1_norm = _coord_norm_id_jax(ledger, a1_arr[idx])
+            a2_norm = _coord_norm_id_jax_noprobe(ledger, a2_arr[idx])
+            a1_arr = a1_arr.at[idx].set(a1_norm)
+            a2_arr = a2_arr.at[idx].set(a2_norm)
+            return a1_arr, a2_arr
 
-            def _no(_):
-                return cid
-
-            return lax.cond(do_norm, _do, _no, operand=None)
-
-        # Normalize only the coord-pair subset to avoid global vmap overhead (m4).
-        # See IMPLEMENTATION_PLAN.md (m4 coord batching).
-        # NOTE: vmap over cond/loop is heavy; SIMD-style loop refactor is
-        # deferred to IMPLEMENTATION_PLAN.md.
-        norm_a1 = jax.vmap(_maybe_norm)(coord_a1, coord_valid)
-        norm_a2 = jax.vmap(_maybe_norm)(coord_a2, coord_valid)
-        scatter_idx = jnp.where(
-            coord_valid, coord_idx_safe, jnp.int32(proposed_a1.shape[0])
-        )
-        proposed_a1 = _scatter_drop(
-            proposed_a1, scatter_idx, norm_a1, "intern_nodes.coord_a1"
-        )
-        proposed_a2 = _scatter_drop(
-            proposed_a2, scatter_idx, norm_a2, "intern_nodes.coord_a2"
+        proposed_a1, proposed_a2 = lax.fori_loop(
+            0, coord_count, _norm_body, (proposed_a1, proposed_a2)
         )
         return proposed_a1, proposed_a2
 

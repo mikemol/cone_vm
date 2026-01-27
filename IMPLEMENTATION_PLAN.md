@@ -834,7 +834,7 @@ tracking against the roadmap.
   avoid extra cycles when the child normalizes.
 - Host-only coord helpers (e.g., `coord_xor`, leaf helpers) do per-scalar device
   reads; batch or cache if this becomes a perf cliff.
-- `_coord_norm_id_jax` repeats lookups per step; batch coord normalization.
+- `_coord_norm_id_jax` repeats lookups per step; batch coord normalization. ✅
 - Coord normalization uses `vmap` over a `cond`/loop; refactor to a single
   SIMD-style loop over the coord subset.
 - Opcode buckets now feed per-op merges; global merge no longer required.
@@ -871,7 +871,7 @@ Ordered by semantic risk first, then determinism/observability, then performance
 - Per-op merges in interner to avoid full-array merge per batch. ✅
 - Per-op counts to avoid full `_bincount_256` each pass. ✅
 - Prefix-only scans via dynamic slice + pad (avoid full `LEDGER_CAPACITY` sweep). ✅
-- Batch coord normalization (replace `vmap(cond)` with SIMD-style loop).
+- Batch coord normalization (replace `vmap(cond)` with SIMD-style loop). ✅
 - Batch/cache host-only coord helpers to avoid per-scalar device reads.
 
 **P4 — Hygiene / clarity**
