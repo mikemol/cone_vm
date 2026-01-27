@@ -23,3 +23,7 @@ in `mise.toml` without committing binaries.
 
 CI note: the checker will also use a system `agda` on PATH (or `AGDA_BIN` if
 set), so GitHub-hosted runners can install Agda via apt without `mise`.
+
+Agda version pin:
+- The pinned version lives in `agda/AGDA_VERSION`.
+- `scripts/install_agda.sh` respects `AGDA_VERSION` or that file.

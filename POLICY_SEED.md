@@ -175,6 +175,8 @@ Self-hosted runners MUST NOT install Haskell/Agda toolchains unless the
 required registries (e.g., Hackage or OS package mirrors) are explicitly
 allow-listed in this policy.
 
+Agda installs in CI MUST pin a specific version (no floating latest).
+
 ---
 
 ## 5. Enforcement Mechanisms (Control Loop)

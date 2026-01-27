@@ -2,7 +2,8 @@
 set -euo pipefail
 
 if command -v mise >/dev/null 2>&1; then
-  mise exec -- python scripts/policy_check.py --workflows
+  MISE_DISABLE_TOOLS="${MISE_DISABLE_TOOLS:-ghc,cabal}" \
+    mise exec -- python scripts/policy_check.py --workflows
 else
   python scripts/policy_check.py --workflows
 fi
