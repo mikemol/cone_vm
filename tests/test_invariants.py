@@ -136,7 +136,8 @@ def test_intern_nodes_early_out_on_oom_returns_zero_ids():
     assert pv._host_bool_value(new_ledger.oom) == pv._host_bool_value(ledger.oom)
     assert pv._host_bool_value(new_ledger.corrupt) == pv._host_bool_value(ledger.corrupt)
     assert pv._host_int_value(new_ledger.count) == pv._host_int_value(ledger.count)
-    assert int(jnp.sum(ids)) == 0
+    assert int(ids[0]) == pv.ZERO_PTR
+    assert int(ids[1]) == 0
 
 
 @pytest.mark.m1
@@ -151,7 +152,8 @@ def test_intern_nodes_early_out_on_corrupt_returns_zero_ids():
     assert pv._host_bool_value(new_ledger.oom) == pv._host_bool_value(ledger.oom)
     assert pv._host_bool_value(new_ledger.corrupt) == pv._host_bool_value(ledger.corrupt)
     assert pv._host_int_value(new_ledger.count) == pv._host_int_value(ledger.count)
-    assert int(jnp.sum(ids)) == 0
+    assert int(ids[0]) == pv.ZERO_PTR
+    assert int(ids[1]) == 0
 
 
 @pytest.mark.m1
