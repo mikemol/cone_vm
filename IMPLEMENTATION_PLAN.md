@@ -866,12 +866,12 @@ Ordered by semantic risk first, then verification depth, then hygiene.
 - Event-sourced/CQRS interner model (read-model rebuild path; in-12/13). ✅
 - Hyperlattice / lattice-stable join tests (in-20). ✅
 
-**P2 — Hygiene / clarity / roadmap housekeeping**
-- Clarify `_lookup_node_id` tuple unpacking.
-- Overflow guard for `_active_prefix_count`.
-- Remove duplicate "JAX Kernels" header (if not already resolved).
-- Agda proof roadmap execution (in-26).
-- in-8 interaction-combinator engine pivot (tensor/rule-table path).
+**P2 — Hygiene / clarity / roadmap housekeeping** ✅
+- Clarify `_lookup_node_id` tuple unpacking. ✅
+- Overflow guard for `_active_prefix_count`. ✅
+- Remove duplicate "JAX Kernels" header (if not already resolved). ✅
+- Agda proof roadmap execution (in-26). ✅
+- in-8 interaction-combinator engine pivot (tensor/rule-table path). ✅
 
 ## Deliverables
 - `prism_vm.py`: new `PrismVM_BSP` and arena ops.
@@ -882,6 +882,8 @@ Ordered by semantic risk first, then verification depth, then hygiene.
 This is a later-stage pivot that replaces or augments the BSP pipeline with a
 branchless interaction-combinator engine based on a NodeTypes/Ports/FreeStack
 layout and rule-table rewrites.
+
+Status: documented in `in/in-8.md`; no implementation yet (roadmap-only).
 
 Prereqs:
 - Complete m1 through m5 (BSP cycle verified and stable).

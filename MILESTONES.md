@@ -21,9 +21,9 @@ Ordered by semantic risk first, then verification depth, then hygiene.
 - Event-sourced/CQRS interner model (read-model rebuild path; in-12/13). ✅
 - Hyperlattice / lattice-stable join tests (in-20). ✅
 
-**P2 — Hygiene / clarity / roadmap housekeeping**
-- Clarify `_lookup_node_id` tuple unpacking.
-- Overflow guard for `_active_prefix_count`.
-- Remove duplicate "JAX Kernels" header (if not already resolved).
-- Agda proof roadmap execution (in-26).
-- in-8 interaction-combinator engine pivot (tensor/rule-table path).
+**P2 — Hygiene / clarity / roadmap housekeeping** ✅
+- Clarify `_lookup_node_id` tuple unpacking. ✅
+- Overflow guard for `_active_prefix_count`. ✅
+- Remove duplicate "JAX Kernels" header (if not already resolved). ✅
+- Agda proof roadmap execution (in-26). ✅
+- in-8 interaction-combinator engine pivot (tensor/rule-table path). ✅
