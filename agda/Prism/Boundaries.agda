@@ -26,9 +26,6 @@ cong f refl = refl
 sym : {A : Set} {x y : A} -> x ≡ y -> y ≡ x
 sym refl = refl
 
-trans : {A : Set} {x y z : A} -> x ≡ y -> y ≡ z -> x ≡ z
-trans refl yz = yz
-
 if_then_else_ : {A : Set} -> Bool -> A -> A -> A
 if true then x else _ = x
 if false then _ else y = y
@@ -86,23 +83,11 @@ one = suc zero
 two : Nat
 two = suc one
 
-depth-k0≡1 : N.depth k0 ≡ one
-depth-k0≡1 = refl
-
-depth-k1≡2 : N.depth k1 ≡ two
-depth-k1≡2 = refl
-
-depth-k0≤1 : N.depth k0 N.<= one
-depth-k0≤1 rewrite depth-k0≡1 = N.<=-refl
-
-one≤two : one N.<= two
-one≤two = N.s<=s N.z<=n
-
 depth-k0≤2 : N.depth k0 N.<= two
-depth-k0≤2 = N.<=-trans depth-k0≤1 one≤two
+depth-k0≤2 = N.s<=s N.z<=n
 
 depth-k1≤2 : N.depth k1 N.<= two
-depth-k1≤2 rewrite depth-k1≡2 = N.<=-refl
+depth-k1≤2 = N.<=-refl
 
 bounded-alternating : bounded alternating
 bounded-alternating = two , witness
