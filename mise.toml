@@ -1,4 +1,4 @@
 [tools]
 python = "latest"
-ghc = "latest"
+ghc = "9.10.1"
 cabal = "latest"
