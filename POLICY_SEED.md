@@ -167,6 +167,14 @@ Allow-listed registries include:
 Pinned versions or lockfiles are strongly preferred. If pinning is not feasible,
 the exception must be documented as a risk acceptance.
 
+### 4.7 Proof Tooling (Agda)
+
+Agda proof checks MUST run on GitHub-hosted runners only.
+
+Self-hosted runners MUST NOT install Haskell/Agda toolchains unless the
+required registries (e.g., Hackage or OS package mirrors) are explicitly
+allow-listed in this policy.
+
 ---
 
 ## 5. Enforcement Mechanisms (Control Loop)
