@@ -113,6 +113,42 @@ def find_active_pairs(state: ICState) -> tuple[jnp.ndarray, jnp.ndarray]:
     return pairs, count
 
 
+def match_rule_indices(
+    left_types: jnp.ndarray, right_types: jnp.ndarray, table: RuleTable
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    rule_count = table.lhs.shape[0]
+    if rule_count == 0:
+        rule_idx = jnp.full(left_types.shape, -1, dtype=jnp.int32)
+        matched = jnp.zeros(left_types.shape, dtype=jnp.bool_)
+        return rule_idx, matched
+
+    lhs0 = table.lhs[:, 0]
+    lhs1 = table.lhs[:, 1]
+    left = left_types[:, None]
+    right = right_types[:, None]
+    eq_direct = (left == lhs0) & (right == lhs1)
+    eq_swap = (left == lhs1) & (right == lhs0)
+    match = eq_direct | eq_swap
+    matched = jnp.any(match, axis=1)
+    rule_idx = jnp.argmax(match, axis=1).astype(jnp.int32)
+    rule_idx = jnp.where(matched, rule_idx, jnp.int32(-1))
+    return rule_idx, matched
+
+
+def match_active_pairs(
+    state: ICState, pairs: jnp.ndarray, count: jnp.ndarray, table: RuleTable
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+    left = pairs[:, 0]
+    right = pairs[:, 1]
+    left_types = state.node_type[left]
+    right_types = state.node_type[right]
+    rule_idx, matched = match_rule_indices(left_types, right_types, table)
+    valid = jnp.arange(pairs.shape[0], dtype=jnp.int32) < count
+    rule_idx = jnp.where(valid, rule_idx, jnp.int32(-1))
+    matched = matched & valid
+    return rule_idx, matched
+
+
 def validate_ic_arena(arena: ICArena) -> None:
     validate_ic_state(arena.state)
     if arena.free_stack.ndim != 1:

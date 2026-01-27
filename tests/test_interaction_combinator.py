@@ -1,4 +1,5 @@
 import pytest
+import jax.numpy as jnp
 
 import interaction_combinator as ic
 
@@ -59,3 +60,54 @@ def test_find_active_pairs_ignores_aux_links():
     state = ic.ICState(node_type=node_type, port=port)
     pairs, count = ic.find_active_pairs(state)
     assert int(count) == 0
+
+
+def test_match_rules_symmetric_pair():
+    state = ic.init_ic_state(2)
+    port = state.port
+    port = port.at[0, ic.PORT_P].set(ic.encode_port(1, ic.PORT_P))
+    port = port.at[1, ic.PORT_P].set(ic.encode_port(0, ic.PORT_P))
+    node_type = state.node_type
+    node_type = node_type.at[0].set(ic.IC_DUP)
+    node_type = node_type.at[1].set(ic.IC_CON)
+    state = ic.ICState(node_type=node_type, port=port)
+    pairs = jnp.array([[0, 1]], dtype=jnp.int32)
+    count = jnp.int32(1)
+    table = ic.RuleTable(
+        lhs=jnp.array([[ic.IC_CON, ic.IC_DUP]], dtype=jnp.int8),
+        rhs_node_type=jnp.zeros((1, 2), dtype=jnp.int8),
+        rhs_port_map=jnp.zeros((1, 2, ic.PORT_ARITY), dtype=jnp.int32),
+    )
+    rule_idx, matched = ic.match_active_pairs(state, pairs, count, table)
+    assert int(rule_idx[0]) == 0
+    assert bool(matched[0])
+
+
+def test_match_rules_empty_table():
+    state = ic.init_ic_state(2)
+    node_type = state.node_type.at[0].set(ic.IC_CON).at[1].set(ic.IC_DUP)
+    state = ic.ICState(node_type=node_type, port=state.port)
+    pairs = jnp.array([[0, 1]], dtype=jnp.int32)
+    count = jnp.int32(1)
+    table = ic.init_rule_table_empty()
+    rule_idx, matched = ic.match_active_pairs(state, pairs, count, table)
+    assert int(rule_idx[0]) == -1
+    assert not bool(matched[0])
+
+
+def test_match_rules_respects_count():
+    state = ic.init_ic_state(3)
+    node_type = state.node_type.at[0].set(ic.IC_CON).at[1].set(ic.IC_DUP)
+    state = ic.ICState(node_type=node_type, port=state.port)
+    pairs = jnp.array([[0, 1], [1, 2]], dtype=jnp.int32)
+    count = jnp.int32(1)
+    table = ic.RuleTable(
+        lhs=jnp.array([[ic.IC_CON, ic.IC_DUP]], dtype=jnp.int8),
+        rhs_node_type=jnp.zeros((1, 2), dtype=jnp.int8),
+        rhs_port_map=jnp.zeros((1, 2, ic.PORT_ARITY), dtype=jnp.int32),
+    )
+    rule_idx, matched = ic.match_active_pairs(state, pairs, count, table)
+    assert int(rule_idx[0]) == 0
+    assert bool(matched[0])
+    assert int(rule_idx[1]) == -1
+    assert not bool(matched[1])
