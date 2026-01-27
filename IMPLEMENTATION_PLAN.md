@@ -820,8 +820,9 @@ tracking against the roadmap.
 - Add an explicit zero-row (id=1) invariant guard.
 - `init_ledger` relies on `_pack_key` being defined later; reorder helpers if
   init moves to import time.
-- `validate_stratum_no_within_refs_jax` does a full-shape scan; host-slice
-  validation is deferred to keep JIT shapes static.
+- `validate_stratum_no_within_refs_jax` uses chunked prefix scans via
+  `PRISM_PREFIX_SCAN_CHUNK` to avoid full sweeps; host-slice validation remains
+  for guard mode.
 - `_apply_stratum_q` assumes `canon_ids` length equals `stratum.count`; if
   batching changes, use `stratum.count` and add a guard.
 - `_lookup_node_id` while-loop tuple unpacking (`pos, _`) is potentially
@@ -869,7 +870,7 @@ Ordered by semantic risk first, then determinism/observability, then performance
 **P3 — Performance / scalability**
 - Per-op merges in interner to avoid full-array merge per batch. ✅
 - Per-op counts to avoid full `_bincount_256` each pass. ✅
-- Prefix-only scans via dynamic slice + pad (avoid full `LEDGER_CAPACITY` sweep).
+- Prefix-only scans via dynamic slice + pad (avoid full `LEDGER_CAPACITY` sweep). ✅
 - Batch coord normalization (replace `vmap(cond)` with SIMD-style loop).
 - Batch/cache host-only coord helpers to avoid per-scalar device reads.
 
