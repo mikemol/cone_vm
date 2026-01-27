@@ -1,94 +1,46 @@
 from jax import jit, lax
 import jax
 import jax.numpy as jnp
-from dataclasses import dataclass
-from typing import NamedTuple, Dict, Callable, Tuple, Protocol
+from typing import Dict, Callable, Tuple, Protocol
 import inspect
 import os
 import re
 import time
 from prism_core import jax_safe as _jax_safe
+from prism_vm_core.structures import (
+    Arena,
+    CandidateBuffer,
+    Ledger,
+    Manifest,
+    NodeBatch,
+    StagingContext,
+    Stratum,
+    hyperstrata_precedes,
+    staging_context_forgets_detail,
+)
+from prism_vm_core.ontology import (
+    OP_ADD,
+    OP_COORD_ONE,
+    OP_COORD_PAIR,
+    OP_COORD_ZERO,
+    OP_MUL,
+    OP_NAMES,
+    OP_NULL,
+    OP_SORT,
+    OP_SUC,
+    OP_ZERO,
+    ArenaPtr,
+    CommittedIds,
+    HostBool,
+    HostInt,
+    LedgerId,
+    ManifestPtr,
+    ProvisionalIds,
+    ZERO_PTR,
+)
 import numpy as np
 
 # --- 1. Ontology (Opcodes) ---
-# Ledger ids 0/1 are semantic reserves (NULL/ZERO); baseline heaps seed ZERO at 1.
-OP_NULL = 0
-OP_ZERO = 1
-OP_SUC  = 2
-OP_ADD  = 10
-OP_MUL  = 11
-OP_SORT = 99
-OP_COORD_ZERO = 20
-OP_COORD_ONE = 21
-OP_COORD_PAIR = 22
-ZERO_PTR = 1  # Must stay aligned with OP_ZERO (identity semantics).
-
-OP_NAMES = {
-    0: "NULL", 1: "zero", 2: "suc",
-    10: "add", 11: "mul", 99: "sort",
-    20: "coord_zero", 21: "coord_one", 22: "coord_pair"
-}
-# Pointer domain wrappers (runtime separation).
-@dataclass(frozen=True)
-class ManifestPtr:
-    i: int
-
-    def __int__(self) -> int:
-        return int(self.i)
-
-    def __index__(self) -> int:
-        return int(self.i)
-
-
-@dataclass(frozen=True)
-class LedgerId:
-    i: int
-
-    def __int__(self) -> int:
-        return int(self.i)
-
-    def __index__(self) -> int:
-        return int(self.i)
-
-
-@dataclass(frozen=True)
-class ArenaPtr:
-    i: int
-
-    def __int__(self) -> int:
-        return int(self.i)
-
-    def __index__(self) -> int:
-        return int(self.i)
-# Host-only scalar markers for sync boundaries.
-@dataclass(frozen=True)
-class HostInt:
-    v: int
-
-    def __int__(self) -> int:
-        return int(self.v)
-
-    def __index__(self) -> int:
-        return int(self.v)
-
-
-@dataclass(frozen=True)
-class HostBool:
-    v: bool
-
-    def __bool__(self) -> bool:
-        return bool(self.v)
-# Stratum phase markers for device id arrays.
-@dataclass(frozen=True)
-class ProvisionalIds:
-    a: jnp.ndarray
-
-
-@dataclass(frozen=True)
-class CommittedIds:
-    a: jnp.ndarray
-
-
 class QMap(Protocol):
     def __call__(self, ids: ProvisionalIds) -> CommittedIds: ...
 
@@ -775,76 +727,6 @@ RANK_COLD = 2
 RANK_FREE = 3
 
 # --- 2. Manifest (Heap) ---
-class Manifest(NamedTuple):
-    opcode: jnp.ndarray
-    arg1:   jnp.ndarray
-    arg2:   jnp.ndarray
-    active_count: jnp.ndarray
-    oom: jnp.ndarray
-
-class Arena(NamedTuple):
-    opcode: jnp.ndarray
-    arg1:   jnp.ndarray
-    arg2:   jnp.ndarray
-    rank:   jnp.ndarray
-    count:  jnp.ndarray
-    oom: jnp.ndarray
-    servo: jnp.ndarray
-
-class Ledger(NamedTuple):
-    opcode: jnp.ndarray
-    arg1:   jnp.ndarray
-    arg2:   jnp.ndarray
-    keys_b0_sorted: jnp.ndarray
-    keys_b1_sorted: jnp.ndarray
-    keys_b2_sorted: jnp.ndarray
-    keys_b3_sorted: jnp.ndarray
-    keys_b4_sorted: jnp.ndarray
-    ids_sorted: jnp.ndarray
-    count:  jnp.ndarray
-    oom: jnp.ndarray
-    corrupt: jnp.ndarray
-
-class CandidateBuffer(NamedTuple):
-    enabled: jnp.ndarray
-    opcode: jnp.ndarray
-    arg1: jnp.ndarray
-    arg2: jnp.ndarray
-
-class NodeBatch(NamedTuple):
-    op: jnp.ndarray
-    a1: jnp.ndarray
-    a2: jnp.ndarray
-
-class Stratum(NamedTuple):
-    start: jnp.ndarray
-    count: jnp.ndarray
-
-
-@dataclass(frozen=True)
-class StagingContext:
-    # Staging context (n, s, t, tile) per in-19.
-    n: int
-    s: int
-    t: int
-    tile: int | None = None
-
-
-def hyperstrata_precedes(s1: int, t1: int, s2: int, t2: int) -> bool:
-    return (s1 < s2) or (s1 == s2 and t1 < t2)
-
-
-def staging_context_forgets_detail(
-    fine: StagingContext, coarse: StagingContext
-) -> bool:
-    # A morphism exists from fine -> coarse if coarse is a coarser view.
-    tile_ok = coarse.tile is None or fine.tile == coarse.tile
-    return (
-        fine.n >= coarse.n
-        and fine.s >= coarse.s
-        and fine.t >= coarse.t
-        and tile_ok
-    )
 
 
 def node_batch(op, a1, a2) -> NodeBatch:
