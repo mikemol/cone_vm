@@ -92,3 +92,26 @@ def test_ic_apply_annihilate_rewires_aux():
     assert int(p2) == int(ic.PORT_PRINCIPAL)
     assert int(n3) == 2
     assert int(p3) == int(ic.PORT_PRINCIPAL)
+
+
+def test_ic_apply_erase_frees_nodes():
+    state = ic.ic_init(2)
+    node_type = state.node_type
+    node_type = node_type.at[0].set(ic.TYPE_CON)
+    node_type = node_type.at[1].set(ic.TYPE_ERA)
+    state = state._replace(node_type=node_type)
+    state = ic.ic_apply_erase(state, 0, 1)
+    assert int(state.node_type[0]) == int(ic.TYPE_FREE)
+    assert int(state.node_type[1]) == int(ic.TYPE_FREE)
+    assert int(state.free_top) == 4
+
+
+def test_ic_apply_commute_allocates_nodes():
+    state = ic.ic_init(6)
+    node_type = state.node_type
+    node_type = node_type.at[0].set(ic.TYPE_CON)
+    node_type = node_type.at[1].set(ic.TYPE_DUP)
+    state = state._replace(node_type=node_type)
+    before_top = int(state.free_top)
+    state = ic.ic_apply_commute(state, 0, 1)
+    assert int(state.free_top) == before_top - 4
