@@ -1933,6 +1933,43 @@ def coord_xor(ledger, left_id, right_id):
     return out_id, ledger
 
 
+def cd_lift_binary(ledger, op, left_id, right_id):
+    """Host-only CD lift of a binary op across coord pairs.
+
+    If both inputs are OP_COORD_PAIR, apply op componentwise and re-pair.
+    Otherwise, fall back to op(left, right).
+    """
+    left_id = int(left_id)
+    right_id = int(right_id)
+    left_op = _host_int_value(ledger.opcode[left_id])
+    right_op = _host_int_value(ledger.opcode[right_id])
+    if left_op == OP_COORD_PAIR and right_op == OP_COORD_PAIR:
+        left_a1 = _host_int_value(ledger.arg1[left_id])
+        left_a2 = _host_int_value(ledger.arg2[left_id])
+        right_a1 = _host_int_value(ledger.arg1[right_id])
+        right_a2 = _host_int_value(ledger.arg2[right_id])
+        new_left, ledger = cd_lift_binary(ledger, op, left_a1, right_a1)
+        new_right, ledger = cd_lift_binary(ledger, op, left_a2, right_a2)
+        ids, ledger = intern_nodes(
+            ledger,
+            node_batch(
+                jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
+                jnp.array([new_left], dtype=jnp.int32),
+                jnp.array([new_right], dtype=jnp.int32),
+            ),
+        )
+        return _host_int_value(ids[0]), ledger
+    ids, ledger = intern_nodes(
+        ledger,
+        node_batch(
+            jnp.array([op], dtype=jnp.int32),
+            jnp.array([left_id], dtype=jnp.int32),
+            jnp.array([right_id], dtype=jnp.int32),
+        ),
+    )
+    return _host_int_value(ids[0]), ledger
+
+
 @jit
 def _coord_norm_batch_jax(ledger, coord_ids):
     return jax.vmap(_coord_norm_id_jax, in_axes=(None, 0))(ledger, coord_ids)
