@@ -916,6 +916,32 @@ class Stratum(NamedTuple):
     count: jnp.ndarray
 
 
+@dataclass(frozen=True)
+class StagingContext:
+    # Staging context (n, s, t, tile) per in-19.
+    n: int
+    s: int
+    t: int
+    tile: int | None = None
+
+
+def hyperstrata_precedes(s1: int, t1: int, s2: int, t2: int) -> bool:
+    return (s1 < s2) or (s1 == s2 and t1 < t2)
+
+
+def staging_context_forgets_detail(
+    fine: StagingContext, coarse: StagingContext
+) -> bool:
+    # A morphism exists from fine -> coarse if coarse is a coarser view.
+    tile_ok = coarse.tile is None or fine.tile == coarse.tile
+    return (
+        fine.n >= coarse.n
+        and fine.s >= coarse.s
+        and fine.t >= coarse.t
+        and tile_ok
+    )
+
+
 def node_batch(op, a1, a2) -> NodeBatch:
     if _TEST_GUARDS:
         if op.shape != a1.shape or op.shape != a2.shape:
