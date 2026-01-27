@@ -1030,6 +1030,94 @@ def ledger_has_corrupt(ledger) -> HostBool:
     return _host_bool(jax.device_get(flag))
 
 
+def _project_graph_to_ledger(
+    opcode,
+    arg1,
+    arg2,
+    count,
+    root_idx,
+    ledger,
+    label,
+    limit=None,
+):
+    ops = jax.device_get(opcode[:count])
+    a1s = jax.device_get(arg1[:count])
+    a2s = jax.device_get(arg2[:count])
+    mapping = {0: 0}
+    visiting = set()
+
+    def _project(idx):
+        nonlocal ledger
+        idx_i = int(idx)
+        if idx_i in mapping:
+            return mapping[idx_i]
+        if idx_i < 0 or idx_i >= count:
+            raise ValueError(f"{label}: root index {idx_i} out of range (count={count})")
+        if limit is not None and len(mapping) > int(limit):
+            raise RuntimeError(f"{label}: projection exceeded limit={int(limit)}")
+        if idx_i in visiting:
+            raise RuntimeError(f"{label}: cycle detected at id={idx_i}")
+        visiting.add(idx_i)
+        op = int(ops[idx_i])
+        if op == OP_NULL:
+            mapping[idx_i] = 0
+            visiting.remove(idx_i)
+            return 0
+        child1 = _project(int(a1s[idx_i]))
+        child2 = _project(int(a2s[idx_i]))
+        ids, ledger = intern_nodes(
+            ledger,
+            node_batch(
+                jnp.array([op], dtype=jnp.int32),
+                jnp.array([child1], dtype=jnp.int32),
+                jnp.array([child2], dtype=jnp.int32),
+            ),
+        )
+        mapping[idx_i] = int(ids[0])
+        visiting.remove(idx_i)
+        return mapping[idx_i]
+
+    root_out = _project(int(root_idx))
+    _host_raise_if_bad(ledger, f"{label}: projection exceeded ledger capacity")
+    return ledger, _ledger_id(root_out)
+
+
+def project_manifest_to_ledger(manifest, root_ptr, ledger=None, limit=None):
+    """Project a Manifest (baseline) root into a canonical Ledger via q."""
+    if ledger is None:
+        ledger = init_ledger()
+    root_idx = _host_int_value(root_ptr)
+    count = _host_int_value(manifest.active_count)
+    return _project_graph_to_ledger(
+        manifest.opcode,
+        manifest.arg1,
+        manifest.arg2,
+        count,
+        root_idx,
+        ledger,
+        "q_manifest",
+        limit=limit,
+    )
+
+
+def project_arena_to_ledger(arena, root_ptr, ledger=None, limit=None):
+    """Project an Arena (BSPˢ microstate) root into a canonical Ledger via q."""
+    if ledger is None:
+        ledger = init_ledger()
+    root_idx = _host_int_value(root_ptr)
+    count = _host_int_value(arena.count)
+    return _project_graph_to_ledger(
+        arena.opcode,
+        arena.arg1,
+        arena.arg2,
+        count,
+        root_idx,
+        ledger,
+        "q_arena",
+        limit=limit,
+    )
+
+
 def _host_raise_if_bad(ledger, oom_message="Ledger capacity exceeded", oom_exc=RuntimeError):
     # SYNC: host check after device-side mutations (m1).
     ledger.count.block_until_ready()
@@ -1205,6 +1293,50 @@ def validate_stratum_no_within_refs(ledger, stratum) -> HostBool:
     # SYNC: host bool() reads device result for validation (m1).
     return _host_bool(validate_stratum_no_within_refs_jax(ledger, stratum))
 
+
+@jit
+def validate_stratum_no_future_refs_jax(ledger, stratum):
+    # Hyperstrata rule: new nodes may only reference ids < their own id.
+    start = stratum.start
+    count = jnp.maximum(stratum.count, 0)
+    ledger_count = ledger.count.astype(jnp.int32)
+    chunk = jnp.int32(_PREFIX_SCAN_CHUNK)
+    max_start = jnp.int32(ledger.arg1.shape[0] - _PREFIX_SCAN_CHUNK)
+    max_start = jnp.maximum(max_start, jnp.int32(0))
+    num_chunks = (ledger_count + chunk - 1) // chunk
+
+    def _scan_chunk(i, ok):
+        base = jnp.minimum(i * chunk, max_start)
+        a1 = lax.dynamic_slice_in_dim(ledger.arg1, base, _PREFIX_SCAN_CHUNK)
+        a2 = lax.dynamic_slice_in_dim(ledger.arg2, base, _PREFIX_SCAN_CHUNK)
+        ids = base + jnp.arange(_PREFIX_SCAN_CHUNK, dtype=jnp.int32)
+        live = ids < ledger_count
+        mask = live & (ids >= start) & (ids < start + count)
+        ok_a1 = jnp.all(jnp.where(mask, a1 < ids, True))
+        ok_a2 = jnp.all(jnp.where(mask, a2 < ids, True))
+        return ok & ok_a1 & ok_a2
+
+    return lax.fori_loop(0, num_chunks, _scan_chunk, jnp.bool_(True))
+
+
+def validate_stratum_no_future_refs(ledger, stratum) -> HostBool:
+    if _guards_enabled():
+        start = max(0, _host_int_value(stratum.start))
+        count = max(0, _host_int_value(stratum.count))
+        if count == 0:
+            return HostBool(True)
+        ledger_count = _host_int_value(ledger.count)
+        end = min(start + count, ledger_count)
+        if end <= start:
+            return HostBool(True)
+        ids = jnp.arange(start, end, dtype=jnp.int32)
+        a1 = jax.device_get(ledger.arg1[start:end])
+        a2 = jax.device_get(ledger.arg2[start:end])
+        ok_a1 = bool((a1 < ids).all())
+        ok_a2 = bool((a2 < ids).all())
+        return HostBool(ok_a1 and ok_a2)
+    return _host_bool(validate_stratum_no_future_refs_jax(ledger, stratum))
+
 def _identity_q(ids: ProvisionalIds) -> CommittedIds:
     return _committed_ids(ids.a)
 
@@ -1247,10 +1379,21 @@ def commit_stratum(
     stratum,
     prior_q: QMap | None = None,
     validate: bool = False,
+    validate_mode: str = "strict",
 ) -> Tuple[Ledger, CommittedIds, QMap]:
     # Collapseʰ: homomorphic projection q at the stratum boundary.
-    if validate and not validate_stratum_no_within_refs(ledger, stratum):
-        raise ValueError("Stratum contains within-tier references")
+    if validate:
+        mode = (validate_mode or "strict").strip().lower()
+        if mode == "strict":
+            ok = validate_stratum_no_within_refs(ledger, stratum)
+        elif mode == "hyper":
+            ok = validate_stratum_no_future_refs(ledger, stratum)
+        else:
+            raise ValueError(f"Unknown validate_mode={validate_mode!r}")
+        if not ok:
+            if mode == "strict":
+                raise ValueError("Stratum contains within-tier references")
+            raise ValueError("Stratum contains future references")
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
     q_prev: QMap = prior_q or _identity_q
@@ -1280,6 +1423,7 @@ def cycle_candidates(
     ledger,
     frontier_ids: CommittedIds,
     validate_stratum: bool = False,
+    validate_mode: str = "strict",
 ) -> Tuple[Ledger, ProvisionalIds, Tuple[Stratum, Stratum, Stratum], QMap]:
     # BSPᵗ: temporal superstep / barrier semantics.
     frontier_ids = _committed_ids(frontier_ids)
@@ -1462,10 +1606,14 @@ def cycle_candidates(
         _cnf2_metrics_update(rewrite_child, changed_count, int(count2_i))
     validate = validate_stratum or _guards_enabled()
     ledger2, _, q_map = commit_stratum(
-        ledger2, stratum0, validate=validate
+        ledger2, stratum0, validate=validate, validate_mode=validate_mode
     )
     ledger2, _, q_map = commit_stratum(
-        ledger2, stratum1, prior_q=q_map, validate=validate
+        ledger2,
+        stratum1,
+        prior_q=q_map,
+        validate=validate,
+        validate_mode=validate_mode,
     )
     # Wrapper strata are micro-strata in s=2; commit in order for hyperstrata visibility.
     for start_i, count_i in wrap_strata:
@@ -1473,7 +1621,11 @@ def cycle_candidates(
             start=jnp.int32(start_i), count=jnp.int32(count_i)
         )
         ledger2, _, q_map = commit_stratum(
-            ledger2, micro_stratum, prior_q=q_map, validate=validate
+            ledger2,
+            micro_stratum,
+            prior_q=q_map,
+            validate=validate,
+            validate_mode=validate_mode,
         )
     next_frontier = _provisional_ids(next_frontier)
     _host_raise_if_bad(ledger2, "Ledger capacity exceeded during cycle_candidates")

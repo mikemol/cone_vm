@@ -620,6 +620,42 @@ def test_cycle_candidates_validate_stratum_trips_on_within_refs(monkeypatch):
         pv.cycle_candidates(ledger, frontier, validate_stratum=True)
 
 
+@pytest.mark.m3
+def test_cycle_candidates_wrap_microstrata_validate():
+    _require_cycle_candidates()
+    ledger = pv.init_ledger()
+    suc_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_SUC], dtype=jnp.int32),
+        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+        jnp.array([0], dtype=jnp.int32),
+    )
+    suc_zero = suc_ids[0]
+    add_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_ADD], dtype=jnp.int32),
+        jnp.array([suc_zero], dtype=jnp.int32),
+        jnp.array([suc_zero], dtype=jnp.int32),
+    )
+    root = add_ids[0]
+    for _ in range(2):
+        root_ids, ledger = pv.intern_nodes(
+            ledger,
+            jnp.array([pv.OP_SUC], dtype=jnp.int32),
+            jnp.array([root], dtype=jnp.int32),
+            jnp.array([0], dtype=jnp.int32),
+        )
+        root = root_ids[0]
+    frontier = pv._committed_ids(jnp.array([root], dtype=jnp.int32))
+    ledger2, _, strata, _ = pv.cycle_candidates(
+        ledger, frontier, validate_stratum=True
+    )
+    stratum2 = strata[2]
+    assert int(stratum2.count) > 1
+    assert not bool(pv.validate_stratum_no_within_refs(ledger2, stratum2))
+    assert bool(pv.validate_stratum_no_future_refs(ledger2, stratum2))
+
+
 def test_cycle_candidates_frontier_permutation_invariant():
     _require_cycle_candidates()
     ledger_a, frontier_a = _build_frontier_permutation_sample()
