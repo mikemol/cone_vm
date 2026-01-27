@@ -40,6 +40,8 @@ Thumbs.db
 
 # Logs
 *.log
+*.agdai
+coneVM-multi.code-workspace
 
 # CI/local artifacts
 artifacts/

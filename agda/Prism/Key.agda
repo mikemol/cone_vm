@@ -1,6 +1,6 @@
 module Prism.Key where
 
-open import Agda.Builtin.Vec
+open import Prism.Vec
 
 import Prism.Signature as Sig
 
