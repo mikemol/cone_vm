@@ -61,6 +61,7 @@ class ICState(NamedTuple):
     free_stack: jnp.ndarray
     free_top: jnp.ndarray
     oom: jnp.ndarray
+    corrupt: jnp.ndarray
 
 
 class ICRewriteStats(NamedTuple):
@@ -70,13 +71,25 @@ class ICRewriteStats(NamedTuple):
     template_counts: jnp.ndarray
 
 
+def _halted(state: ICState) -> jnp.ndarray:
+    return state.oom | state.corrupt
+
+
+def _scan_corrupt_ports(state: ICState) -> ICState:
+    ptrs = state.ports.reshape(-1)
+    bad = (ptrs != jnp.uint32(0)) & (
+        (ptrs & jnp.uint32(0x3)) == jnp.uint32(3)
+    )
+    return state._replace(corrupt=state.corrupt | jnp.any(bad))
+
+
 def _safe_uint32(value) -> jnp.ndarray:
     return jnp.asarray(value, dtype=jnp.uint32)
 
 
 def _alloc_raw(state: ICState, count: int) -> Tuple[ICState, jnp.ndarray, jnp.ndarray]:
     top = state.free_top.astype(jnp.int32)
-    ok = (top >= count) & (~state.oom)
+    ok = (top >= count) & (~state.oom) & (~state.corrupt)
 
     def _do(s):
         start = top - count
@@ -153,11 +166,17 @@ def ic_alloc_jax(
     def _bad(s):
         return s, jnp.zeros((4,), dtype=jnp.uint32), jnp.bool_(False)
 
-    state2, ids4, ok = jax.lax.switch(
-        idx, (_case0, _case1, _case2, _case4, _bad), state
-    )
+    def _run(s):
+        return jax.lax.switch(
+            idx, (_case0, _case1, _case2, _case4, _bad), s
+        )
+
+    def _halt(s):
+        return s, jnp.zeros((4,), dtype=jnp.uint32), jnp.bool_(False)
+
+    state2, ids4, ok = jax.lax.cond(state.corrupt, _halt, _run, state)
     if set_oom_on_fail:
-        state2 = state2._replace(oom=state2.oom | (~ok))
+        state2 = state2._replace(oom=state2.oom | ((~ok) & (~state.corrupt)))
 
     def _do_init(s):
         return _init_nodes_jax(s, ids4, c, node_type)
@@ -185,12 +204,14 @@ def ic_init(capacity: int) -> ICState:
     # Node 0 is reserved (encode_port(0, PORT_PRINCIPAL) == 0 sentinel).
     free_top = jnp.array(max(capacity - 1, 0), dtype=jnp.uint32)
     oom = jnp.array(False, dtype=jnp.bool_)
+    corrupt = jnp.array(False, dtype=jnp.bool_)
     return ICState(
         node_type=node_type,
         ports=ports,
         free_stack=free_stack,
         free_top=free_top,
         oom=oom,
+        corrupt=corrupt,
     )
 
 
@@ -218,16 +239,19 @@ def ic_wire_jax(
     port_b: jnp.ndarray,
 ) -> ICState:
     """Device-only wire: connect (node, port) <-> (node, port)."""
-    node_a = jnp.asarray(node_a, dtype=jnp.uint32)
-    port_a = jnp.asarray(port_a, dtype=jnp.uint32)
-    node_b = jnp.asarray(node_b, dtype=jnp.uint32)
-    port_b = jnp.asarray(port_b, dtype=jnp.uint32)
-    ptr_a = encode_port(node_a, port_a)
-    ptr_b = encode_port(node_b, port_b)
-    ports = state.ports
-    ports = ports.at[node_a, port_a].set(ptr_b)
-    ports = ports.at[node_b, port_b].set(ptr_a)
-    return state._replace(ports=ports)
+    def _do(s):
+        node_a_u = jnp.asarray(node_a, dtype=jnp.uint32)
+        port_a_u = jnp.asarray(port_a, dtype=jnp.uint32)
+        node_b_u = jnp.asarray(node_b, dtype=jnp.uint32)
+        port_b_u = jnp.asarray(port_b, dtype=jnp.uint32)
+        ptr_a = encode_port(node_a_u, port_a_u)
+        ptr_b = encode_port(node_b_u, port_b_u)
+        ports = s.ports
+        ports = ports.at[node_a_u, port_a_u].set(ptr_b)
+        ports = ports.at[node_b_u, port_b_u].set(ptr_a)
+        return s._replace(ports=ports)
+
+    return jax.lax.cond(_halted(state), lambda s: s, _do, state)
 
 
 @jax.jit
@@ -235,8 +259,11 @@ def ic_wire_ptrs_jax(
     state: ICState, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray
 ) -> ICState:
     """Device-only wire given two encoded pointers (NULL-safe)."""
-    ports = _connect_ptrs(state.ports, ptr_a, ptr_b)
-    return state._replace(ports=ports)
+    def _do(s):
+        ports = _connect_ptrs(s.ports, ptr_a, ptr_b)
+        return s._replace(ports=ports)
+
+    return jax.lax.cond(_halted(state), lambda s: s, _do, state)
 
 
 @jax.jit
@@ -262,35 +289,38 @@ def ic_wire_pairs_jax(
     port_b: jnp.ndarray,
 ) -> ICState:
     """Batch wire: connect (node_a[i], port_a[i]) <-> (node_b[i], port_b[i])."""
-    node_a = jnp.asarray(node_a, dtype=jnp.uint32)
-    port_a = jnp.asarray(port_a, dtype=jnp.uint32)
-    node_b = jnp.asarray(node_b, dtype=jnp.uint32)
-    port_b = jnp.asarray(port_b, dtype=jnp.uint32)
+    def _do(s):
+        node_a_u = jnp.asarray(node_a, dtype=jnp.uint32)
+        port_a_u = jnp.asarray(port_a, dtype=jnp.uint32)
+        node_b_u = jnp.asarray(node_b, dtype=jnp.uint32)
+        port_b_u = jnp.asarray(port_b, dtype=jnp.uint32)
 
-    n_nodes = state.ports.shape[0]
-    n_nodes_u = jnp.uint32(n_nodes)
-    na = jnp.minimum(node_a, n_nodes_u - jnp.uint32(1))
-    nb = jnp.minimum(node_b, n_nodes_u - jnp.uint32(1))
-    pa = port_a & jnp.uint32(0x3)
-    pb = port_b & jnp.uint32(0x3)
+        n_nodes = s.ports.shape[0]
+        n_nodes_u = jnp.uint32(n_nodes)
+        na = jnp.minimum(node_a_u, n_nodes_u - jnp.uint32(1))
+        nb = jnp.minimum(node_b_u, n_nodes_u - jnp.uint32(1))
+        pa = port_a_u & jnp.uint32(0x3)
+        pb = port_b_u & jnp.uint32(0x3)
 
-    ptr_a = encode_port(na, pa)
-    ptr_b = encode_port(nb, pb)
-    do = (ptr_a != jnp.uint32(0)) & (ptr_b != jnp.uint32(0))
+        ptr_a = encode_port(na, pa)
+        ptr_b = encode_port(nb, pb)
+        do = (ptr_a != jnp.uint32(0)) & (ptr_b != jnp.uint32(0))
 
-    safe_node = jnp.uint32(0)
-    safe_port = jnp.uint32(0)
-    na_s = jnp.where(do, na, safe_node)
-    pa_s = jnp.where(do, pa, safe_port)
-    nb_s = jnp.where(do, nb, safe_node)
-    pb_s = jnp.where(do, pb, safe_port)
+        safe_node = jnp.uint32(0)
+        safe_port = jnp.uint32(0)
+        na_s = jnp.where(do, na, safe_node)
+        pa_s = jnp.where(do, pa, safe_port)
+        nb_s = jnp.where(do, nb, safe_node)
+        pb_s = jnp.where(do, pb, safe_port)
 
-    ports = state.ports
-    val_a = jnp.where(do, ptr_b, ports[safe_node, safe_port])
-    val_b = jnp.where(do, ptr_a, ports[safe_node, safe_port])
-    ports = ports.at[na_s, pa_s].set(val_a, mode="drop")
-    ports = ports.at[nb_s, pb_s].set(val_b, mode="drop")
-    return state._replace(ports=ports)
+        ports = s.ports
+        val_a = jnp.where(do, ptr_b, ports[safe_node, safe_port])
+        val_b = jnp.where(do, ptr_a, ports[safe_node, safe_port])
+        ports = ports.at[na_s, pa_s].set(val_a, mode="drop")
+        ports = ports.at[nb_s, pb_s].set(val_b, mode="drop")
+        return s._replace(ports=ports)
+
+    return jax.lax.cond(_halted(state), lambda s: s, _do, state)
 
 
 @jax.jit
@@ -298,33 +328,36 @@ def ic_wire_ptr_pairs_jax(
     state: ICState, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray
 ) -> ICState:
     """Batch wire given encoded pointers (NULL-safe)."""
-    ptr_a = jnp.asarray(ptr_a, dtype=jnp.uint32)
-    ptr_b = jnp.asarray(ptr_b, dtype=jnp.uint32)
-    do = (ptr_a != jnp.uint32(0)) & (ptr_b != jnp.uint32(0))
+    def _do(s):
+        ptr_a_u = jnp.asarray(ptr_a, dtype=jnp.uint32)
+        ptr_b_u = jnp.asarray(ptr_b, dtype=jnp.uint32)
+        do = (ptr_a_u != jnp.uint32(0)) & (ptr_b_u != jnp.uint32(0))
 
-    na, pa = decode_port(ptr_a)
-    nb, pb = decode_port(ptr_b)
+        na, pa = decode_port(ptr_a_u)
+        nb, pb = decode_port(ptr_b_u)
 
-    n_nodes = state.ports.shape[0]
-    n_nodes_u = jnp.uint32(n_nodes)
-    na = jnp.minimum(na, n_nodes_u - jnp.uint32(1))
-    nb = jnp.minimum(nb, n_nodes_u - jnp.uint32(1))
-    pa = pa & jnp.uint32(0x3)
-    pb = pb & jnp.uint32(0x3)
+        n_nodes = s.ports.shape[0]
+        n_nodes_u = jnp.uint32(n_nodes)
+        na = jnp.minimum(na, n_nodes_u - jnp.uint32(1))
+        nb = jnp.minimum(nb, n_nodes_u - jnp.uint32(1))
+        pa = pa & jnp.uint32(0x3)
+        pb = pb & jnp.uint32(0x3)
 
-    safe_node = jnp.uint32(0)
-    safe_port = jnp.uint32(0)
-    na_s = jnp.where(do, na, safe_node)
-    pa_s = jnp.where(do, pa, safe_port)
-    nb_s = jnp.where(do, nb, safe_node)
-    pb_s = jnp.where(do, pb, safe_port)
+        safe_node = jnp.uint32(0)
+        safe_port = jnp.uint32(0)
+        na_s = jnp.where(do, na, safe_node)
+        pa_s = jnp.where(do, pa, safe_port)
+        nb_s = jnp.where(do, nb, safe_node)
+        pb_s = jnp.where(do, pb, safe_port)
 
-    ports = state.ports
-    val_a = jnp.where(do, ptr_b, ports[safe_node, safe_port])
-    val_b = jnp.where(do, ptr_a, ports[safe_node, safe_port])
-    ports = ports.at[na_s, pa_s].set(val_a, mode="drop")
-    ports = ports.at[nb_s, pb_s].set(val_b, mode="drop")
-    return state._replace(ports=ports)
+        ports = s.ports
+        val_a = jnp.where(do, ptr_b_u, ports[safe_node, safe_port])
+        val_b = jnp.where(do, ptr_a_u, ports[safe_node, safe_port])
+        ports = ports.at[na_s, pa_s].set(val_a, mode="drop")
+        ports = ports.at[nb_s, pb_s].set(val_b, mode="drop")
+        return s._replace(ports=ports)
+
+    return jax.lax.cond(_halted(state), lambda s: s, _do, state)
 
 
 @jax.jit
@@ -423,7 +456,7 @@ def _init_nodes(state: ICState, nodes: jnp.ndarray, node_type: jnp.uint8) -> ICS
 
 def _alloc2(state: ICState) -> Tuple[ICState, jnp.ndarray]:
     top = state.free_top.astype(jnp.int32)
-    ok = (top >= 2) & (~state.oom)
+    ok = (top >= 2) & (~state.oom) & (~state.corrupt)
 
     def _do(s):
         start = top - 2
@@ -431,14 +464,21 @@ def _alloc2(state: ICState) -> Tuple[ICState, jnp.ndarray]:
         return s._replace(free_top=jnp.uint32(start)), ids.astype(jnp.uint32)
 
     def _fail(s):
-        return s._replace(oom=jnp.bool_(True)), jnp.zeros((2,), dtype=jnp.uint32)
+        def _keep(s_in):
+            return s_in
+
+        def _oom(s_in):
+            return s_in._replace(oom=jnp.bool_(True))
+
+        s2 = jax.lax.cond(s.corrupt, _keep, _oom, s)
+        return s2, jnp.zeros((2,), dtype=jnp.uint32)
 
     return jax.lax.cond(ok, _do, _fail, state)
 
 
 def _alloc4(state: ICState) -> Tuple[ICState, jnp.ndarray]:
     top = state.free_top.astype(jnp.int32)
-    ok = (top >= 4) & (~state.oom)
+    ok = (top >= 4) & (~state.oom) & (~state.corrupt)
 
     def _do(s):
         start = top - 4
@@ -446,7 +486,14 @@ def _alloc4(state: ICState) -> Tuple[ICState, jnp.ndarray]:
         return s._replace(free_top=jnp.uint32(start)), ids.astype(jnp.uint32)
 
     def _fail(s):
-        return s._replace(oom=jnp.bool_(True)), jnp.zeros((4,), dtype=jnp.uint32)
+        def _keep(s_in):
+            return s_in
+
+        def _oom(s_in):
+            return s_in._replace(oom=jnp.bool_(True))
+
+        s2 = jax.lax.cond(s.corrupt, _keep, _oom, s)
+        return s2, jnp.zeros((4,), dtype=jnp.uint32)
 
     return jax.lax.cond(ok, _do, _fail, state)
 
@@ -463,9 +510,15 @@ def _free2(state: ICState, nodes: jnp.ndarray) -> ICState:
         return s._replace(free_stack=fs, free_top=jnp.uint32(top + 2))
 
     def _fail(s):
-        return s._replace(oom=jnp.bool_(True))
+        def _keep(s_in):
+            return s_in
 
-    return jax.lax.cond(ok & (~state.oom), _do, _fail, state)
+        def _oom(s_in):
+            return s_in._replace(oom=jnp.bool_(True))
+
+        return jax.lax.cond(s.corrupt, _keep, _oom, s)
+
+    return jax.lax.cond(ok & (~state.oom) & (~state.corrupt), _do, _fail, state)
 
 
 def ic_apply_erase(state: ICState, node_a: jnp.ndarray, node_b: jnp.ndarray) -> ICState:
@@ -495,7 +548,7 @@ def ic_apply_erase(state: ICState, node_a: jnp.ndarray, node_b: jnp.ndarray) -> 
         s = s._replace(node_type=node_type, ports=ports)
         return _free2(s, jnp.stack([era, target]).astype(jnp.uint32))
 
-    return jax.lax.cond(state2.oom, lambda s: s, _do, state2)
+    return jax.lax.cond(state2.oom | state2.corrupt, lambda s: s, _do, state2)
 
 
 def _ic_apply_erase_with_ids(
@@ -526,7 +579,7 @@ def _ic_apply_erase_with_ids(
         s = s._replace(node_type=node_type, ports=ports)
         return _free2(s, jnp.stack([era, target]).astype(jnp.uint32))
 
-    return jax.lax.cond(state.oom, lambda s: s, _do, state)
+    return jax.lax.cond(state.oom | state.corrupt, lambda s: s, _do, state)
 
 
 def ic_apply_commute(state: ICState, node_a: jnp.ndarray, node_b: jnp.ndarray) -> ICState:
@@ -573,7 +626,7 @@ def ic_apply_commute(state: ICState, node_a: jnp.ndarray, node_b: jnp.ndarray) -
         s = s._replace(node_type=node_type, ports=ports)
         return _free2(s, jnp.stack([con, dup]).astype(jnp.uint32))
 
-    return jax.lax.cond(state2.oom, lambda s: s, _do, state2)
+    return jax.lax.cond(state2.oom | state2.corrupt, lambda s: s, _do, state2)
 
 
 def _ic_apply_commute_with_ids(
@@ -621,7 +674,7 @@ def _ic_apply_commute_with_ids(
         s = s._replace(node_type=node_type, ports=ports)
         return _free2(s, jnp.stack([con, dup]).astype(jnp.uint32))
 
-    return jax.lax.cond(state.oom, lambda s: s, _do, state)
+    return jax.lax.cond(state.oom | state.corrupt, lambda s: s, _do, state)
 
 
 def ic_apply_template(
@@ -646,63 +699,79 @@ def ic_apply_template(
             template_id, (_noop, _ann, _erase, _comm), s
         )
 
-    return jax.lax.cond(state.oom, _noop, _apply, state)
+    return jax.lax.cond(state.oom | state.corrupt, _noop, _apply, state)
 
 
 def _alloc_plan(
     state: ICState, pairs: jnp.ndarray, count: jnp.ndarray
 ) -> Tuple[ICState, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     n = pairs.shape[0]
-    idx = jnp.arange(n, dtype=jnp.uint32)
-    valid = idx < count
-    node_a = jnp.where(valid, pairs, jnp.uint32(0))
-    node_b = decode_port(state.ports[node_a, PORT_PRINCIPAL])[0]
-    rule = RULE_TABLE[state.node_type[node_a].astype(jnp.uint32),
-                      state.node_type[node_b].astype(jnp.uint32)]
-    alloc_counts = jnp.where(valid, rule[:, 0], jnp.uint32(0))
-    template_ids = jnp.where(valid, rule[:, 1], TEMPLATE_NONE)
-    offsets = jnp.cumsum(alloc_counts) - alloc_counts
-    total_alloc = jnp.sum(alloc_counts).astype(jnp.int32)
-    free_top = state.free_top.astype(jnp.int32)
-    ok = (free_top >= total_alloc) & (~state.oom)
-    base = free_top - total_alloc
-    base_safe = jnp.where(ok, base, jnp.int32(0))
-    free_top_new = jnp.where(ok, _safe_uint32(base), state.free_top)
-    oom_new = jnp.where(ok, state.oom, jnp.bool_(True))
-    state2 = state._replace(free_top=free_top_new, oom=oom_new)
-
     zeros4 = jnp.zeros((4,), dtype=jnp.uint32)
-    alloc_ids = jnp.zeros((n, 4), dtype=jnp.uint32)
+    zeros_ids = jnp.zeros((n, 4), dtype=jnp.uint32)
+    zeros_counts = jnp.zeros((n,), dtype=jnp.uint32)
+    zeros_templates = jnp.full((n,), TEMPLATE_NONE, dtype=jnp.uint32)
+    zeros_valid = jnp.zeros((n,), dtype=jnp.bool_)
 
-    def build(i, buf):
-        count_i = alloc_counts[i]
-        offset = offsets[i].astype(jnp.int32)
-        start = base_safe + offset
+    def _halt(s):
+        return s, zeros_templates, zeros_counts, zeros_ids, zeros_valid
 
-        def take2(_):
-            ids2 = jax.lax.dynamic_slice(state.free_stack, (start,), (2,))
-            return jnp.concatenate([ids2, zeros4[:2]], axis=0)
+    def _run(s):
+        idx = jnp.arange(n, dtype=jnp.uint32)
+        valid = idx < count
+        node_a = jnp.where(valid, pairs, jnp.uint32(0))
+        node_b = decode_port(s.ports[node_a, PORT_PRINCIPAL])[0]
+        rule = RULE_TABLE[
+            s.node_type[node_a].astype(jnp.uint32),
+            s.node_type[node_b].astype(jnp.uint32),
+        ]
+        alloc_counts = jnp.where(valid, rule[:, 0], jnp.uint32(0))
+        template_ids = jnp.where(valid, rule[:, 1], TEMPLATE_NONE)
+        offsets = jnp.cumsum(alloc_counts) - alloc_counts
+        total_alloc = jnp.sum(alloc_counts).astype(jnp.int32)
+        free_top = s.free_top.astype(jnp.int32)
+        ok = (free_top >= total_alloc) & (~s.oom) & (~s.corrupt)
+        base = free_top - total_alloc
+        base_safe = jnp.where(ok, base, jnp.int32(0))
+        free_top_new = jnp.where(ok, _safe_uint32(base), s.free_top)
+        oom_new = jnp.where(ok, s.oom, jnp.bool_(True))
+        state2 = s._replace(free_top=free_top_new, oom=oom_new)
 
-        def take4(_):
-            return jax.lax.dynamic_slice(state.free_stack, (start,), (4,))
+        alloc_ids = jnp.zeros((n, 4), dtype=jnp.uint32)
 
-        ids = jax.lax.cond(
-            count_i == jnp.uint32(2),
-            take2,
-            lambda _: jax.lax.cond(
-                count_i == jnp.uint32(4),
-                take4,
-                lambda __: zeros4,
+        def build(i, buf):
+            count_i = alloc_counts[i]
+            offset = offsets[i].astype(jnp.int32)
+            start = base_safe + offset
+
+            def take2(_):
+                ids2 = jax.lax.dynamic_slice(s.free_stack, (start,), (2,))
+                return jnp.concatenate([ids2, zeros4[:2]], axis=0)
+
+            def take4(_):
+                return jax.lax.dynamic_slice(s.free_stack, (start,), (4,))
+
+            ids = jax.lax.cond(
+                count_i == jnp.uint32(2),
+                take2,
+                lambda _: jax.lax.cond(
+                    count_i == jnp.uint32(4),
+                    take4,
+                    lambda __: zeros4,
+                    operand=None,
+                ),
                 operand=None,
-            ),
+            )
+            return buf.at[i].set(ids)
+
+        alloc_ids = jax.lax.cond(
+            ok,
+            lambda _: jax.lax.fori_loop(0, n, build, alloc_ids),
+            lambda _: alloc_ids,
             operand=None,
         )
-        return buf.at[i].set(ids)
+        return state2, template_ids, alloc_counts, alloc_ids, valid
 
-    alloc_ids = jax.lax.cond(
-        ok, lambda _: jax.lax.fori_loop(0, n, build, alloc_ids), lambda _: alloc_ids, operand=None
-    )
-    return state2, template_ids, alloc_counts, alloc_ids, valid
+    return jax.lax.cond(_halted(state), _halt, _run, state)
 
 
 def _apply_template_planned(
@@ -729,60 +798,80 @@ def _apply_template_planned(
     def _apply(s):
         return jax.lax.switch(template_id, (_noop, _ann, _erase, _comm), s)
 
-    return jax.lax.cond(state.oom, _noop, _apply, state)
+    return jax.lax.cond(state.oom | state.corrupt, _noop, _apply, state)
 
 
 @jax.jit
 def ic_apply_active_pairs(state: ICState) -> Tuple[ICState, ICRewriteStats]:
-    pairs, count, _ = ic_compact_active_pairs(state)
-    count_i = count.astype(jnp.int32)
     zero_stats = ICRewriteStats(
         active_pairs=jnp.uint32(0),
         alloc_nodes=jnp.uint32(0),
         freed_nodes=jnp.uint32(0),
         template_counts=jnp.zeros((4,), dtype=jnp.uint32),
     )
-    def body(i, carry):
-        s, alloc, freed, tmpl_counts, tmpl_ids, alloc_counts, alloc_ids = carry
-        node_a = pairs[i]
-        node_b = decode_port(s.ports[node_a, PORT_PRINCIPAL])[0]
-        tmpl = tmpl_ids[i]
-        s2 = _apply_template_planned(s, node_a, node_b, tmpl, alloc_ids[i])
-        ok = (~s.oom) & (~s2.oom)
-        tmpl_i = tmpl.astype(jnp.int32)
-        tmpl_counts = tmpl_counts.at[tmpl_i].add(ok.astype(jnp.uint32))
-        alloc_delta = jnp.where(ok, alloc_counts[i], jnp.uint32(0))
-        freed_delta = jnp.where(
-            (tmpl != TEMPLATE_NONE) & ok, jnp.uint32(2), jnp.uint32(0)
-        )
-        return s2, alloc + alloc_delta, freed + freed_delta, tmpl_counts, tmpl_ids, alloc_counts, alloc_ids
+    state = _scan_corrupt_ports(state)
 
-    def _apply(s):
-        s2, tmpl_ids, alloc_counts, alloc_ids, valid = _alloc_plan(s, pairs, count)
-        def _run(s_in):
-            init = (
-                s_in,
-                jnp.uint32(0),
-                jnp.uint32(0),
-                zero_stats.template_counts,
+    def _halt(s):
+        return s, zero_stats
+
+    def _run(s):
+        pairs, count, _ = ic_compact_active_pairs(s)
+        count_i = count.astype(jnp.int32)
+
+        def body(i, carry):
+            s_inner, alloc, freed, tmpl_counts, tmpl_ids, alloc_counts, alloc_ids = carry
+            node_a = pairs[i]
+            node_b = decode_port(s_inner.ports[node_a, PORT_PRINCIPAL])[0]
+            tmpl = tmpl_ids[i]
+            s2 = _apply_template_planned(s_inner, node_a, node_b, tmpl, alloc_ids[i])
+            ok = (~s_inner.oom) & (~s_inner.corrupt) & (~s2.oom) & (~s2.corrupt)
+            tmpl_i = tmpl.astype(jnp.int32)
+            tmpl_counts = tmpl_counts.at[tmpl_i].add(ok.astype(jnp.uint32))
+            alloc_delta = jnp.where(ok, alloc_counts[i], jnp.uint32(0))
+            freed_delta = jnp.where(
+                (tmpl != TEMPLATE_NONE) & ok, jnp.uint32(2), jnp.uint32(0)
+            )
+            return (
+                s2,
+                alloc + alloc_delta,
+                freed + freed_delta,
+                tmpl_counts,
                 tmpl_ids,
                 alloc_counts,
                 alloc_ids,
             )
-            s_out, alloc, freed, tmpl_counts, _, _, _ = jax.lax.fori_loop(
-                0, count_i, body, init
-            )
-            stats = ICRewriteStats(
-                active_pairs=count,
-                alloc_nodes=alloc,
-                freed_nodes=freed,
-                template_counts=tmpl_counts,
-            )
-            return s_out, stats
 
-        return jax.lax.cond(s2.oom, lambda s_in: (s_in, zero_stats), _run, s2)
+        def _apply(s_inner):
+            s2, tmpl_ids, alloc_counts, alloc_ids, _ = _alloc_plan(
+                s_inner, pairs, count
+            )
 
-    return jax.lax.cond(count_i == 0, lambda s: (s, zero_stats), _apply, state)
+            def _run_alloc(s_in):
+                init = (
+                    s_in,
+                    jnp.uint32(0),
+                    jnp.uint32(0),
+                    zero_stats.template_counts,
+                    tmpl_ids,
+                    alloc_counts,
+                    alloc_ids,
+                )
+                s_out, alloc, freed, tmpl_counts, _, _, _ = jax.lax.fori_loop(
+                    0, count_i, body, init
+                )
+                stats = ICRewriteStats(
+                    active_pairs=count,
+                    alloc_nodes=alloc,
+                    freed_nodes=freed,
+                    template_counts=tmpl_counts,
+                )
+                return s_out, stats
+
+            return jax.lax.cond(_halted(s2), _halt, _run_alloc, s2)
+
+        return jax.lax.cond(count_i == 0, lambda s_in: (s_in, zero_stats), _apply, s)
+
+    return jax.lax.cond(_halted(state), _halt, _run, state)
 
 
 @jax.jit
@@ -799,7 +888,7 @@ def ic_reduce(
 
     def cond(carry):
         s, stats, steps, last_active = carry
-        return (steps < max_steps_i) & (last_active > 0) & (~s.oom)
+        return (steps < max_steps_i) & (last_active > 0) & (~s.oom) & (~s.corrupt)
 
     def body(carry):
         s, stats, steps, _ = carry
@@ -819,13 +908,19 @@ def ic_reduce(
     return s_out, stats_out, steps_out
 
 
-def _alloc_nodes(state: ICState, count: jnp.ndarray) -> Tuple[ICState, jnp.ndarray]:
+def _host_flag(value: jnp.ndarray) -> bool:
+    return bool(jax.device_get(value))
+
+
+def _alloc_nodes(state: ICState, count: int) -> Tuple[ICState, jnp.ndarray]:
     n = int(count)
     if n == 0:
         return state, jnp.zeros((0,), dtype=jnp.uint32)
+    if _host_flag(state.corrupt):
+        return state, jnp.zeros((n,), dtype=jnp.uint32)
     free_top = int(state.free_top)
-    if free_top < n:
-        raise ValueError("free_stack underflow")
+    if free_top < n or _host_flag(state.oom):
+        return state._replace(oom=jnp.bool_(True)), jnp.zeros((n,), dtype=jnp.uint32)
     idx = state.free_stack[free_top - n:free_top]
     free_top = free_top - n
     return state._replace(free_top=jnp.uint32(free_top)), idx
@@ -834,8 +929,8 @@ def _alloc_nodes(state: ICState, count: jnp.ndarray) -> Tuple[ICState, jnp.ndarr
 def ic_alloc(
     state: ICState, count: int, node_type: jnp.uint8
 ) -> Tuple[ICState, jnp.ndarray]:
-    state, nodes = _alloc_nodes(state, jnp.asarray(count, dtype=jnp.uint32))
-    if nodes.size == 0:
+    state, nodes = _alloc_nodes(state, count)
+    if nodes.size == 0 or _host_flag(state.oom) or _host_flag(state.corrupt):
         return state, nodes
     node_type_arr = state.node_type.at[nodes].set(node_type)
     ports = state.ports.at[nodes].set(jnp.uint32(0))
@@ -845,13 +940,13 @@ def ic_alloc(
 def _free_nodes(state: ICState, nodes: jnp.ndarray) -> ICState:
     if nodes.size == 0:
         return state
+    if _host_flag(state.corrupt):
+        return state
     count = int(nodes.shape[0])
     free_top = int(state.free_top)
     cap = int(state.free_stack.shape[0])
     if free_top + count > cap:
-        raise ValueError(
-            "free_stack overflow (double-free or freeing unallocated nodes)"
-        )
+        return state._replace(corrupt=jnp.bool_(True))
     free_stack = state.free_stack
     free_stack = free_stack.at[free_top:free_top + count].set(nodes)
     return state._replace(free_stack=free_stack, free_top=jnp.uint32(free_top + count))
