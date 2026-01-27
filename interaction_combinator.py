@@ -11,9 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 import jax.numpy as jnp
 
-IC_CON = 0
-IC_DUP = 1
-IC_ERA = 2
+IC_FREE = 0
+IC_ERA = 1
+IC_CON = 2
+IC_DUP = 3
 
 PORT_P = 0
 PORT_L = 1
@@ -24,7 +25,7 @@ PORT_ARITY = 3
 @dataclass(frozen=True)
 class ICState:
     # node_type: int8 array [N]
-    # port: int32 array [N,3] (adjacency by port index)
+    # port: int32 array [N,3] (encoded port refs; see encode_port)
     node_type: jnp.ndarray
     port: jnp.ndarray
 
@@ -61,7 +62,7 @@ def decode_port(ref: int) -> tuple[int, int]:
 
 
 def init_ic_state(capacity: int) -> ICState:
-    node_type = jnp.full((capacity,), IC_ERA, dtype=jnp.int8)
+    node_type = jnp.full((capacity,), IC_FREE, dtype=jnp.int8)
     port = jnp.zeros((capacity, PORT_ARITY), dtype=jnp.int32)
     return ICState(node_type=node_type, port=port)
 
@@ -80,6 +81,36 @@ def validate_ic_state(state: ICState) -> None:
         raise ValueError("ICState.port must be [N,3]")
     if state.port.shape[0] != state.node_type.shape[0]:
         raise ValueError("ICState node_type/port length mismatch")
+
+
+def find_active_pairs(state: ICState) -> tuple[jnp.ndarray, jnp.ndarray]:
+    """Return active principal-port pairs.
+
+    Returns:
+        pairs: int32 array [N,2], only the first `count` rows are valid.
+        count: int32 scalar count of active pairs.
+    """
+    node_count = state.node_type.shape[0]
+    node_ids = jnp.arange(node_count, dtype=jnp.int32)
+    port_p = state.port[:, PORT_P]
+    neighbor = port_p // PORT_ARITY
+    neighbor_port = port_p % PORT_ARITY
+    neighbor_valid = (neighbor >= 0) & (neighbor < node_count)
+    neighbor_safe = jnp.clip(neighbor, 0, node_count - 1)
+    back_ref = state.port[neighbor_safe, PORT_P]
+    expected_back = node_ids * PORT_ARITY + PORT_P
+    self_active = state.node_type != IC_FREE
+    neighbor_active = jnp.where(
+        neighbor_valid, state.node_type[neighbor_safe] != IC_FREE, False
+    )
+    mutual = neighbor_valid & (neighbor_port == PORT_P) & (back_ref == expected_back)
+    pair_mask = self_active & neighbor_active & mutual & (node_ids < neighbor)
+    count = jnp.sum(pair_mask).astype(jnp.int32)
+    idx = jnp.nonzero(pair_mask, size=node_count, fill_value=0)[0].astype(jnp.int32)
+    left = idx
+    right = neighbor_safe[idx]
+    pairs = jnp.stack([left, right], axis=1)
+    return pairs, count
 
 
 def validate_ic_arena(arena: ICArena) -> None:
