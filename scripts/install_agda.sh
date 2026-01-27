@@ -9,14 +9,21 @@ VERSION_FILE="${AGDA_VERSION_FILE:-$ROOT/agda/AGDA_VERSION}"
 # Keep cabal state/config under the repo to avoid touching $HOME.
 export CABAL_DIR="${CABAL_DIR:-$TOOLS_DIR/cabal}"
 export CABAL_CONFIG="${CABAL_CONFIG:-$TOOLS_DIR/cabal/config}"
-mkdir -p "$CABAL_DIR"
+export CABAL_REPO_CACHE="${CABAL_REPO_CACHE:-$CABAL_DIR/packages}"
+export CABAL_STORE_DIR="${CABAL_STORE_DIR:-$CABAL_DIR/store}"
+export CABAL_LOGS_DIR="${CABAL_LOGS_DIR:-$CABAL_DIR/logs}"
+
+mkdir -p "$CABAL_DIR" "$CABAL_REPO_CACHE" "$CABAL_STORE_DIR" "$CABAL_LOGS_DIR"
 mkdir -p "$(dirname "$CABAL_CONFIG")"
-if [[ ! -f "$CABAL_CONFIG" ]]; then
-  cat >"$CABAL_CONFIG" <<'EOF'
+
+cat >"$CABAL_CONFIG" <<EOF
 repository hackage.haskell.org
   url: https://hackage.haskell.org/
+remote-repo-cache: ${CABAL_REPO_CACHE}
+store-dir: ${CABAL_STORE_DIR}
+logs-dir: ${CABAL_LOGS_DIR}
+index-state: HEAD
 EOF
-fi
 
 if [[ -z "${AGDA_VERSION:-}" ]]; then
   if [[ -f "$VERSION_FILE" ]]; then
