@@ -25,3 +25,9 @@ def test_port_encode_decode_roundtrip():
     node, port = ic.decode_port(ref)
     assert node == 7
     assert port == ic.PORT_R
+
+
+def test_init_ic_arena_shapes():
+    arena = ic.init_ic_arena(5)
+    ic.validate_ic_arena(arena)
+    assert arena.free_stack.shape == (5,)

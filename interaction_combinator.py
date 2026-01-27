@@ -39,6 +39,13 @@ class RuleTable:
     rhs_port_map: jnp.ndarray
 
 
+@dataclass(frozen=True)
+class ICArena:
+    state: ICState
+    free_stack: jnp.ndarray
+    free_count: jnp.ndarray
+
+
 def encode_port(node_idx: int, port_idx: int) -> int:
     if port_idx < 0 or port_idx >= PORT_ARITY:
         raise ValueError("port_idx out of range")
@@ -59,6 +66,13 @@ def init_ic_state(capacity: int) -> ICState:
     return ICState(node_type=node_type, port=port)
 
 
+def init_ic_arena(capacity: int) -> ICArena:
+    state = init_ic_state(capacity)
+    free_stack = jnp.arange(capacity, dtype=jnp.int32)
+    free_count = jnp.array(capacity, dtype=jnp.int32)
+    return ICArena(state=state, free_stack=free_stack, free_count=free_count)
+
+
 def validate_ic_state(state: ICState) -> None:
     if state.node_type.ndim != 1:
         raise ValueError("ICState.node_type must be 1D")
@@ -66,6 +80,16 @@ def validate_ic_state(state: ICState) -> None:
         raise ValueError("ICState.port must be [N,3]")
     if state.port.shape[0] != state.node_type.shape[0]:
         raise ValueError("ICState node_type/port length mismatch")
+
+
+def validate_ic_arena(arena: ICArena) -> None:
+    validate_ic_state(arena.state)
+    if arena.free_stack.ndim != 1:
+        raise ValueError("ICArena.free_stack must be 1D")
+    if arena.free_stack.shape[0] != arena.state.node_type.shape[0]:
+        raise ValueError("ICArena.free_stack length mismatch")
+    if arena.free_count.ndim != 0:
+        raise ValueError("ICArena.free_count must be scalar")
 
 
 def init_rule_table_empty() -> RuleTable:
