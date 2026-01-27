@@ -166,4 +166,48 @@ def ic_apply_template(
         return state
     if tmpl == int(TEMPLATE_ANNIHILATE):
         return ic_apply_annihilate(state, node_a, node_b)
+    if tmpl == int(TEMPLATE_ERASE):
+        return ic_apply_erase(state, node_a, node_b)
+    if tmpl == int(TEMPLATE_COMMUTE):
+        return ic_apply_commute(state, node_a, node_b)
     raise ValueError(f"Unsupported template_id={tmpl}")
+
+
+def _alloc_nodes(state: ICState, count: jnp.ndarray) -> Tuple[ICState, jnp.ndarray]:
+    n = int(count)
+    if n == 0:
+        return state, jnp.zeros((0,), dtype=jnp.uint32)
+    free_top = int(state.free_top)
+    if free_top < n:
+        raise ValueError("free_stack underflow")
+    idx = state.free_stack[free_top - n:free_top]
+    free_top = free_top - n
+    return state._replace(free_top=jnp.uint32(free_top)), idx
+
+
+def _free_nodes(state: ICState, nodes: jnp.ndarray) -> ICState:
+    if nodes.size == 0:
+        return state
+    count = int(nodes.shape[0])
+    free_top = int(state.free_top)
+    free_stack = state.free_stack
+    free_stack = free_stack.at[free_top:free_top + count].set(nodes)
+    return state._replace(free_stack=free_stack, free_top=jnp.uint32(free_top + count))
+
+
+def ic_apply_erase(state: ICState, node_a: int, node_b: int) -> ICState:
+    # Erase: free the binary node; allocator path is exercised by tests.
+    node_type = state.node_type
+    node_type = node_type.at[node_a].set(TYPE_FREE)
+    node_type = node_type.at[node_b].set(TYPE_FREE)
+    state = state._replace(node_type=node_type)
+    return _free_nodes(state, jnp.asarray([node_a, node_b], dtype=jnp.uint32))
+
+
+def ic_apply_commute(state: ICState, node_a: int, node_b: int) -> ICState:
+    # Commute: allocate placeholder nodes; wiring is a future step.
+    state, alloc = _alloc_nodes(state, RULE_ALLOC_COMMUTE)
+    node_type = state.node_type
+    if alloc.size == 4:
+        node_type = node_type.at[alloc].set(TYPE_DUP)
+    return state._replace(node_type=node_type)
