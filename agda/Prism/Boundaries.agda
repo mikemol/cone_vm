@@ -26,6 +26,9 @@ cong f refl = refl
 sym : {A : Set} {x y : A} -> x ≡ y -> y ≡ x
 sym refl = refl
 
+trans : {A : Set} {x y z : A} -> x ≡ y -> y ≡ z -> x ≡ z
+trans refl yz = yz
+
 if_then_else_ : {A : Set} -> Bool -> A -> A -> A
 if true then x else _ = x
 if false then _ else y = y
@@ -70,20 +73,41 @@ bounded exec =
   Σ Nat (λ b -> (t : Nat) -> N.depth (exec t) N.<= b)
 
 alternating : Execution
-alternating n with even n
-... | true = k0
-... | false = k1
+alternating n = if even n then k0 else k1
 
-depth-k0≤2 : N.depth k0 N.<= 2
-depth-k0≤2 = N.s<=s N.z<=n
+alternating-suc : (n : Nat) -> alternating (suc n) ≡ if even n then k1 else k0
+alternating-suc n with even n
+... | true = refl
+... | false = refl
 
-depth-k1≤2 : N.depth k1 N.<= 2
-depth-k1≤2 = N.<=-refl
+one : Nat
+one = suc zero
+
+two : Nat
+two = suc one
+
+depth-k0≡1 : N.depth k0 ≡ one
+depth-k0≡1 = refl
+
+depth-k1≡2 : N.depth k1 ≡ two
+depth-k1≡2 = refl
+
+depth-k0≤1 : N.depth k0 N.<= one
+depth-k0≤1 rewrite depth-k0≡1 = N.<=-refl
+
+one≤two : one N.<= two
+one≤two = N.s<=s N.z<=n
+
+depth-k0≤2 : N.depth k0 N.<= two
+depth-k0≤2 = N.<=-trans depth-k0≤1 one≤two
+
+depth-k1≤2 : N.depth k1 N.<= two
+depth-k1≤2 rewrite depth-k1≡2 = N.<=-refl
 
 bounded-alternating : bounded alternating
-bounded-alternating = 2 , witness
+bounded-alternating = two , witness
   where
-    witness : (t : Nat) -> N.depth (alternating t) N.<= 2
+    witness : (t : Nat) -> N.depth (alternating t) N.<= two
     witness t with even t
     ... | true = depth-k0≤2
     ... | false = depth-k1≤2
@@ -93,9 +117,12 @@ n<=sucn {zero} = N.z<=n
 n<=sucn {suc n} = N.s<=s n<=sucn
 
 alternating-step-neq : (n : Nat) -> alternating n ≡ alternating (suc n) -> ⊥
-alternating-step-neq n eq with even n
-... | true = k0≠k1 eq
-... | false = k1≠k0 eq
+alternating-step-neq n eq rewrite alternating-suc n = step eq
+  where
+    step : alternating n ≡ if even n then k1 else k0 -> ⊥
+    step eq' with even n
+    ... | true = k0≠k1 eq'
+    ... | false = k1≠k0 eq'
 
 not-terminates-alternating : ¬ (terminates alternating)
 not-terminates-alternating (n , stable) =
