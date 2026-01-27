@@ -133,7 +133,7 @@ jobs:
             echo "AGDA_VERSION is empty" >&2
             exit 1
           fi
-          actual="$(agda --version | head -n1 | sed -E 's/.*([0-9]+\.[0-9]+(\.[0-9]+)?).*/\1/')"
+          actual="$(agda --version | head -n1 | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -n1)"
           if [[ "$actual" != "$expected" ]]; then
             echo "Agda image version mismatch: expected ${expected}, got ${actual}" >&2
             exit 1
