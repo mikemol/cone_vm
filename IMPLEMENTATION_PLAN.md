@@ -509,6 +509,8 @@ Tests (before implementation):
 - Pytest: `test_spectral_probe_noise_spread` (expected: `Entropy(H) > 3.0` bits).
 - Pytest: `test_lung_capacity_dilate_contract` (expected: thresholds `P_buffer > 0.25`, `P_buffer < 0.10`, `D_active < 0.40`).
 - Pytest: `test_blind_packing` (expected: `Entropy(H) < 1.5`, legacy `damage_rate(tile=512) < 0.01`).
+- Pytest: `test_servo_denotation_invariance` (expected: servo on/off yields identical denotation).
+- Pytest: `test_servo_sort_stable_tiebreaker` (expected: equal masked keys preserve index order).
 
 Tasks:
 - Extend `Arena` schema with a `servo` state tensor (uint32 mask + reserved slots).
