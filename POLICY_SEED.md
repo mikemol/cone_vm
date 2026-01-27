@@ -163,6 +163,7 @@ Allow-listed registries include:
 
 * PyPI (via pip)
 * Official JAX CUDA release index (via pip `-f` URL)
+* GitHub Container Registry (ghcr.io) for pinned CI container images
 
 Pinned versions or lockfiles are strongly preferred. If pinning is not feasible,
 the exception must be documented as a risk acceptance.
@@ -176,6 +177,8 @@ required registries (e.g., Hackage or OS package mirrors) are explicitly
 allow-listed in this policy.
 
 Agda installs in CI MUST pin a specific version (no floating latest).
+Agda CI checks SHOULD run inside a digest-pinned container image to avoid
+toolchain drift.
 
 ---
 

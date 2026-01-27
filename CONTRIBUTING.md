@@ -29,3 +29,11 @@ mise exec -- python scripts/policy_check.py --workflows
 
 CI also runs `scripts/policy_check.py --workflows --posture`, which checks the
 GitHub Actions settings for this repository.
+
+## Agda proofs
+Agda checks run in a pinned container image. See `agda/README.md` for details.
+Local run (digest required):
+```
+AGDA_IMAGE=ghcr.io/mikemol/act-ubuntu-agda@sha256:<digest> \
+  scripts/check_agda_container.sh
+```
