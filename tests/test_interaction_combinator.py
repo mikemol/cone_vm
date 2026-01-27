@@ -292,3 +292,37 @@ def test_apply_rewrite_plan_commutation():
     assert int(new_state.node_type[6]) == ic.IC_CON
     assert int(new_state.port[6, ic.PORT_P]) == ic.encode_port(x, ic.PORT_P)
     assert int(new_state.port[x, ic.PORT_P]) == ic.encode_port(6, ic.PORT_P)
+
+
+def test_rewrite_one_step_commutation():
+    state = ic.init_ic_state(10)
+    a = 0
+    b = 1
+    x, y, u, v = 2, 3, 4, 5
+    node_type = state.node_type
+    node_type = node_type.at[a].set(ic.IC_DUP)
+    node_type = node_type.at[b].set(ic.IC_CON)
+    node_type = node_type.at[x].set(ic.IC_CON)
+    node_type = node_type.at[y].set(ic.IC_CON)
+    node_type = node_type.at[u].set(ic.IC_CON)
+    node_type = node_type.at[v].set(ic.IC_CON)
+
+    def link(port, n0, p0, n1, p1):
+        port = port.at[n0, p0].set(ic.encode_port(n1, p1))
+        port = port.at[n1, p1].set(ic.encode_port(n0, p0))
+        return port
+
+    port = state.port
+    port = link(port, a, ic.PORT_P, b, ic.PORT_P)
+    port = link(port, a, ic.PORT_L, x, ic.PORT_P)
+    port = link(port, a, ic.PORT_R, y, ic.PORT_P)
+    port = link(port, b, ic.PORT_L, u, ic.PORT_P)
+    port = link(port, b, ic.PORT_R, v, ic.PORT_P)
+    state = ic.ICState(node_type=node_type, port=port)
+
+    free_stack = jnp.array([6, 7, 8, 9] + [0] * 6, dtype=jnp.int32)
+    arena = ic.ICArena(state=state, free_stack=free_stack, free_count=jnp.int32(4))
+    table = ic.init_rule_table_core()
+    new_arena, changed = ic.rewrite_one_step(arena, table)
+    assert bool(changed)
+    assert int(new_arena.state.node_type[6]) == ic.IC_CON
