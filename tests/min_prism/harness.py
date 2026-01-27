@@ -47,6 +47,10 @@ def canon_state_ledger(ledger):
     return tuple(keys), oom, corrupt
 
 
+def novelty_set(ledger):
+    return set(canon_state_ledger(ledger)[0])
+
+
 def project_ledger(ledger, max_id):
     key = _structural_keyer(ledger)
     ordered = _ordered_keys(ledger)
