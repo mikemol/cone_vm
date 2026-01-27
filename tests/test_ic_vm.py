@@ -152,8 +152,16 @@ def test_ic_apply_commute_rewires_ports():
     state = ic.ic_apply_commute(state, con_node, dup_node)
     assert int(state.node_type[con_node]) == int(ic.TYPE_FREE)
     assert int(state.node_type[dup_node]) == int(ic.TYPE_FREE)
+    assert list(map(int, state.ports[con_node])) == [0, 0, 0]
+    assert list(map(int, state.ports[dup_node])) == [0, 0, 0]
     c0, c1 = map(int, expected_con)
     d0, d1 = map(int, expected_dup)
+    node, port = ic.decode_port(state.ports[c0, 0])
+    assert int(node) == d0
+    assert int(port) == int(ic.PORT_PRINCIPAL)
+    node, port = ic.decode_port(state.ports[c1, 0])
+    assert int(node) == d1
+    assert int(port) == int(ic.PORT_PRINCIPAL)
     node, port = ic.decode_port(state.ports[ext_dup_left, 0])
     assert int(node) == c0
     assert int(port) == int(ic.PORT_AUX_LEFT)
@@ -166,3 +174,9 @@ def test_ic_apply_commute_rewires_ports():
     node, port = ic.decode_port(state.ports[ext_right, 0])
     assert int(node) == d1
     assert int(port) == int(ic.PORT_AUX_LEFT)
+    node, port = ic.decode_port(state.ports[c0, ic.PORT_AUX_RIGHT])
+    assert int(node) == d0
+    assert int(port) == int(ic.PORT_AUX_RIGHT)
+    node, port = ic.decode_port(state.ports[c1, ic.PORT_AUX_RIGHT])
+    assert int(node) == d1
+    assert int(port) == int(ic.PORT_AUX_RIGHT)
