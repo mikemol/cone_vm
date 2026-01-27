@@ -52,6 +52,13 @@ class ICState(NamedTuple):
     free_top: jnp.ndarray
 
 
+class ICRewriteStats(NamedTuple):
+    active_pairs: jnp.ndarray
+    alloc_nodes: jnp.ndarray
+    freed_nodes: jnp.ndarray
+    template_counts: jnp.ndarray
+
+
 def encode_port(node_idx: jnp.ndarray, port_idx: jnp.ndarray) -> jnp.ndarray:
     return (node_idx.astype(jnp.uint32) << jnp.uint32(2)) | port_idx.astype(
         jnp.uint32
@@ -173,18 +180,71 @@ def ic_apply_template(
     raise ValueError(f"Unsupported template_id={tmpl}")
 
 
-def ic_apply_active_pairs(state: ICState) -> Tuple[ICState, jnp.ndarray]:
+def ic_apply_active_pairs(state: ICState) -> Tuple[ICState, ICRewriteStats]:
     """Apply rewrite templates to all active pairs in the current batch."""
     pairs, count, _ = ic_compact_active_pairs(state)
     count_i = int(count)
+    template_counts = [0, 0, 0, 0]
+    alloc_nodes = 0
+    freed_nodes = 0
     if count_i == 0:
-        return state, jnp.uint32(0)
+        stats = ICRewriteStats(
+            active_pairs=jnp.uint32(0),
+            alloc_nodes=jnp.uint32(0),
+            freed_nodes=jnp.uint32(0),
+            template_counts=jnp.zeros((4,), dtype=jnp.uint32),
+        )
+        return state, stats
     pair_nodes = jax.device_get(pairs[:count_i])
     partner_nodes = jax.device_get(decode_port(state.ports[pair_nodes, 0])[0])
     for node_a, node_b in zip(pair_nodes, partner_nodes):
         tmpl = ic_select_template(state, int(node_a), int(node_b))
+        tmpl_i = int(tmpl)
+        template_counts[tmpl_i] += 1
+        if tmpl_i == int(TEMPLATE_ERASE):
+            alloc_nodes += 2
+            freed_nodes += 2
+        elif tmpl_i == int(TEMPLATE_COMMUTE):
+            alloc_nodes += 4
+            freed_nodes += 2
+        elif tmpl_i == int(TEMPLATE_ANNIHILATE):
+            freed_nodes += 2
         state = ic_apply_template(state, int(node_a), int(node_b), tmpl)
-    return state, jnp.uint32(count_i)
+    stats = ICRewriteStats(
+        active_pairs=jnp.uint32(count_i),
+        alloc_nodes=jnp.uint32(alloc_nodes),
+        freed_nodes=jnp.uint32(freed_nodes),
+        template_counts=jnp.asarray(template_counts, dtype=jnp.uint32),
+    )
+    return state, stats
+
+
+def ic_reduce(state: ICState, max_steps: int) -> Tuple[ICState, ICRewriteStats, jnp.ndarray]:
+    """Iterate active-pair rewrites until quiescent or max_steps reached."""
+    steps = 0
+    total_active = 0
+    total_alloc = 0
+    total_free = 0
+    total_templates = [0, 0, 0, 0]
+    while steps < max_steps:
+        state, stats = ic_apply_active_pairs(state)
+        active = int(stats.active_pairs)
+        if active == 0:
+            break
+        total_active += active
+        total_alloc += int(stats.alloc_nodes)
+        total_free += int(stats.freed_nodes)
+        tmpl_counts = jax.device_get(stats.template_counts)
+        for i in range(4):
+            total_templates[i] += int(tmpl_counts[i])
+        steps += 1
+    total_stats = ICRewriteStats(
+        active_pairs=jnp.uint32(total_active),
+        alloc_nodes=jnp.uint32(total_alloc),
+        freed_nodes=jnp.uint32(total_free),
+        template_counts=jnp.asarray(total_templates, dtype=jnp.uint32),
+    )
+    return state, total_stats, jnp.uint32(steps)
 
 
 def _alloc_nodes(state: ICState, count: jnp.ndarray) -> Tuple[ICState, jnp.ndarray]:
