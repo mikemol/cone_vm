@@ -142,3 +142,56 @@ def test_coord_norm_commutes_with_xor():
     norm_right, ledger = pv.coord_norm(ledger, pair_b)
     xor_norm, ledger = pv.coord_xor(ledger, norm_left, norm_right)
     assert int(norm_raw) == int(xor_norm)
+
+
+def test_coord_xor_distributes_over_pair():
+    _require_coord_norm()
+    _require_coord_xor()
+    ledger = pv.init_ledger()
+    one_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ONE)
+    zero_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ZERO)
+    pair_a_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
+        jnp.array([one_id], dtype=jnp.int32),
+        jnp.array([zero_id], dtype=jnp.int32),
+    )
+    pair_b_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
+        jnp.array([zero_id], dtype=jnp.int32),
+        jnp.array([one_id], dtype=jnp.int32),
+    )
+    pair_a = int(pair_a_ids[0])
+    pair_b = int(pair_b_ids[0])
+    xor_pair, ledger = pv.coord_xor(ledger, pair_a, pair_b)
+    xor_left, ledger = pv.coord_xor(ledger, one_id, zero_id)
+    xor_right, ledger = pv.coord_xor(ledger, zero_id, one_id)
+    expected_ids, ledger = pv.intern_nodes(
+        ledger,
+        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
+        jnp.array([xor_left], dtype=jnp.int32),
+        jnp.array([xor_right], dtype=jnp.int32),
+    )
+    expected = int(expected_ids[0])
+    norm_xor, ledger = pv.coord_norm(ledger, xor_pair)
+    norm_expected, ledger = pv.coord_norm(ledger, expected)
+    assert int(norm_xor) == int(norm_expected)
+
+
+def test_coord_xor_associative_small():
+    _require_coord_norm()
+    _require_coord_xor()
+    ledger = pv.init_ledger()
+    one_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ONE)
+    zero_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ZERO)
+    a = one_id
+    b = zero_id
+    c = one_id
+    ab, ledger = pv.coord_xor(ledger, a, b)
+    left, ledger = pv.coord_xor(ledger, ab, c)
+    bc, ledger = pv.coord_xor(ledger, b, c)
+    right, ledger = pv.coord_xor(ledger, a, bc)
+    norm_left, ledger = pv.coord_norm(ledger, left)
+    norm_right, ledger = pv.coord_norm(ledger, right)
+    assert int(norm_left) == int(norm_right)
