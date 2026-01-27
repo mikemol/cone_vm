@@ -232,12 +232,37 @@ def _scatter_guard(indices, max_index, label):
     jax.debug.callback(_raise, bad, min_idx, max_idx, max_index)
 
 
+def _scatter_guard_strict(indices, max_index, label):
+    if not _SCATTER_GUARD or not _HAS_DEBUG_CALLBACK:
+        return
+    if indices.size == 0:
+        return
+    min_idx = jnp.min(indices)
+    max_idx = jnp.max(indices)
+    bad = (min_idx < 0) | (max_idx >= max_index)
+
+    def _raise(bad_val, min_val, max_val, max_allowed):
+        if bad_val:
+            raise RuntimeError(
+                f"scatter index out of bounds in {label} "
+                f"(min={int(min_val)}, max={int(max_val)}, max={int(max_allowed)})"
+            )
+
+    jax.debug.callback(_raise, bad, min_idx, max_idx, max_index)
+
+
 def _scatter_drop(target, indices, values, label):
     max_index = jnp.asarray(target.shape[0], dtype=jnp.int32)
     _scatter_guard(indices, max_index, label)
     # NOTE: drop semantics allow sentinel indices for masked scatters; stricter
     # enforcement is deferred to the roadmap in IMPLEMENTATION_PLAN.md.
     return target.at[indices].set(values, mode="drop")
+
+
+def _scatter_strict(target, indices, values, label):
+    max_index = jnp.asarray(target.shape[0], dtype=jnp.int32)
+    _scatter_guard_strict(indices, max_index, label)
+    return target.at[indices].set(values)
 
 
 def _guard_gather_index(idx, size, label):

@@ -34,6 +34,13 @@ def _scatter_sentinel(x):
 
 
 @jax.jit
+def _scatter_strict_sentinel(x):
+    idx = jnp.array([x.shape[0]], dtype=jnp.int32)
+    vals = jnp.array([7], dtype=x.dtype)
+    return pv._scatter_strict(x, idx, vals, "test.strict_sentinel")
+
+
+@jax.jit
 def _scatter_ok(x):
     idx = jnp.array([2], dtype=jnp.int32)
     vals = jnp.array([9], dtype=x.dtype)
@@ -72,6 +79,13 @@ def test_scatter_guard_allows_sentinel_drop():
     x = jnp.arange(4, dtype=jnp.int32)
     y = _scatter_sentinel(x).block_until_ready()
     assert jnp.array_equal(y, x)
+
+
+def test_scatter_guard_strict_rejects_sentinel():
+    _skip_if_no_debug_callback()
+    x = jnp.arange(4, dtype=jnp.int32)
+    with pytest.raises(RuntimeError, match=r"scatter index out of bounds"):
+        _scatter_strict_sentinel(x).block_until_ready()
 
 
 def test_scatter_guard_valid_index_writes():
