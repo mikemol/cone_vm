@@ -397,3 +397,34 @@ def test_rewrite_batch_respects_limit():
     assert int(new_arena.state.node_type[0]) == ic.IC_FREE
     assert int(new_arena.state.node_type[1]) == ic.IC_FREE
     assert int(new_arena.state.node_type[6]) == ic.IC_DUP
+
+
+def test_rewrite_n_steps_drains_simple_pair():
+    state = ic.init_ic_state(6)
+    a, b, x, y, u, v = 0, 1, 2, 3, 4, 5
+    node_type = state.node_type
+    node_type = node_type.at[a].set(ic.IC_CON)
+    node_type = node_type.at[b].set(ic.IC_CON)
+    port = state.port
+
+    def link(port, n0, p0, n1, p1):
+        port = port.at[n0, p0].set(ic.encode_port(n1, p1))
+        port = port.at[n1, p1].set(ic.encode_port(n0, p0))
+        return port
+
+    port = link(port, a, ic.PORT_P, b, ic.PORT_P)
+    port = link(port, a, ic.PORT_L, x, ic.PORT_P)
+    port = link(port, a, ic.PORT_R, y, ic.PORT_P)
+    port = link(port, b, ic.PORT_L, u, ic.PORT_P)
+    port = link(port, b, ic.PORT_R, v, ic.PORT_P)
+    state = ic.ICState(node_type=node_type, port=port)
+    arena = ic.ICArena(
+        state=state,
+        free_stack=jnp.arange(6, dtype=jnp.int32),
+        free_count=jnp.int32(0),
+    )
+    table = ic.init_rule_table_core()
+    new_arena, total = ic.rewrite_n_steps(arena, table, steps=3, max_pairs=1)
+    assert int(total) == 1
+    pairs, count = ic.find_active_pairs(new_arena.state)
+    assert int(count) == 0
