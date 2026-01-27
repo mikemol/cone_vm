@@ -820,10 +820,10 @@ This section mirrors deferred notes/TODOs in `prism_vm.py` for double-entry
 tracking against the roadmap.
 
 - JAX op dtype normalization (int32) is assumed; tighten if drift appears.
-- `_scatter_drop` uses sentinel drop semantics; add a strict variant when ready.
-- `safe_gather_1d` runs raw gathers outside test mode; add deterministic clamp
-  or strictness when performance allows.
-- Add an explicit zero-row (id=1) invariant guard.
+- `_scatter_drop` uses sentinel drop semantics; strict variant available for
+  in-bounds writes (see `_scatter_strict`). ✅
+- `safe_gather_1d` clamps indices outside test mode for deterministic behavior. ✅
+- Add an explicit zero-row (id=1) invariant guard. ✅
 - `init_ledger` relies on `_pack_key` being defined later; reorder helpers if
   init moves to import time.
 - `validate_stratum_no_within_refs_jax` uses chunked prefix scans via
@@ -851,7 +851,7 @@ tracking against the roadmap.
 - Add a guard for `new_count` vs backing array length if `max_count` decouples.
 - `intern_nodes` stop path performs a read-only lookup fallback (implemented).
 - `_active_prefix_count` clamps to size; add an explicit overflow guard.
-- Add value-bound guards for swizzled args in test mode.
+- Add value-bound guards for swizzled args in test mode. ✅
 - Remove the duplicate "JAX Kernels" section header.
 
 ## Prioritized Punch-List (Next)
