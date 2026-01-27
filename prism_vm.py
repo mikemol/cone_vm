@@ -1614,6 +1614,59 @@ def _coord_promote_leaf(ledger, leaf_id):
     return _host_int_value(ids[0]), ledger
 
 
+def _coord_cache_init(ledger):
+    count = _host_int_value(ledger.count)
+    ops = list(jax.device_get(ledger.opcode[:count]))
+    a1s = list(jax.device_get(ledger.arg1[:count]))
+    a2s = list(jax.device_get(ledger.arg2[:count]))
+    return ops, a1s, a2s, count
+
+
+def _coord_cache_update(cache, idx, op, a1, a2):
+    ops, a1s, a2s, count = cache
+    if idx == count:
+        ops.append(int(op))
+        a1s.append(int(a1))
+        a2s.append(int(a2))
+        count += 1
+    return ops, a1s, a2s, count
+
+
+def _coord_leaf_id_cached(ledger, op, cache, leaf_cache):
+    cached = leaf_cache.get(int(op))
+    if cached is not None:
+        return cached, ledger, cache
+    ids, ledger = intern_nodes(
+        ledger,
+        node_batch(
+            jnp.array([op], dtype=jnp.int32),
+            jnp.array([0], dtype=jnp.int32),
+            jnp.array([0], dtype=jnp.int32),
+        ),
+    )
+    new_id = _host_int_value(ids[0])
+    cache = _coord_cache_update(cache, new_id, op, 0, 0)
+    leaf_cache[int(op)] = new_id
+    return new_id, ledger, cache
+
+
+def _coord_promote_leaf_cached(ledger, leaf_id, cache, leaf_cache):
+    zero_id, ledger, cache = _coord_leaf_id_cached(
+        ledger, OP_COORD_ZERO, cache, leaf_cache
+    )
+    ids, ledger = intern_nodes(
+        ledger,
+        node_batch(
+            jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
+            jnp.array([leaf_id], dtype=jnp.int32),
+            jnp.array([zero_id], dtype=jnp.int32),
+        ),
+    )
+    new_id = _host_int_value(ids[0])
+    cache = _coord_cache_update(cache, new_id, OP_COORD_PAIR, leaf_id, zero_id)
+    return new_id, ledger, cache
+
+
 def coord_norm(ledger, coord_id):
     # Host-only entrypoint; route through the device oracle for consistency.
     coord_id = jnp.asarray(coord_id, dtype=jnp.int32)
@@ -1631,47 +1684,75 @@ def coord_xor(ledger, left_id, right_id):
     # (see IMPLEMENTATION_PLAN.md).
     left_id = int(left_id)
     right_id = int(right_id)
-    if left_id == right_id:
-        return _coord_leaf_id(ledger, OP_COORD_ZERO)
+    cache = _coord_cache_init(ledger)
+    leaf_cache = {}
 
-    left_op = _host_int_value(ledger.opcode[left_id])
-    right_op = _host_int_value(ledger.opcode[right_id])
+    def _get_node(idx, cache):
+        ops, a1s, a2s, _ = cache
+        return ops[idx], a1s[idx], a2s[idx]
 
-    if left_op == OP_COORD_ZERO:
-        return right_id, ledger
-    if right_op == OP_COORD_ZERO:
-        return left_id, ledger
+    def _coord_xor_cached(ledger, left_id, right_id, cache, leaf_cache):
+        if left_id == right_id:
+            zero_id, ledger, cache = _coord_leaf_id_cached(
+                ledger, OP_COORD_ZERO, cache, leaf_cache
+            )
+            return zero_id, ledger, cache, leaf_cache
 
-    if left_op in (OP_COORD_ZERO, OP_COORD_ONE) and right_op in (
-        OP_COORD_ZERO,
-        OP_COORD_ONE,
-    ):
-        if left_op == right_op:
-            return _coord_leaf_id(ledger, OP_COORD_ZERO)
-        return _coord_leaf_id(ledger, OP_COORD_ONE)
+        left_op, left_a1, left_a2 = _get_node(left_id, cache)
+        right_op, right_a1, right_a2 = _get_node(right_id, cache)
 
-    if left_op != OP_COORD_PAIR:
-        left_id, ledger = _coord_promote_leaf(ledger, left_id)
-    if right_op != OP_COORD_PAIR:
-        right_id, ledger = _coord_promote_leaf(ledger, right_id)
+        if left_op == OP_COORD_ZERO:
+            return right_id, ledger, cache, leaf_cache
+        if right_op == OP_COORD_ZERO:
+            return left_id, ledger, cache, leaf_cache
 
-    left_a1 = _host_int_value(ledger.arg1[left_id])
-    left_a2 = _host_int_value(ledger.arg2[left_id])
-    right_a1 = _host_int_value(ledger.arg1[right_id])
-    right_a2 = _host_int_value(ledger.arg2[right_id])
+        if left_op in (OP_COORD_ZERO, OP_COORD_ONE) and right_op in (
+            OP_COORD_ZERO,
+            OP_COORD_ONE,
+        ):
+            if left_op == right_op:
+                zero_id, ledger, cache = _coord_leaf_id_cached(
+                    ledger, OP_COORD_ZERO, cache, leaf_cache
+                )
+                return zero_id, ledger, cache, leaf_cache
+            one_id, ledger, cache = _coord_leaf_id_cached(
+                ledger, OP_COORD_ONE, cache, leaf_cache
+            )
+            return one_id, ledger, cache, leaf_cache
 
-    new_left, ledger = coord_xor(ledger, left_a1, right_a1)
-    new_right, ledger = coord_xor(ledger, left_a2, right_a2)
-    ids, ledger = intern_nodes(
-        ledger,
-        node_batch(
-            jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
-            jnp.array([new_left], dtype=jnp.int32),
-            jnp.array([new_right], dtype=jnp.int32),
-        ),
+        if left_op != OP_COORD_PAIR:
+            left_id, ledger, cache = _coord_promote_leaf_cached(
+                ledger, left_id, cache, leaf_cache
+            )
+            left_op, left_a1, left_a2 = _get_node(left_id, cache)
+        if right_op != OP_COORD_PAIR:
+            right_id, ledger, cache = _coord_promote_leaf_cached(
+                ledger, right_id, cache, leaf_cache
+            )
+            right_op, right_a1, right_a2 = _get_node(right_id, cache)
+
+        new_left, ledger, cache, leaf_cache = _coord_xor_cached(
+            ledger, left_a1, right_a1, cache, leaf_cache
+        )
+        new_right, ledger, cache, leaf_cache = _coord_xor_cached(
+            ledger, left_a2, right_a2, cache, leaf_cache
+        )
+        ids, ledger = intern_nodes(
+            ledger,
+            node_batch(
+                jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
+                jnp.array([new_left], dtype=jnp.int32),
+                jnp.array([new_right], dtype=jnp.int32),
+            ),
+        )
+        new_id = _host_int_value(ids[0])
+        cache = _coord_cache_update(cache, new_id, OP_COORD_PAIR, new_left, new_right)
+        return new_id, ledger, cache, leaf_cache
+
+    out_id, ledger, _, _ = _coord_xor_cached(
+        ledger, left_id, right_id, cache, leaf_cache
     )
-    # SYNC: host reads device id for coord xor (m1).
-    return _host_int_value(ids[0]), ledger
+    return out_id, ledger
 
 
 @jit
