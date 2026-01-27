@@ -9,6 +9,7 @@ wiring pipeline are formalized.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import jax
 import jax.numpy as jnp
 
 IC_FREE = 0
@@ -70,6 +71,17 @@ class RewritePlan:
     ext_values: jnp.ndarray
 
 
+@dataclass(frozen=True)
+class RewritePlanBatch:
+    alloc_ok: jnp.ndarray
+    alloc_count: jnp.ndarray
+    new_ids: jnp.ndarray
+    new_types: jnp.ndarray
+    new_ports: jnp.ndarray
+    ext_targets: jnp.ndarray
+    ext_values: jnp.ndarray
+
+
 def apply_rewrite_plan(arena: ICArena, plan: RewritePlan) -> ICArena:
     state = arena.state
     if not bool(plan.alloc_ok):
@@ -93,6 +105,42 @@ def apply_rewrite_plan(arena: ICArena, plan: RewritePlan) -> ICArena:
     ext_nodes_safe = jnp.where(ext_valid, ext_nodes, jnp.int32(0))
     ext_ports_safe = jnp.where(ext_valid, ext_ports, jnp.int32(0))
     ext_values_safe = jnp.where(ext_valid, plan.ext_values, new_ports[0, 0])
+    new_ports = new_ports.at[ext_nodes_safe, ext_ports_safe].set(ext_values_safe)
+    new_state = ICState(node_type=new_node_type, port=new_ports)
+    return ICArena(state=new_state, free_stack=arena.free_stack, free_count=arena.free_count)
+
+
+def apply_rewrite_plan_batch(arena: ICArena, plan: RewritePlanBatch) -> ICArena:
+    state = arena.state
+    if plan.alloc_ok.size == 0:
+        return arena
+    active_mask = (
+        jnp.arange(MAX_NEW_NODES, dtype=jnp.int32)[None, :] < plan.alloc_count[:, None]
+    )
+    active_mask = active_mask & plan.alloc_ok[:, None]
+    ids = plan.new_ids
+    valid_ids = active_mask & (ids >= 0)
+    safe_ids = jnp.where(valid_ids, ids, jnp.int32(0))
+    safe_ids_flat = safe_ids.reshape(-1)
+    valid_flat = valid_ids.reshape(-1)
+    new_types_flat = plan.new_types.reshape(-1)
+    new_node_type = state.node_type.at[safe_ids_flat].set(
+        jnp.where(valid_flat, new_types_flat, state.node_type[0])
+    )
+    new_ports = state.port
+    for port_idx in range(PORT_ARITY):
+        values_flat = plan.new_ports[:, :, port_idx].reshape(-1)
+        new_ports = new_ports.at[safe_ids_flat, port_idx].set(
+            jnp.where(valid_flat, values_flat, new_ports[0, port_idx])
+        )
+    ext_nodes = plan.ext_targets[:, :, 0]
+    ext_ports = plan.ext_targets[:, :, 1]
+    ext_valid = plan.alloc_ok[:, None] & (ext_nodes >= 0) & (plan.ext_values != 0)
+    ext_nodes_safe = jnp.where(ext_valid, ext_nodes, jnp.int32(0)).reshape(-1)
+    ext_ports_safe = jnp.where(ext_valid, ext_ports, jnp.int32(0)).reshape(-1)
+    ext_values_safe = jnp.where(
+        ext_valid, plan.ext_values, new_ports[0, 0]
+    ).reshape(-1)
     new_ports = new_ports.at[ext_nodes_safe, ext_ports_safe].set(ext_values_safe)
     new_state = ICState(node_type=new_node_type, port=new_ports)
     return ICArena(state=new_state, free_stack=arena.free_stack, free_count=arena.free_count)
@@ -142,6 +190,28 @@ def rewrite_batch(
         arena = free_nodes(arena, pair)
         rewrites += 1
     return arena, jnp.array(rewrites, dtype=jnp.int32)
+
+
+def rewrite_batch_vectorized(
+    arena: ICArena, table: RuleTable, max_pairs: int | None = None
+) -> tuple[ICArena, jnp.ndarray]:
+    pairs, count = find_active_pairs(arena.state)
+    limit = int(count)
+    if max_pairs is not None:
+        limit = min(limit, int(max_pairs))
+    if limit == 0:
+        return arena, jnp.array(0, dtype=jnp.int32)
+    pairs = pairs[:limit]
+    rule_idx, matched, swapped = match_active_pairs(
+        arena.state, pairs, jnp.int32(limit), table
+    )
+    arena, plan = build_rewrite_plan_batch(arena, pairs, rule_idx, swapped, table)
+    if plan.alloc_ok.size == 0:
+        return arena, jnp.array(0, dtype=jnp.int32)
+    arena = apply_rewrite_plan_batch(arena, plan)
+    arena = free_nodes_masked(arena, pairs, plan.alloc_ok)
+    rewrites = jnp.sum(plan.alloc_ok.astype(jnp.int32))
+    return arena, rewrites
 
 
 def rewrite_n_steps(
@@ -295,6 +365,21 @@ def _extract_external_refs(state: ICState, a: jnp.ndarray, b: jnp.ndarray) -> jn
     return ext.astype(jnp.int32)
 
 
+def _extract_external_refs_batch(
+    state: ICState, a: jnp.ndarray, b: jnp.ndarray
+) -> jnp.ndarray:
+    ext = jnp.stack(
+        [
+            state.port[a, PORT_L],
+            state.port[a, PORT_R],
+            state.port[b, PORT_L],
+            state.port[b, PORT_R],
+        ],
+        axis=1,
+    )
+    return ext.astype(jnp.int32)
+
+
 def _resolve_template_ports(
     rhs_port_map: jnp.ndarray, new_ids: jnp.ndarray, ext_refs: jnp.ndarray
 ) -> jnp.ndarray:
@@ -349,14 +434,39 @@ def allocate_from_arena(
     return new_arena, new_ids.astype(jnp.int32), alloc_ok
 
 
-def free_nodes(arena: ICArena, ids: jnp.ndarray) -> ICArena:
+def allocate_batch_from_arena(
+    arena: ICArena, counts: jnp.ndarray
+) -> tuple[ICArena, jnp.ndarray, jnp.ndarray]:
+    counts = jnp.asarray(counts, dtype=jnp.int32)
+    counts = jnp.minimum(counts, jnp.int32(MAX_NEW_NODES))
+    available = arena.free_count
+    prefix = jnp.cumsum(counts)
+    alloc_ok = prefix <= available
+    alloc_counts = jnp.where(alloc_ok, counts, jnp.int32(0))
+    total_alloc = jnp.sum(alloc_counts).astype(jnp.int32)
+    start = available - prefix
+    idx = jnp.arange(MAX_NEW_NODES, dtype=jnp.int32)[None, :]
+    use = (idx < counts[:, None]) & alloc_ok[:, None]
+    stack_idx = start[:, None] + idx
+    safe_idx = jnp.clip(stack_idx, 0, arena.free_stack.shape[0] - 1)
+    new_ids = jnp.where(use, arena.free_stack[safe_idx], jnp.int32(0))
+    new_free_count = available - total_alloc
+    new_arena = ICArena(
+        state=arena.state, free_stack=arena.free_stack, free_count=new_free_count
+    )
+    return new_arena, new_ids.astype(jnp.int32), alloc_ok
+
+
+def _free_nodes_with_count(
+    arena: ICArena, ids: jnp.ndarray, num: jnp.ndarray
+) -> ICArena:
     ids = jnp.asarray(ids, dtype=jnp.int32)
-    num = jnp.asarray(ids.shape[0], dtype=jnp.int32)
+    num = jnp.minimum(jnp.asarray(num, dtype=jnp.int32), jnp.int32(ids.shape[0]))
     cap = jnp.asarray(arena.free_stack.shape[0], dtype=jnp.int32)
     free_count = arena.free_count
     space = jnp.maximum(cap - free_count, 0)
     num_free = jnp.minimum(num, space)
-    idx = jnp.arange(num, dtype=jnp.int32)
+    idx = jnp.arange(ids.shape[0], dtype=jnp.int32)
     use = idx < num_free
     stack_pos = free_count + idx
     safe_pos = jnp.clip(stack_pos, 0, cap - 1)
@@ -376,6 +486,27 @@ def free_nodes(arena: ICArena, ids: jnp.ndarray) -> ICArena:
         )
     state = ICState(node_type=node_type, port=port)
     return ICArena(state=state, free_stack=free_stack, free_count=free_count)
+
+
+def free_nodes(arena: ICArena, ids: jnp.ndarray) -> ICArena:
+    num = jnp.asarray(ids.shape[0], dtype=jnp.int32)
+    return _free_nodes_with_count(arena, ids, num)
+
+
+def free_nodes_masked(
+    arena: ICArena, ids: jnp.ndarray, mask: jnp.ndarray
+) -> ICArena:
+    ids = jnp.asarray(ids, dtype=jnp.int32)
+    mask = jnp.asarray(mask, dtype=jnp.bool_)
+    mask = jnp.broadcast_to(mask, ids.shape)
+    ids_flat = ids.reshape(-1)
+    mask_flat = mask.reshape(-1)
+    idx = jnp.nonzero(
+        mask_flat, size=ids_flat.shape[0], fill_value=0
+    )[0].astype(jnp.int32)
+    ids_packed = ids_flat[idx]
+    num = jnp.sum(mask_flat).astype(jnp.int32)
+    return _free_nodes_with_count(arena, ids_packed, num)
 
 
 def init_rule_table_empty() -> RuleTable:
@@ -519,6 +650,60 @@ def build_rewrite_plan(
     new_ports = _resolve_template_ports(rhs_port_map, new_ids, ext_refs)
     ext_targets, ext_values = _resolve_external_updates(ext_port_map, new_ids, ext_refs)
     plan = RewritePlan(
+        alloc_ok=alloc_ok & rule_valid,
+        alloc_count=alloc_count,
+        new_ids=new_ids,
+        new_types=new_types.astype(jnp.int8),
+        new_ports=new_ports,
+        ext_targets=ext_targets,
+        ext_values=ext_values,
+    )
+    return arena, plan
+
+
+def build_rewrite_plan_batch(
+    arena: ICArena,
+    pairs: jnp.ndarray,
+    rule_idx: jnp.ndarray,
+    swapped: jnp.ndarray,
+    table: RuleTable,
+) -> tuple[ICArena, RewritePlanBatch]:
+    if table.lhs.shape[0] == 0:
+        empty_ids = jnp.zeros((0, MAX_NEW_NODES), dtype=jnp.int32)
+        empty_ports = jnp.zeros((0, MAX_NEW_NODES, PORT_ARITY), dtype=jnp.int32)
+        empty_ext = jnp.zeros((0, EXT_COUNT, 2), dtype=jnp.int32)
+        plan = RewritePlanBatch(
+            alloc_ok=jnp.zeros((0,), dtype=jnp.bool_),
+            alloc_count=jnp.zeros((0,), dtype=jnp.int32),
+            new_ids=empty_ids,
+            new_types=jnp.zeros((0, MAX_NEW_NODES), dtype=jnp.int8),
+            new_ports=empty_ports,
+            ext_targets=empty_ext,
+            ext_values=jnp.zeros((0, EXT_COUNT), dtype=jnp.int32),
+        )
+        return arena, plan
+    left = pairs[:, 0]
+    right = pairs[:, 1]
+    a, b = _pair_roles(left, right, swapped)
+    ext_refs = _extract_external_refs_batch(arena.state, a, b)
+    rule_valid = rule_idx >= 0
+    safe_rule_idx = jnp.where(rule_valid, rule_idx, jnp.int32(0))
+    alloc_count = jnp.where(
+        rule_valid, table.alloc_count[safe_rule_idx], jnp.int32(0)
+    )
+    arena, new_ids, alloc_ok = allocate_batch_from_arena(arena, alloc_count)
+    rhs_node_type = table.rhs_node_type[safe_rule_idx]
+    rhs_port_map = table.rhs_port_map[safe_rule_idx]
+    ext_port_map = table.ext_port_map[safe_rule_idx]
+    active_mask = (
+        jnp.arange(MAX_NEW_NODES, dtype=jnp.int32)[None, :] < alloc_count[:, None]
+    )
+    new_types = jnp.where(active_mask, rhs_node_type, IC_FREE)
+    new_ports = jax.vmap(_resolve_template_ports)(rhs_port_map, new_ids, ext_refs)
+    ext_targets, ext_values = jax.vmap(_resolve_external_updates)(
+        ext_port_map, new_ids, ext_refs
+    )
+    plan = RewritePlanBatch(
         alloc_ok=alloc_ok & rule_valid,
         alloc_count=alloc_count,
         new_ids=new_ids,
