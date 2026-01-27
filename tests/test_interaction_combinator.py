@@ -329,3 +329,71 @@ def test_rewrite_one_step_commutation():
     assert int(new_arena.state.node_type[a]) == ic.IC_FREE
     assert int(new_arena.state.node_type[b]) == ic.IC_FREE
     assert int(new_arena.free_count) == 2
+
+
+def test_rewrite_batch_two_pairs():
+    state = ic.init_ic_state(20)
+    pairs = [(0, 1, 2, 3, 4, 5), (6, 7, 8, 9, 10, 11)]
+    node_type = state.node_type
+    port = state.port
+
+    def link(port, n0, p0, n1, p1):
+        port = port.at[n0, p0].set(ic.encode_port(n1, p1))
+        port = port.at[n1, p1].set(ic.encode_port(n0, p0))
+        return port
+
+    for a, b, x, y, u, v in pairs:
+        node_type = node_type.at[a].set(ic.IC_DUP)
+        node_type = node_type.at[b].set(ic.IC_CON)
+        for node in (x, y, u, v):
+            node_type = node_type.at[node].set(ic.IC_CON)
+        port = link(port, a, ic.PORT_P, b, ic.PORT_P)
+        port = link(port, a, ic.PORT_L, x, ic.PORT_P)
+        port = link(port, a, ic.PORT_R, y, ic.PORT_P)
+        port = link(port, b, ic.PORT_L, u, ic.PORT_P)
+        port = link(port, b, ic.PORT_R, v, ic.PORT_P)
+
+    state = ic.ICState(node_type=node_type, port=port)
+    free_stack = jnp.array(
+        [12, 13, 14, 15, 16, 17, 18, 19] + [0] * 12, dtype=jnp.int32
+    )
+    arena = ic.ICArena(state=state, free_stack=free_stack, free_count=jnp.int32(8))
+    table = ic.init_rule_table_core()
+    new_arena, rewrites = ic.rewrite_batch(arena, table, max_pairs=2)
+    assert int(rewrites) == 2
+    assert int(new_arena.state.node_type[6]) == ic.IC_FREE
+    assert int(new_arena.state.node_type[7]) == ic.IC_FREE
+    assert int(new_arena.free_count) == 4
+
+
+def test_rewrite_batch_respects_limit():
+    state = ic.init_ic_state(14)
+    pairs = [(0, 1, 2, 3, 4, 5), (6, 7, 8, 9, 10, 11)]
+    node_type = state.node_type
+    port = state.port
+
+    def link(port, n0, p0, n1, p1):
+        port = port.at[n0, p0].set(ic.encode_port(n1, p1))
+        port = port.at[n1, p1].set(ic.encode_port(n0, p0))
+        return port
+
+    for a, b, x, y, u, v in pairs:
+        node_type = node_type.at[a].set(ic.IC_DUP)
+        node_type = node_type.at[b].set(ic.IC_CON)
+        for node in (x, y, u, v):
+            node_type = node_type.at[node].set(ic.IC_CON)
+        port = link(port, a, ic.PORT_P, b, ic.PORT_P)
+        port = link(port, a, ic.PORT_L, x, ic.PORT_P)
+        port = link(port, a, ic.PORT_R, y, ic.PORT_P)
+        port = link(port, b, ic.PORT_L, u, ic.PORT_P)
+        port = link(port, b, ic.PORT_R, v, ic.PORT_P)
+
+    state = ic.ICState(node_type=node_type, port=port)
+    free_stack = jnp.array([12, 13, 14, 15] + [0] * 10, dtype=jnp.int32)
+    arena = ic.ICArena(state=state, free_stack=free_stack, free_count=jnp.int32(4))
+    table = ic.init_rule_table_core()
+    new_arena, rewrites = ic.rewrite_batch(arena, table, max_pairs=1)
+    assert int(rewrites) == 1
+    assert int(new_arena.state.node_type[0]) == ic.IC_FREE
+    assert int(new_arena.state.node_type[1]) == ic.IC_FREE
+    assert int(new_arena.state.node_type[6]) == ic.IC_DUP

@@ -118,6 +118,32 @@ def rewrite_one_step(
     return arena, jnp.array(True)
 
 
+def rewrite_batch(
+    arena: ICArena, table: RuleTable, max_pairs: int | None = None
+) -> tuple[ICArena, jnp.ndarray]:
+    pairs, count = find_active_pairs(arena.state)
+    limit = int(count)
+    if max_pairs is not None:
+        limit = min(limit, int(max_pairs))
+    rewrites = 0
+    for i in range(limit):
+        pair = pairs[i]
+        rule_idx, matched, swapped = match_active_pairs(
+            arena.state, pairs[i : i + 1], jnp.int32(1), table
+        )
+        if not bool(matched[0]):
+            continue
+        arena, plan = build_rewrite_plan(
+            arena, pair, rule_idx[0], swapped[0], table
+        )
+        if not bool(plan.alloc_ok):
+            continue
+        arena = apply_rewrite_plan(arena, plan)
+        arena = free_nodes(arena, pair)
+        rewrites += 1
+    return arena, jnp.array(rewrites, dtype=jnp.int32)
+
+
 def encode_port(node_idx: int, port_idx: int) -> int:
     if port_idx < 0 or port_idx >= PORT_ARITY:
         raise ValueError("port_idx out of range")
