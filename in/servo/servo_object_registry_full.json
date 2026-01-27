@@ -1,0 +1,780 @@
+{
+  "meta": {
+    "source": "JAX Servo Update Logic Explained.md (Google Docs export)",
+    "count": 77,
+    "images_dir": "/mnt/data/registry_images_white",
+    "note": "Each entry includes exact latex transcription from embedded equation images (white-backed)."
+  },
+  "objects": [
+    {
+      "id": "image1",
+      "latex": "k",
+      "context_snippet": "date function is the regulation of a continuous signal (spectral energy) using a discrete control variable (the integer ![][image1]). This quantization of control\u2014mapping a fluid problem space onto a rigid integer lattice\u2014requires rigorous mathematica",
+      "png_path": "/mnt/data/registry_images_white/image01.png",
+      "sha256": "0596803b43a194134d66d1cbb4ce1633f7f0a93adf1a61fae5d6a9f045c0ddfd",
+      "python_semantics": "K (0..31)",
+      "agda_semantics": "K = Fin 32",
+      "status": "transcribed"
+    },
+    {
+      "id": "image2",
+      "latex": "\\mathbb{Z}_{32}=\\{0,1,\\dots,31\\}",
+      "context_snippet": "*2.1 The Integer Lattice and State Space Topology**  The control variable ![][image1] is constrained to the integer set ![][image2]. This limitation is not arbitrary; it corresponds to the bit-width of standard unsigned integers (uint32) used in moder",
+      "png_path": "/mnt/data/registry_images_white/image02.png",
+      "sha256": "0aadf1417f474a6620cf15ea95f5726dab3056b3bd58a512e9b1a5df5603275e",
+      "python_semantics": "set(range(32)) / Fin 32",
+      "agda_semantics": "Fin 32",
+      "status": "transcribed"
+    },
+    {
+      "id": "image3",
+      "latex": "k=0",
+      "context_snippet": "tectures.  The state space of the servo is effectively a 1-dimensional manifold with hard boundaries.  * **Lower Bound (![][image3]):** The state of maximum permeability. As defined in \\_servo\\_mask\\_from\\_k, when ![][image3], the mask is 0xFFFFFFFF (",
+      "png_path": "/mnt/data/registry_images_white/image03.png",
+      "sha256": "a5550eb90d4a4181b756ef419a7922ec07d01085c5b672db667d48b8804316ab",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image4",
+      "latex": "k=31",
+      "context_snippet": "ervo\\_mask\\_from\\_k, when ![][image3], the mask is 0xFFFFFFFF (All Ones), allowing all data to pass.   * **Upper Bound (![][image4]):** The state of minimum permeability (short of total closure). The mask blocks the lower 31 bits of the index space.",
+      "png_path": "/mnt/data/registry_images_white/image04.png",
+      "sha256": "eeca06e834b26e0babbbf885b8cae88cfbaf81792b7d74789636d4ff82555d4a",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image5",
+      "latex": "\\mathrm{low\\_bits}=(1\\ll k)-1",
+      "context_snippet": "bitwise) filter applied to the arena.  #### **2.2.1 Algebraic Deconstruction**  The core transformation is defined by:  ![][image5]   In the ring of integers modulo ![][image6], this operation generates a Mersenne-like sequence.  Let ![][image7] be th",
+      "png_path": "/mnt/data/registry_images_white/image05.png",
+      "sha256": "ccd6ee0f2f44459f8a277dfcf9cf708c095d857e35bf21ff1c48fee63ed7c593",
+      "python_semantics": "low_bits(k)",
+      "agda_semantics": "lowBitsNat : K \u2192 \u2115",
+      "status": "transcribed"
+    },
+    {
+      "id": "image6",
+      "latex": "2^{32}",
+      "context_snippet": "*2.2.1 Algebraic Deconstruction**  The core transformation is defined by:  ![][image5]   In the ring of integers modulo ![][image6], this operation generates a Mersenne-like sequence.  Let ![][image7] be the binary representation of the generated mask",
+      "png_path": "/mnt/data/registry_images_white/image06.png",
+      "sha256": "17e959589b8d6cf3c87672a5e666255b53166574698c854f2a50fa64e607e2cd",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image7",
+      "latex": "M_k",
+      "context_snippet": "by:  ![][image5]   In the ring of integers modulo ![][image6], this operation generates a Mersenne-like sequence.  Let ![][image7] be the binary representation of the generated mask.  ![][image8]   ![][image9]   This formula reveals that the mask is",
+      "png_path": "/mnt/data/registry_images_white/image07.png",
+      "sha256": "dc74486a8913eef1cf67a9898767fdabe750931e30d578a1fcff01d2fbdf0a83",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image8",
+      "latex": "M_k=\\neg\\big((2^{k}-1)\\bmod 2^{32}\\big)",
+      "context_snippet": "his operation generates a Mersenne-like sequence.  Let ![][image7] be the binary representation of the generated mask.  ![][image8]   ![][image9]   This formula reveals that the mask is always a contiguous block of zeros in the least significant posit",
+      "png_path": "/mnt/data/registry_images_white/image08.png",
+      "sha256": "2a2839ad798e7fd4a2b4ebec2a4137249cf757ce57184d00e3261d00455dbb63",
+      "python_semantics": "servo_mask_from_k(k)",
+      "agda_semantics": "servoMaskFromK : K \u2192 Word32",
+      "status": "transcribed"
+    },
+    {
+      "id": "image9",
+      "latex": "M_k=\\sum_{i=k}^{31}2^{i}",
+      "context_snippet": "generates a Mersenne-like sequence.  Let ![][image7] be the binary representation of the generated mask.  ![][image8]   ![][image9]   This formula reveals that the mask is always a contiguous block of zeros in the least significant positions, followed",
+      "png_path": "/mnt/data/registry_images_white/image09.png",
+      "sha256": "8d64f9dac8aaed307b97527da0732b4e2a019acce787566f047584bb2008177a",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image10",
+      "latex": "i",
+      "context_snippet": "nificant positions. This structure identifies the mask as a **High-Pass Filter** in the index domain. It passes indices ![][image10] where the bitwise AND with the mask is non-zero (assuming the mask is used for alignment) or, more likely given the \\_s",
+      "png_path": "/mnt/data/registry_images_white/image10.png",
+      "sha256": "47d401a1dac729a4269937ca66482a417bfa7ea4260c238b55c216a198c7ddaf",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image11",
+      "latex": "(1\\ll 0)-1=1-1=0",
+      "context_snippet": "[image3] case:  Python  return jnp.where(k \\== 0, \\_SERVO\\_MASK\\_DEFAULT, jnp.bitwise\\_not(low\\_bits))  Mathematically, ![][image11]. The bitwise NOT of 0 is 0xFFFFFFFF (all ones). Thus, the explicit check jnp.where(k==0,...) is technically redundant i",
+      "png_path": "/mnt/data/registry_images_white/image11.png",
+      "sha256": "20525cbcc2245ae1f2f398125a1185386590f3857c6905ee54d991ab038debe0",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image12",
+      "latex": "x",
+      "context_snippet": "jnp.uint32(0) \\- mask) is a canonical bit-manipulation hack, often cited in literature such as *Hacker's Delight*.  Let ![][image12] be the mask. In 2's complement:  ![][image13]   If ![][image12] has a trailing sequence of zeros ending at bit ![][imag",
+      "png_path": "/mnt/data/registry_images_white/image12.png",
+      "sha256": "4988d2b40ecc9892330e6e715364baa3dec0b760f3d309f0fc4d1545e2d93e04",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image13",
+      "latex": "-x=\\sim x+1",
+      "context_snippet": "pulation hack, often cited in literature such as *Hacker's Delight*.  Let ![][image12] be the mask. In 2's complement:  ![][image13]   If ![][image12] has a trailing sequence of zeros ending at bit ![][image14], then ![][image12] looks like ![][image15",
+      "png_path": "/mnt/data/registry_images_white/image13.png",
+      "sha256": "a9b7cadef3f8fcde31d73a7d4a8d5b579579b5c37236b9d5628056ef7ea7ea93",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image14",
+      "latex": "b",
+      "context_snippet": "image12] be the mask. In 2's complement:  ![][image13]   If ![][image12] has a trailing sequence of zeros ending at bit ![][image14], then ![][image12] looks like ![][image15].  ![][image16] looks like ![][image17].  ![][image18] ripples the carry thro",
+      "png_path": "/mnt/data/registry_images_white/image14.png",
+      "sha256": "7f99069e13060ea00c137c9b4d45b46d875a880d528c5b0cf793adec4e174734",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image15",
+      "latex": "(\\ldots 100\\ldots 0)",
+      "context_snippet": "[][image13]   If ![][image12] has a trailing sequence of zeros ending at bit ![][image14], then ![][image12] looks like ![][image15].  ![][image16] looks like ![][image17].  ![][image18] ripples the carry through the ones, resulting in ![][image15] whe",
+      "png_path": "/mnt/data/registry_images_white/image15.png",
+      "sha256": "c653b1d35bed643bb8e53bbe434083ff33d527586fc12e62a2841129a43744c9",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image16",
+      "latex": "\\sim x",
+      "context_snippet": "f ![][image12] has a trailing sequence of zeros ending at bit ![][image14], then ![][image12] looks like ![][image15].  ![][image16] looks like ![][image17].  ![][image18] ripples the carry through the ones, resulting in ![][image15] where the bit at !",
+      "png_path": "/mnt/data/registry_images_white/image16.png",
+      "sha256": "c9560519b98eb2115c3b15d51a3c03f3ee23ae5575156844d40ad6fd5a0b30e6",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image17",
+      "latex": "(\\ldots 011\\ldots 1)",
+      "context_snippet": "iling sequence of zeros ending at bit ![][image14], then ![][image12] looks like ![][image15].  ![][image16] looks like ![][image17].  ![][image18] ripples the carry through the ones, resulting in ![][image15] where the bit at ![][image14] is flipped b",
+      "png_path": "/mnt/data/registry_images_white/image17.png",
+      "sha256": "7b9560584f708be19d17da099ee16c9df0cc2c4cd9752dc9083ec4db5e87e1d9",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image18",
+      "latex": "\\sim x+1",
+      "context_snippet": "of zeros ending at bit ![][image14], then ![][image12] looks like ![][image15].  ![][image16] looks like ![][image17].  ![][image18] ripples the carry through the ones, resulting in ![][image15] where the bit at ![][image14] is flipped back to 1 and lo",
+      "png_path": "/mnt/data/registry_images_white/image18.png",
+      "sha256": "73d5a31fe169f64379f222b34e8bbc0112add3eefd898236e28418649025263b",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image19",
+      "latex": "x\\ \\&\\ -x",
+      "context_snippet": "resulting in ![][image15] where the bit at ![][image14] is flipped back to 1 and lower bits are 0\\.  The AND operation ![][image19] isolates exactly this lowest set bit.  This operation is ![][image20] and branchless, making it ideal for the SIMD (Sin",
+      "png_path": "/mnt/data/registry_images_white/image19.png",
+      "sha256": "89b32cb0708acd05cc94425abebd78de20e2bece68125c846c3e3cad2dea7f2c",
+      "python_semantics": "lowbit(x)",
+      "agda_semantics": "lowbitW / lowbitW-def",
+      "status": "transcribed"
+    },
+    {
+      "id": "image20",
+      "latex": "O(1)",
+      "context_snippet": "ck to 1 and lower bits are 0\\.  The AND operation ![][image19] isolates exactly this lowest set bit.  This operation is ![][image20] and branchless, making it ideal for the SIMD (Single Instruction, Multiple Data) architecture of JAX.2  #### **2.3.2 Fl",
+      "png_path": "/mnt/data/registry_images_white/image20.png",
+      "sha256": "6c01a6f110b941873c744be87330c1b369fcc9160be66a65fe1c621dc23ca37b",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image21",
+      "latex": "2^{k}",
+      "context_snippet": "ns are often the \"first-class citizens\" optimized for throughput on TPUs/GPUs.  By casting to float32, the power of two ![][image21] becomes the float representation ![][image22]. The exponent field of the IEEE 754 float contains the value ![][image23]",
+      "png_path": "/mnt/data/registry_images_white/image21.png",
+      "sha256": "a73094bbfa8a9d6eef27fd2bdc5f094f02dec48218d9e8b3125873b340857887",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image22",
+      "latex": "1.0\\times 2^{k}",
+      "context_snippet": "zed for throughput on TPUs/GPUs.  By casting to float32, the power of two ![][image21] becomes the float representation ![][image22]. The exponent field of the IEEE 754 float contains the value ![][image23] (the bias). The log2 operation on a GPU is of",
+      "png_path": "/mnt/data/registry_images_white/image22.png",
+      "sha256": "811f69102167b99382e5f5108cf34b365e38e870524b039c122b7209764f9a29",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image23",
+      "latex": "k+127",
+      "context_snippet": "![][image21] becomes the float representation ![][image22]. The exponent field of the IEEE 754 float contains the value ![][image23] (the bias). The log2 operation on a GPU is often a single cycle intrinsic that extracts and unbiases this exponent. Thi",
+      "png_path": "/mnt/data/registry_images_white/image23.png",
+      "sha256": "6586400b24fff69dda3e99840333ce6f14d2292fc2d611c0b8b6bc8ffcfb1f85",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image24",
+      "latex": "i<k-1",
+      "context_snippet": "iltering via Variable ![][image1]**  The variable ![][image1] acts as a High-Pass Filter cutoff frequency.  * **Indices ![][image24]:** These are the \"Pass-Band\" or the \"Safe Zone.\" Energy here is ignored by the p\\_buffer metric.   * **Indices ![][imag",
+      "png_path": "/mnt/data/registry_images_white/image24.png",
+      "sha256": "233bebee84bd95ef7842e1f97631699177ce789184c351da7ed92deb00eeac2b",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image25",
+      "latex": "i\\ge k-1",
+      "context_snippet": "image24]:** These are the \"Pass-Band\" or the \"Safe Zone.\" Energy here is ignored by the p\\_buffer metric.   * **Indices ![][image25]:** These are the \"Stop-Band\" or \"Buffer Zone.\" Energy here contributes to p\\_buffer and drives the servo's pressure met",
+      "png_path": "/mnt/data/registry_images_white/image25.png",
+      "sha256": "a31557cec0d91d0dda65e6e5fe1ffff7a4a59e8f21154c6f74750cbbee469e64",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image26",
+      "latex": "d_{\\mathrm{active}}",
+      "context_snippet": ". This monotonic relationship is the cornerstone of the control loop's stability.  ### **3.3 The Active Density Metric (![][image26])**  The secondary metric, ![][image26], introduces a concept of **resource efficiency**.  ![][image27]   The denominato",
+      "png_path": "/mnt/data/registry_images_white/image26.png",
+      "sha256": "aeeb6ff00adff3d6462c063390320ccf4fe4c4f4f3a5ebcd260daf0159757aea",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image27",
+      "latex": "d_{\\mathrm{active}}=\\frac{\\mathrm{Count(Hot\\ Items)}}{2^{k-1}}",
+      "context_snippet": "Density Metric (![][image26])**  The secondary metric, ![][image26], introduces a concept of **resource efficiency**.  ![][image27]   The denominator ![][image28] represents the *capacity* or *granularity* implied by level ![][image1]. If the system i",
+      "png_path": "/mnt/data/registry_images_white/image27.png",
+      "sha256": "cffe93a52d87f4e1b564a2192d36b5a71323228f659fcc7bad9992ccc0aa3214",
+      "python_semantics": "d_active(hot_count,k)",
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image28",
+      "latex": "2^{k-1}",
+      "context_snippet": "*  The secondary metric, ![][image26], introduces a concept of **resource efficiency**.  ![][image27]   The denominator ![][image28] represents the *capacity* or *granularity* implied by level ![][image1]. If the system is operating at level ![][image1",
+      "png_path": "/mnt/data/registry_images_white/image28.png",
+      "sha256": "892c4e16d5cdaf99236382f3b59b6edffba5731c40d6b39c364b80ff12be7a7b",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image29",
+      "latex": "<0.4",
+      "context_snippet": "mage26] is high, the allocated blocks are full of \"Hot\" items. The allocation is efficient.   * If ![][image26] is low (![][image29]), the allocated blocks are mostly empty. The system is wasting capacity.  This creates a dual-objective optimization:",
+      "png_path": "/mnt/data/registry_images_white/image29.png",
+      "sha256": "e86c50bd8296ef7b2c2aa3122a67be339e73f11923421e4c5d476ebc48d70975",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image30",
+      "latex": "k_{\\mathrm{next}}=\\min(k+1,31)",
+      "context_snippet": "acuum**, and **Deadband**.  ### **4.1 The Spill Regime (Over-Pressure)**  **Condition:** p\\_buffer \\> 0.25  **Action:** ![][image30]  **Dynamics:** This is a fast-acting proportional response (gain \\= 1 step). The threshold 0.25 acts as the \"Red Line.\"",
+      "png_path": "/mnt/data/registry_images_white/image30.png",
+      "sha256": "c54f6f381c9f268a57be7acac1d45c7caedfc395f25ae9ffc8c0adc664bdd47f",
+      "python_semantics": "servo_update_k",
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image31",
+      "latex": "k_{\\mathrm{next}}=\\max(k-1,0)",
+      "context_snippet": ".  ### **4.2 The Vacuum Regime (Under-Pressure)**  **Condition:** (p\\_buffer \\< 0.10) & (d\\_active \\< 0.4)  **Action:** ![][image31]  **Dynamics:** This is the relaxation phase. However, it is gated by a *compound condition*.  * **Primary Gate:** p\\_bu",
+      "png_path": "/mnt/data/registry_images_white/image31.png",
+      "sha256": "cb8fd417fb319e7e848b3acbb35e856ec87e89889abc02daea3eec42d37241bf",
+      "python_semantics": "servo_update_k",
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image32",
+      "latex": "k_{\\mathrm{next}}=k",
+      "context_snippet": "ne)**  **Condition:** 0.10 \\\\le p\\_{\\\\text{buffer}} \\\\le 0.25 OR (p\\_buffer \\< 0.10 AND d\\_active \\\\ge 0.4) **Action:** ![][image32] **Dynamics:** Hysteresis is the property of a system where the state depends on its history. Here, the \"history\" is enc",
+      "png_path": "/mnt/data/registry_images_white/image32.png",
+      "sha256": "c566b8e2b8070be6d7f182ab23c12331513bc5bd5ed6fc0039f20ead8144ec62",
+      "python_semantics": "servo_update_k",
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image33",
+      "latex": "k+1",
+      "context_snippet": "this deadband, it stays there. This prevents \"hunting\"\u2014the rapid, chattering oscillation between states ![][image1] and ![][image33] that wears out mechanical servos and wastes cycles in software ones.4  In the context of adaptive optics 4, \"servo-lag\"",
+      "png_path": "/mnt/data/registry_images_white/image33.png",
+      "sha256": "1c63122e8fb23eb21039db5f272e1f0d4d97505ed5ab4a848b8be7786e2b3568",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image34",
+      "latex": "P>0.25",
+      "context_snippet": "re (P) | Active Density (D) | State Interpretation | Action | Reasoning | | :---- | :---- | :---- | :---- | :---- | | **![][image34]** | Any | **CRITICAL OVERFLOW** | **Increase ![][image1]** | Immediate mitigation of resource saturation is the highest",
+      "png_path": "/mnt/data/registry_images_white/image34.png",
+      "sha256": "d9e0dab1b27436fe434708322bc5aa89e9de1b83cc9923b93baa0aa3c880d3c3",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image35",
+      "latex": "0.10\\le P\\le 0.25",
+      "context_snippet": "ITICAL OVERFLOW** | **Increase ![][image1]** | Immediate mitigation of resource saturation is the highest priority. | | ![][image35] | Any | **NOMINAL** | **Hold ![][image1]** | System is operating within design limits. No change required. | | ![][imag",
+      "png_path": "/mnt/data/registry_images_white/image35.png",
+      "sha256": "3f7ddef35348a09617797de2619aaae2d2e92299397d6ceceaf59c53dfe9658c",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image36",
+      "latex": "P<0.10",
+      "context_snippet": "image35] | Any | **NOMINAL** | **Hold ![][image1]** | System is operating within design limits. No change required. | | ![][image36] | ![][image37] | **COMPACT / EFFICIENT** | **Hold ![][image1]** | Load is light, but utilization of the current tier is",
+      "png_path": "/mnt/data/registry_images_white/image36.png",
+      "sha256": "cc3861403c61973a401823ed811d5eee66fdecbc770903f6cf2b564412ed0d9f",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image37",
+      "latex": "D\\ge 0.4",
+      "context_snippet": "| **NOMINAL** | **Hold ![][image1]** | System is operating within design limits. No change required. | | ![][image36] | ![][image37] | **COMPACT / EFFICIENT** | **Hold ![][image1]** | Load is light, but utilization of the current tier is high. Downscal",
+      "png_path": "/mnt/data/registry_images_white/image37.png",
+      "sha256": "5404dc83b2bd181e8c53a48a9397a69a9cac66106940788ec12ee80d65ef6df6",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image38",
+      "latex": "D<0.4",
+      "context_snippet": "* | Load is light, but utilization of the current tier is high. Downscaling would dilute efficiency. | | ![][image36] | ![][image38] | **UNDER-UTILIZED** | **Decrease ![][image1]** | System is effectively empty and inefficient. Safe and necessary to do",
+      "png_path": "/mnt/data/registry_images_white/image38.png",
+      "sha256": "6012feffd0a76704d1d4625498c4cada5d4d0d59ac9ab4d285c9a1c4fc29714e",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image39",
+      "latex": "k=20",
+      "context_snippet": "f the system faces a persistent high-load regime, ![][image1] will drift upwards and settle at a new equilibrium (e.g., ![][image39]), permanently effectively ignoring the lower 20 bits of the index space until the load subsides.  ## **7\\. Resource Den",
+      "png_path": "/mnt/data/registry_images_white/image39.png",
+      "sha256": "06949ce5bc48bd8d985f43de375fbde2dac14058c33cb442a96e40d1e7cf91ab",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image40",
+      "latex": "L=\\lambda W",
+      "context_snippet": "rease ![][image1]) to let more items in.  ### **7.2 Little's Law and Density**  In queueing theory, Little's Law states ![][image40] (Number of items \\= Arrival Rate ![][image41] Wait Time).  Here, d\\_active acts as a proxy for the **utilization factor",
+      "png_path": "/mnt/data/registry_images_white/image40.png",
+      "sha256": "c2c1d843a5647a115c8e7fe3546e554d7d6657d0ccc6ea1789c1db5350ac8a5e",
+      "python_semantics": "(metadata)",
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image41",
+      "latex": "\\times",
+      "context_snippet": "**7.2 Little's Law and Density**  In queueing theory, Little's Law states ![][image40] (Number of items \\= Arrival Rate ![][image41] Wait Time).  Here, d\\_active acts as a proxy for the **utilization factor** (![][image42]).  ![][image43]   The term de",
+      "png_path": "/mnt/data/registry_images_white/image41.png",
+      "sha256": "69be57462646f55b3dd18579f13f45af9b66a4d18768d56f47ab0cb18b6374f5",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image42",
+      "latex": "\\rho",
+      "context_snippet": "mber of items \\= Arrival Rate ![][image41] Wait Time).  Here, d\\_active acts as a proxy for the **utilization factor** (![][image42]).  ![][image43]   The term denom \\= jnp.exp2(k-1) estimates the \"Available Slots\" or the \"Addressable Range\" at level !",
+      "png_path": "/mnt/data/registry_images_white/image42.png",
+      "sha256": "0a73a6b9782bb3463d8ef45548d984a0370cfbff937b8e2123db3f1ba5166279",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image43",
+      "latex": "\\rho\\approx\\frac{\\mathrm{Active\\ Items}}{\\mathrm{Available\\ Slots}}",
+      "context_snippet": "Arrival Rate ![][image41] Wait Time).  Here, d\\_active acts as a proxy for the **utilization factor** (![][image42]).  ![][image43]   The term denom \\= jnp.exp2(k-1) estimates the \"Available Slots\" or the \"Addressable Range\" at level ![][image1].  By",
+      "png_path": "/mnt/data/registry_images_white/image43.png",
+      "sha256": "971d34520a59627319a6abdc1c021475f60a724ecec3413cc83c7bdb3596be25",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image44",
+      "latex": "0\\text{\u2014}31",
+      "context_snippet": "| Real-time (ms) | Step-time (per \\_servo\\_update call) | | **Constraint** | Torque, Velocity limits | Integer limits (![][image44]), Buffer Size | | **Failure Mode** | Overheating, Oscillation, Mechanical Wear | Saturation (![][image4]), Buffer Overf",
+      "png_path": "/mnt/data/registry_images_white/image44.png",
+      "sha256": "64fe3146b6ff474b86bf4889d5963566c82909d3a22216f44d37312f13e0c002",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image45",
+      "latex": "\\pm 1",
+      "context_snippet": "re servo *can* theoretically jump from ![][image3] to ![][image4] in one step. However, this code restricts the jump to ![][image45].  Python  k\\_up \\= jnp.minimum(k \\+ 1, 31)  Why? This introduces **artificial inertia**.  * **Reason 1:** Stability. Ju",
+      "png_path": "/mnt/data/registry_images_white/image45.png",
+      "sha256": "5aed8af27e8cdc42ab5292572b6b425c57de1b48e2d1c87a87165950a394755e",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image46",
+      "latex": "\\theta_{\\mathrm{spill}}\\leftarrow \\theta_{\\mathrm{spill}}-\\alpha\\nabla L",
+      "context_snippet": "0 are hardcoded constants. In a Meta-Learning framework (Learning to Learn), these could be differentiable parameters.  ![][image46]   The servo could learn that for a specific \"Arena\" (e.g., a specific robotic task), a tighter band (0.15 \\- 0.20) yiel",
+      "png_path": "/mnt/data/registry_images_white/image46.png",
+      "sha256": "d9979032f9f880d12e4634795e325030904695dae4b6ba721f5c8bc650cf7980",
+      "python_semantics": "(metadata)",
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image47",
+      "latex": "k_{t+1}=k_t+\\mathrm{sgn}(\\mathrm{Error})",
+      "context_snippet": "ID Control Implementation**  The current logic is effectively an Integral controller (I-controller) with a fixed gain.  ![][image47]   A full PID controller would add:  ![][image48]   This would allow the servo to react *proportionally* to massive pres",
+      "png_path": "/mnt/data/registry_images_white/image47.png",
+      "sha256": "f9535aa3aa388af464dedfa5f98d3197040da0c82df8572ff24a03a1ef3a3cde",
+      "python_semantics": "(metadata)",
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image48",
+      "latex": "k_{t+1}=k_t+K_p(\\mathrm{Error})+K_d(\\mathrm{Error}-\\mathrm{Error}_{\\mathrm{prev}})",
+      "context_snippet": "effectively an Integral controller (I-controller) with a fixed gain.  ![][image47]   A full PID controller would add:  ![][image48]   This would allow the servo to react *proportionally* to massive pressure spikes (jumping by \\+5 instead of \\+1) and t",
+      "png_path": "/mnt/data/registry_images_white/image48.png",
+      "sha256": "870d4e7fe8a1947ec62605806374b227dcd6bbe30f00f4bdea748f01f69e6e43",
+      "python_semantics": "(metadata)",
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image49",
+      "latex": "\\mathbf{k}=[k_x,k_y,k_z]",
+      "context_snippet": "i-Dimensional Servos**  The current system controls a single scalar ![][image1]. Complex systems might require a vector ![][image49] controlling masks along different dimensions (e.g., spatial vs. temporal masking in video processing). The cross-coupli",
+      "png_path": "/mnt/data/registry_images_white/image49.png",
+      "sha256": "e41151ea36a8cbd8790ae114634ae7087b37e9841362243f766bf280339d990f",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image50",
+      "latex": "P(k)=\\sum_{i=\\max(k-1,0)}^{N}S[i]",
+      "context_snippet": "# **Addendum: Detailed Mathematical Proofs**  ## **A.1 Proof of Monotonicity for p\\_buffer**  **Theorem:** The function ![][image50] is monotonically non-increasing with respect to ![][image1], assuming ![][image51].  **Proof:**  Let ![][image52].  Sin",
+      "png_path": "/mnt/data/registry_images_white/image50.png",
+      "sha256": "8bef85b473c9ef8327ca9b9e26dfabf30ab4996287aaf69c74386f47019beb4f",
+      "python_semantics": "p_buffer(S,k)",
+      "agda_semantics": "pBuffer : (S : \u2115 \u2192 R) \u2192 K \u2192 R",
+      "status": "transcribed"
+    },
+    {
+      "id": "image51",
+      "latex": "S[i]\\ge 0",
+      "context_snippet": "_buffer**  **Theorem:** The function ![][image50] is monotonically non-increasing with respect to ![][image1], assuming ![][image51].  **Proof:**  Let ![][image52].  Since ![][image1] is an integer, let us consider the difference ![][image53].  ![][ima",
+      "png_path": "/mnt/data/registry_images_white/image51.png",
+      "sha256": "b5302a5ef26f0c4085b75f840f68cabfc717379d2f2b2ce2e310633996e6ea24",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image52",
+      "latex": "\\mathrm{start}(k)=\\max(k-1,0)",
+      "context_snippet": "ction ![][image50] is monotonically non-increasing with respect to ![][image1], assuming ![][image51].  **Proof:**  Let ![][image52].  Since ![][image1] is an integer, let us consider the difference ![][image53].  ![][image54].  If ![][image55]:  ![][i",
+      "png_path": "/mnt/data/registry_images_white/image52.png",
+      "sha256": "2607b32570cddc6f49051941ddddf0ed05ecc0b42c80338baf134ecd4ce3b7c4",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image53",
+      "latex": "P(k+1)-P(k)",
+      "context_snippet": "assuming ![][image51].  **Proof:**  Let ![][image52].  Since ![][image1] is an integer, let us consider the difference ![][image53].  ![][image54].  If ![][image55]:  ![][image56].  ![][image57].  The set of indices summed for ![][image58] is ![][imag",
+      "png_path": "/mnt/data/registry_images_white/image53.png",
+      "sha256": "e5945a3aa5c64273eda981b0396a8fe17d8fd005bfa72aeecb7b7b14f64cb7ed",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image54",
+      "latex": "\\mathrm{start}(k+1)=\\max(k,0)",
+      "context_snippet": "mage51].  **Proof:**  Let ![][image52].  Since ![][image1] is an integer, let us consider the difference ![][image53].  ![][image54].  If ![][image55]:  ![][image56].  ![][image57].  The set of indices summed for ![][image58] is ![][image59].  The set",
+      "png_path": "/mnt/data/registry_images_white/image54.png",
+      "sha256": "419b0098bb6cebde2f7c23589b77c665c5dc49c90f47fa0be7502dba4044e473",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image55",
+      "latex": "k\\ge 1",
+      "context_snippet": "**  Let ![][image52].  Since ![][image1] is an integer, let us consider the difference ![][image53].  ![][image54].  If ![][image55]:  ![][image56].  ![][image57].  The set of indices summed for ![][image58] is ![][image59].  The set of indices summed",
+      "png_path": "/mnt/data/registry_images_white/image55.png",
+      "sha256": "79bfe657f711254ceb108d194bd1c84ab73dc03b59f3ef9dd3a22ec8fd924271",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image56",
+      "latex": "\\mathrm{start}(k)=k-1",
+      "context_snippet": "ge52].  Since ![][image1] is an integer, let us consider the difference ![][image53].  ![][image54].  If ![][image55]:  ![][image56].  ![][image57].  The set of indices summed for ![][image58] is ![][image59].  The set of indices summed for ![][image60",
+      "png_path": "/mnt/data/registry_images_white/image56.png",
+      "sha256": "9a66fb287ebfec981d97c2584636ad96532e92dc746490c465762f5c8946d1e6",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image57",
+      "latex": "\\mathrm{start}(k+1)=k",
+      "context_snippet": "[][image1] is an integer, let us consider the difference ![][image53].  ![][image54].  If ![][image55]:  ![][image56].  ![][image57].  The set of indices summed for ![][image58] is ![][image59].  The set of indices summed for ![][image60] is ![][image6",
+      "png_path": "/mnt/data/registry_images_white/image57.png",
+      "sha256": "037818d9174140c8efdd846cca46555c9e13627ae5aacac3aaf46847ebe0a511",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image58",
+      "latex": "P(k)",
+      "context_snippet": "difference ![][image53].  ![][image54].  If ![][image55]:  ![][image56].  ![][image57].  The set of indices summed for ![][image58] is ![][image59].  The set of indices summed for ![][image60] is ![][image61].  The difference is:  ![][image62]   ![][i",
+      "png_path": "/mnt/data/registry_images_white/image58.png",
+      "sha256": "6d936373b95fcb021560367ae61789b14303912dcb0ba546b2b3e255edae597f",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image59",
+      "latex": "\\{k-1,k,\\dots,N\\}",
+      "context_snippet": "image53].  ![][image54].  If ![][image55]:  ![][image56].  ![][image57].  The set of indices summed for ![][image58] is ![][image59].  The set of indices summed for ![][image60] is ![][image61].  The difference is:  ![][image62]   ![][image63]   Since",
+      "png_path": "/mnt/data/registry_images_white/image59.png",
+      "sha256": "0439255a74ba8e8124255e582ecba27d1df8174fc7e5a7c73e79d2ef51e30b1c",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image60",
+      "latex": "P(k+1)",
+      "context_snippet": "[][image56].  ![][image57].  The set of indices summed for ![][image58] is ![][image59].  The set of indices summed for ![][image60] is ![][image61].  The difference is:  ![][image62]   ![][image63]   Since the spectrum ![][image64] represents energy o",
+      "png_path": "/mnt/data/registry_images_white/image60.png",
+      "sha256": "493dbf0050fb190d5eb041f7279b98cb6dc78ae91dd2fff5b00a498b1ac6a37a",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image61",
+      "latex": "\\{k,k+1,\\dots,N\\}",
+      "context_snippet": "][image57].  The set of indices summed for ![][image58] is ![][image59].  The set of indices summed for ![][image60] is ![][image61].  The difference is:  ![][image62]   ![][image63]   Since the spectrum ![][image64] represents energy or magnitude, ![]",
+      "png_path": "/mnt/data/registry_images_white/image61.png",
+      "sha256": "aa04ea183e025050d3415f1f98c1cb3f44da8604ce779c46c7aaee40146fbaca",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image62",
+      "latex": "P(k+1)-P(k)=\\sum_{i=k}^{N}S[i]-\\sum_{i=k-1}^{N}S[i]",
+      "context_snippet": "med for ![][image58] is ![][image59].  The set of indices summed for ![][image60] is ![][image61].  The difference is:  ![][image62]   ![][image63]   Since the spectrum ![][image64] represents energy or magnitude, ![][image51] for all ![][image10].  Th",
+      "png_path": "/mnt/data/registry_images_white/image62.png",
+      "sha256": "a0639259669d571767ec80d67b9db7c3b24c688ef33ed0b03035aeda599ea0b2",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image63",
+      "latex": "P(k+1)-P(k)=-S[k-1]",
+      "context_snippet": "ge58] is ![][image59].  The set of indices summed for ![][image60] is ![][image61].  The difference is:  ![][image62]   ![][image63]   Since the spectrum ![][image64] represents energy or magnitude, ![][image51] for all ![][image10].  Therefore, ![][im",
+      "png_path": "/mnt/data/registry_images_white/image63.png",
+      "sha256": "b361630c2aeda3eeb5b5f74a052a7358e160bf583718f3ea349d4acc2bb8427c",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image64",
+      "latex": "S",
+      "context_snippet": "indices summed for ![][image60] is ![][image61].  The difference is:  ![][image62]   ![][image63]   Since the spectrum ![][image64] represents energy or magnitude, ![][image51] for all ![][image10].  Therefore, ![][image65].  The function is monotonic",
+      "png_path": "/mnt/data/registry_images_white/image64.png",
+      "sha256": "e46cbad29018051258f290c63c85019659041dcadcb7ed500c2d95a574e3f0cb",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image65",
+      "latex": "P(k+1)-P(k)\\le 0",
+      "context_snippet": "age63]   Since the spectrum ![][image64] represents energy or magnitude, ![][image51] for all ![][image10].  Therefore, ![][image65].  The function is monotonically non-increasing. ![][image66]  **Implication:** This proof guarantees that the negative",
+      "png_path": "/mnt/data/registry_images_white/image65.png",
+      "sha256": "dd104e9f2e839d5c4f37668408194e962b113beacc54d2cc67117b62353f5c76",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image66",
+      "latex": "\\blacksquare",
+      "context_snippet": "magnitude, ![][image51] for all ![][image10].  Therefore, ![][image65].  The function is monotonically non-increasing. ![][image66]  **Implication:** This proof guarantees that the negative feedback loop is valid. Increasing ![][image1] (Actuation) is",
+      "png_path": "/mnt/data/registry_images_white/image66.png",
+      "sha256": "517caf487b8f0ecf4a7be40e119de7722346557657bccf12776061bb5f54613e",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image67",
+      "latex": "p_{\\mathrm{buffer}}",
+      "context_snippet": "negative feedback loop is valid. Increasing ![][image1] (Actuation) is guaranteed to decrease (or leave unchanged) the ![][image67] (Sensor). There is no \"sign reversal\" region where increasing ![][image1] would accidentally increase pressure, which w",
+      "png_path": "/mnt/data/registry_images_white/image67.png",
+      "sha256": "7f77dd07d368af8c2e2df92e68b9f4442453a9cd617a0f81aaa4bdf68cf788ba",
+      "python_semantics": "p_buffer(S,k)",
+      "agda_semantics": "pBuffer",
+      "status": "transcribed"
+    },
+    {
+      "id": "image68",
+      "latex": "f:k\\to \\mathrm{Mask}",
+      "context_snippet": "ck and catastrophic instability.  ## **A.2 Proof of Invertibility of \\_servo\\_mask\\_from\\_k**  **Theorem:** The mapping ![][image68] defined by \\_servo\\_mask\\_from\\_k is injective for ![][image69].  **Proof:**  Let ![][image70].  The number of set bits",
+      "png_path": "/mnt/data/registry_images_white/image68.png",
+      "sha256": "d716245492b886527330d0b67ff69db501bfebbd69b251f32ccf938e212076cb",
+      "python_semantics": "servo_mask_from_k / servo_mask_to_k",
+      "agda_semantics": "servoMaskFromK/servoMaskToK",
+      "status": "transcribed"
+    },
+    {
+      "id": "image69",
+      "latex": "k\\in\\{0,\\dots,31\\}",
+      "context_snippet": "y of \\_servo\\_mask\\_from\\_k**  **Theorem:** The mapping ![][image68] defined by \\_servo\\_mask\\_from\\_k is injective for ![][image69].  **Proof:**  Let ![][image70].  The number of set bits (population count) in ![][image71] is exactly ![][image1].  The",
+      "png_path": "/mnt/data/registry_images_white/image69.png",
+      "sha256": "1538cc31e9e4bc57874cf0097848193ee708a1f277a04011016c6b4559df08c6",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image70",
+      "latex": "M_k=\\neg\\big((1\\ll k)-1\\big)",
+      "context_snippet": "**Theorem:** The mapping ![][image68] defined by \\_servo\\_mask\\_from\\_k is injective for ![][image69].  **Proof:**  Let ![][image70].  The number of set bits (population count) in ![][image71] is exactly ![][image1].  The number of set bits in ![][imag",
+      "png_path": "/mnt/data/registry_images_white/image70.png",
+      "sha256": "9d1ed1780d3ba1c01341a78b5c520f89b936b918bce087bfb01261e3e4275c86",
+      "python_semantics": "servo_mask_from_k(k)",
+      "agda_semantics": "maskNat",
+      "status": "transcribed"
+    },
+    {
+      "id": "image71",
+      "latex": "(1\\ll k)-1",
+      "context_snippet": "sk\\_from\\_k is injective for ![][image69].  **Proof:**  Let ![][image70].  The number of set bits (population count) in ![][image71] is exactly ![][image1].  The number of set bits in ![][image7] is ![][image72].  For any two distinct integers $k\\_1, k",
+      "png_path": "/mnt/data/registry_images_white/image71.png",
+      "sha256": "f714ea84c78c9d079d1698db28fb34809c56a120dd387a98953d542dab7a2e5e",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image72",
+      "latex": "32-k",
+      "context_snippet": "number of set bits (population count) in ![][image71] is exactly ![][image1].  The number of set bits in ![][image7] is ![][image72].  For any two distinct integers $k\\_1, k\\_2 \\\\in $, assume ![][image73].  Then ![][image74].  Since the population coun",
+      "png_path": "/mnt/data/registry_images_white/image72.png",
+      "sha256": "c1c6e6df3526140380b77e8b00ae7d6f3ec711dcf71f645bbdf32f236b13da7e",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image73",
+      "latex": "k_1\\ne k_2",
+      "context_snippet": "ge1].  The number of set bits in ![][image7] is ![][image72].  For any two distinct integers $k\\_1, k\\_2 \\\\in $, assume ![][image73].  Then ![][image74].  Since the population counts are different, the masks ![][image75] and ![][image76] must be distin",
+      "png_path": "/mnt/data/registry_images_white/image73.png",
+      "sha256": "7f0a1a03b7cd93ae4e0fb51f4de2e87f3807e2e717a6b1689905b20ccc89b714",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image74",
+      "latex": "32-k_1\\ne 32-k_2",
+      "context_snippet": "set bits in ![][image7] is ![][image72].  For any two distinct integers $k\\_1, k\\_2 \\\\in $, assume ![][image73].  Then ![][image74].  Since the population counts are different, the masks ![][image75] and ![][image76] must be distinct.  Therefore, the",
+      "png_path": "/mnt/data/registry_images_white/image74.png",
+      "sha256": "904b4de360693133ed6484942fd1c47875097550081b4fd7d292effe6ec9ec2c",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image75",
+      "latex": "M_{k_1}",
+      "context_snippet": "gers $k\\_1, k\\_2 \\\\in $, assume ![][image73].  Then ![][image74].  Since the population counts are different, the masks ![][image75] and ![][image76] must be distinct.  Therefore, the function is injective.  **Corollary:** The function \\_servo\\_mask\\_t",
+      "png_path": "/mnt/data/registry_images_white/image75.png",
+      "sha256": "968c2024a55fa40f04d0ae8de68bc40a32b3c1b9f4e93ccdd4fb5e234f7d6a5f",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image76",
+      "latex": "M_{k_2}",
+      "context_snippet": "\\\\in $, assume ![][image73].  Then ![][image74].  Since the population counts are different, the masks ![][image75] and ![][image76] must be distinct.  Therefore, the function is injective.  **Corollary:** The function \\_servo\\_mask\\_to\\_k is the left",
+      "png_path": "/mnt/data/registry_images_white/image76.png",
+      "sha256": "875c202a593881fbf94082c5b81bebb29f2406b2c7f56ed2df68baa3ea482322",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    },
+    {
+      "id": "image77",
+      "latex": "k\\to \\mathrm{Mask}\\to k",
+      "context_snippet": "bility to store the state in the mask. If the mapping were not 1-to-1, state information would be lost during the cycle ![][image77], causing the servo to drift or lock up.  ### ---  **End of Comprehensive Research Report**  *(Word Count Estimate: The",
+      "png_path": "/mnt/data/registry_images_white/image77.png",
+      "sha256": "e949755c23c59d0bcf265915284c1f3919a1e8282032747bea04f04aabfc2520",
+      "python_semantics": null,
+      "agda_semantics": null,
+      "status": "transcribed"
+    }
+  ]
+}
