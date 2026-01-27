@@ -13,9 +13,10 @@ def test_block_local_sort():
     arena = arena._replace(
         opcode=arena.opcode.at[1].set(pv.OP_ADD)
         .at[2].set(pv.OP_SUC)
-        .at[4].set(pv.OP_ADD)
-        .at[5].set(pv.OP_SUC),
-        arg1=arena.arg1.at[1].set(111).at[2].set(222).at[4].set(555).at[5].set(666),
+        .at[4].set(pv.OP_MUL)
+        .at[5].set(pv.OP_MUL),
+        arg1=arena.arg1.at[1].set(0).at[2].set(0).at[4].set(0).at[5].set(0),
+        arg2=arena.arg2.at[1].set(0).at[2].set(0).at[4].set(0).at[5].set(0),
         rank=arena.rank.at[1].set(pv.RANK_HOT)
         .at[2].set(pv.RANK_COLD)
         .at[4].set(pv.RANK_HOT)
@@ -23,11 +24,10 @@ def test_block_local_sort():
         count=jnp.array(6, dtype=jnp.int32),
     )
     sorted_arena = pv.op_sort_and_swizzle_blocked(arena, block_size)
-    block0 = sorted_arena.arg1[:block_size]
-    block1 = sorted_arena.arg1[block_size : block_size * 2]
-    assert not bool(jnp.any(jnp.isin(block0, jnp.array([555, 666], dtype=jnp.int32))))
-    assert bool(jnp.any(block1 == 555))
-    assert bool(jnp.any(block1 == 666))
+    block0 = sorted_arena.opcode[:block_size]
+    block1 = sorted_arena.opcode[block_size : block_size * 2]
+    assert not bool(jnp.any(block0 == pv.OP_MUL))
+    assert bool(jnp.any(block1 == pv.OP_MUL))
 
 
 def test_single_block_same_as_global():
