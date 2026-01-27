@@ -540,10 +540,19 @@ _damage_metrics_cycles = 0
 _damage_metrics_hot_nodes = 0
 _damage_metrics_edge_total = 0
 _damage_metrics_edge_cross = 0
+_cnf2_metrics_cycles = 0
+_cnf2_metrics_rewrite_child = 0
+_cnf2_metrics_changed = 0
+_cnf2_metrics_wrap_emit = 0
 
 
 def _damage_metrics_enabled():
     value = os.environ.get("PRISM_DAMAGE_METRICS", "").strip().lower()
+    return value in ("1", "true", "yes", "on")
+
+
+def _cnf2_metrics_enabled():
+    value = os.environ.get("PRISM_CNF2_METRICS", "").strip().lower()
     return value in ("1", "true", "yes", "on")
 
 
@@ -570,6 +579,17 @@ def damage_metrics_reset():
     _damage_metrics_edge_cross = 0
 
 
+def cnf2_metrics_reset():
+    global _cnf2_metrics_cycles
+    global _cnf2_metrics_rewrite_child
+    global _cnf2_metrics_changed
+    global _cnf2_metrics_wrap_emit
+    _cnf2_metrics_cycles = 0
+    _cnf2_metrics_rewrite_child = 0
+    _cnf2_metrics_changed = 0
+    _cnf2_metrics_wrap_emit = 0
+
+
 def damage_metrics_get():
     if not _damage_metrics_enabled():
         return {
@@ -589,6 +609,35 @@ def damage_metrics_get():
         "edge_cross": edge_cross,
         "damage_rate": float(damage_rate),
     }
+
+
+def cnf2_metrics_get():
+    if not _cnf2_metrics_enabled():
+        return {
+            "cycles": 0,
+            "rewrite_child": 0,
+            "changed": 0,
+            "wrap_emit": 0,
+        }
+    return {
+        "cycles": int(_cnf2_metrics_cycles),
+        "rewrite_child": int(_cnf2_metrics_rewrite_child),
+        "changed": int(_cnf2_metrics_changed),
+        "wrap_emit": int(_cnf2_metrics_wrap_emit),
+    }
+
+
+def _cnf2_metrics_update(rewrite_child, changed, wrap_emit):
+    global _cnf2_metrics_cycles
+    global _cnf2_metrics_rewrite_child
+    global _cnf2_metrics_changed
+    global _cnf2_metrics_wrap_emit
+    if not _cnf2_metrics_enabled():
+        return
+    _cnf2_metrics_cycles += 1
+    _cnf2_metrics_rewrite_child += int(rewrite_child)
+    _cnf2_metrics_changed += int(changed)
+    _cnf2_metrics_wrap_emit += int(wrap_emit)
 
 
 def _damage_metrics_update(arena, tile_size):
@@ -1324,6 +1373,7 @@ def cycle_candidates(
     base_next = jnp.where(slot1_add, slot1_ids, base_next)
     base_next = jnp.where(slot1_mul, slot1_ids, base_next)
     base_next = jnp.where(is_coord_add, coord_ids, base_next)
+    changed_mask = base_next != rewrite_ids
 
     wrap_strata = []
     wrap_depths = depths
@@ -1360,6 +1410,10 @@ def cycle_candidates(
     stratum2 = Stratum(
         start=jnp.int32(start2_i), count=jnp.int32(count2_i)
     )
+    if _cnf2_metrics_enabled():
+        rewrite_child = _host_int_value(count0)
+        changed_count = _host_int_value(jnp.sum(changed_mask.astype(jnp.int32)))
+        _cnf2_metrics_update(rewrite_child, changed_count, int(count2_i))
     validate = validate_stratum or _guards_enabled()
     ledger2, _, q_map = commit_stratum(
         ledger2, stratum0, validate=validate

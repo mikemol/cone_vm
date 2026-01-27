@@ -856,10 +856,10 @@ Ordered by semantic risk first, then determinism/observability, then performance
 - `_apply_stratum_q` length guard for `canon_ids` vs `stratum.count`. ✅
 - Read-only lookup fallback for `intern_nodes` stop path (CORRUPT/OOM). ✅
 
-**P1 — Determinism / observability**
+**P1 — Determinism / observability (complete)**
 - Strict scatter variant (no drop sentinel) for tests/guards. ✅
 - Deterministic gather behavior outside test mode (clamp policy). ✅
-- CNF-2 observability counters (`rewrite_child`, `changed`, `wrap_emit`).
+- CNF-2 observability counters (`rewrite_child`, `changed`, `wrap_emit`). ✅
 
 **P2 — Milestone integrity / test fidelity**
 - Host-slice validation for `validate_stratum_no_within_refs`.
