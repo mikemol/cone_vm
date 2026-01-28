@@ -79,8 +79,10 @@ def scatter_strict(target, indices, values, label):
     return target.at[indices].set(values, mode="promise_in_bounds")
 
 
-def guard_gather_index(idx, size, label):
-    if not GATHER_GUARD or not HAS_DEBUG_CALLBACK:
+def guard_gather_index(idx, size, label, guard=None):
+    if guard is None:
+        guard = GATHER_GUARD
+    if not guard or not HAS_DEBUG_CALLBACK:
         return
     if idx.size == 0:
         return
@@ -98,13 +100,12 @@ def guard_gather_index(idx, size, label):
     jax.debug.callback(_raise, bad, min_idx, max_idx, size)
 
 
-def safe_gather_1d(arr, idx, label="safe_gather_1d"):
+def safe_gather_1d(arr, idx, label="safe_gather_1d", guard=None):
     # Guarded gather: raise on invalid indices in test mode; always clamp for
     # deterministic OOB behavior across backends.
     size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
     idx_i = jnp.asarray(idx, dtype=jnp.int32)
-    if GATHER_GUARD and HAS_DEBUG_CALLBACK:
-        guard_gather_index(idx_i, size, label)
+    guard_gather_index(idx_i, size, label, guard=guard)
     idx_safe = jnp.clip(idx_i, 0, size - 1)
     return arr[idx_safe]
 
