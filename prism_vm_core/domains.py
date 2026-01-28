@@ -84,6 +84,19 @@ def _host_bool_value(value) -> bool:
     return bool(_host_bool(value))
 
 
+def _host_raise_if_bad(
+    ledger, oom_message: str = "Ledger capacity exceeded", oom_exc=RuntimeError
+) -> None:
+    # SYNC: host check after device-side mutations (m1).
+    ledger.count.block_until_ready()
+    if _host_bool_value(ledger.corrupt):
+        raise RuntimeError(
+            "CORRUPT: key encoding alias risk (id width exceeded)"
+        )
+    if _host_bool_value(ledger.oom):
+        raise oom_exc(oom_message)
+
+
 def _provisional_ids(value) -> ProvisionalIds:
     if isinstance(value, ProvisionalIds):
         return value
@@ -112,6 +125,7 @@ __all__ = [
     "_host_bool",
     "_host_int_value",
     "_host_bool_value",
+    "_host_raise_if_bad",
     "_provisional_ids",
     "_committed_ids",
 ]
