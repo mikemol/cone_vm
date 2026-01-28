@@ -1,0 +1,195 @@
+import jax
+import jax.numpy as jnp
+from jax import jit, lax
+
+from prism_core import jax_safe as _jax_safe
+from prism_metrics.metrics import _damage_metrics_update, _damage_tile_size
+from prism_vm_core.domains import _host_int_value
+from prism_vm_core.gating import _servo_enabled
+from prism_vm_core.guards import _guard_max
+from prism_vm_core.hashes import _arena_root_hash_host
+from prism_vm_core.ontology import OP_ADD, OP_SUC, OP_ZERO
+
+from prism_bsp.space import (
+    RANK_HOT,
+    _servo_update,
+    op_morton,
+    op_rank,
+    op_sort_and_swizzle_blocked_with_perm,
+    op_sort_and_swizzle_hierarchical_with_perm,
+    op_sort_and_swizzle_morton_with_perm,
+    op_sort_and_swizzle_servo_with_perm,
+    op_sort_and_swizzle_with_perm,
+)
+
+
+_TEST_GUARDS = _jax_safe.TEST_GUARDS
+
+
+@jit
+def op_interact(arena):
+    ops = arena.opcode
+    a1 = arena.arg1
+    a2 = arena.arg2
+    cap = jnp.int32(ops.shape[0])
+    is_hot = arena.rank == RANK_HOT
+    is_add = ops == OP_ADD
+    # Guard pointer gathers in test mode; avoid touching inactive garbage rows.
+    hot_add = is_hot & is_add
+    a1_for_op = jnp.where(hot_add, a1, jnp.int32(0))
+    a2_for_op = jnp.where(hot_add, a2, jnp.int32(0))
+    op_a1 = _jax_safe.safe_gather_1d(ops, a1_for_op, "op_interact.op_a1")
+    op_a2 = _jax_safe.safe_gather_1d(ops, a2_for_op, "op_interact.op_a2")
+    is_zero_a1 = op_a1 == OP_ZERO
+    is_zero_a2 = op_a2 == OP_ZERO
+    is_suc_a1 = op_a1 == OP_SUC
+    is_suc_a2 = op_a2 == OP_SUC
+    mask_zero = hot_add & (is_zero_a1 | is_zero_a2)
+    mask_suc = hot_add & (is_suc_a1 | is_suc_a2) & (~mask_zero) & (~arena.oom)
+
+    # First: local rewrites that don't allocate.
+    zero_other = jnp.where(is_zero_a1, a2, a1)
+    zero_other = jnp.where(mask_zero, zero_other, jnp.int32(0))
+    y_op = _jax_safe.safe_gather_1d(ops, zero_other, "op_interact.zero_op")
+    y_a1 = _jax_safe.safe_gather_1d(a1, zero_other, "op_interact.zero_a1")
+    y_a2 = _jax_safe.safe_gather_1d(a2, zero_other, "op_interact.zero_a2")
+    new_ops = jnp.where(mask_zero, y_op, ops)
+    new_a1 = jnp.where(mask_zero, y_a1, a1)
+    new_a2 = jnp.where(mask_zero, y_a2, a2)
+
+    # Second: allocation for suc-case.
+    available = jnp.maximum(cap - arena.count, 0)
+    spawn = mask_suc.astype(jnp.int32)
+    prefix = jnp.cumsum(spawn)
+    spawn = spawn * (prefix <= available).astype(jnp.int32)
+    offsets = jnp.cumsum(spawn) - spawn
+    total_spawn = jnp.sum(spawn).astype(jnp.int32)
+    base_free = arena.count
+    new_add_idx = base_free + offsets
+
+    spawn_mask = spawn.astype(jnp.bool_)
+    new_ops = jnp.where(spawn_mask, OP_SUC, new_ops)
+    new_a1 = jnp.where(spawn_mask, new_add_idx, new_a1)
+    new_a2 = jnp.where(spawn_mask, 0, new_a2)
+
+    # Scatter-create the spawned add nodes only where mask_suc is true.
+    choose_a1 = is_suc_a1 & (~is_suc_a2 | (a1 <= a2))
+    suc_node = jnp.where(choose_a1, a1, a2)
+    other_node = jnp.where(choose_a1, a2, a1)
+    suc_for_spawn = jnp.where(spawn_mask, suc_node, jnp.int32(0))
+    other_for_spawn = jnp.where(spawn_mask, other_node, jnp.int32(0))
+    grandchild_x = _jax_safe.safe_gather_1d(
+        a1, suc_for_spawn, "op_interact.grandchild_x"
+    )
+    payload_op = jnp.full_like(new_add_idx, OP_ADD)
+    payload_a1_raw = jnp.where(spawn_mask, grandchild_x, jnp.int32(0))
+    payload_a2_raw = jnp.where(spawn_mask, other_for_spawn, jnp.int32(0))
+    payload_swap = payload_a2_raw < payload_a1_raw
+    payload_a1 = jnp.where(payload_swap, payload_a2_raw, payload_a1_raw)
+    payload_a2 = jnp.where(payload_swap, payload_a1_raw, payload_a2_raw)
+
+    valid = spawn_mask
+    idxs2 = jnp.where(valid, new_add_idx, cap)
+    # idxs2 uses cap as a drop sentinel for _scatter_drop (see helper note).
+
+    final_ops = _jax_safe.scatter_drop(
+        new_ops,
+        idxs2,
+        jnp.where(valid, payload_op, new_ops[0]),
+        "op_interact.final_ops",
+    )
+    final_a1 = _jax_safe.scatter_drop(
+        new_a1,
+        idxs2,
+        jnp.where(valid, payload_a1, new_a1[0]),
+        "op_interact.final_a1",
+    )
+    final_a2 = _jax_safe.scatter_drop(
+        new_a2,
+        idxs2,
+        jnp.where(valid, payload_a2, new_a2[0]),
+        "op_interact.final_a2",
+    )
+
+    overflow = jnp.sum(mask_suc.astype(jnp.int32)) > available
+    new_oom = arena.oom | overflow
+    new_count = arena.count + total_spawn
+    _guard_max(new_count, cap, "arena.count")
+    return arena._replace(
+        opcode=final_ops,
+        arg1=final_a1,
+        arg2=final_a2,
+        count=new_count,
+        oom=new_oom,
+    )
+
+
+def cycle(
+    arena,
+    root_ptr,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    morton=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+):
+    # BSPˢ is renormalization only: must preserve denotation after q (m3).
+    # BSPᵗ controls when identity is created via commit_stratum barriers.
+    # COMMUTES: BSPᵗ ⟂ BSPˢ  [test: tests/test_arena_denotation_invariance.py::test_arena_denotation_invariance_random_suite]
+    """Run one BSP cycle; sorting/scheduling is renormalization only."""
+    # See IMPLEMENTATION_PLAN.md (m3 denotation invariance).
+    arena = op_rank(arena)
+    root_arr = jnp.asarray(root_ptr, dtype=jnp.int32)
+    if do_sort:
+        pre_hash = _arena_root_hash_host(arena, root_arr)
+        morton_arr = None
+        if _servo_enabled():
+            arena = _servo_update(arena)
+            morton_arr = morton if morton is not None else op_morton(arena)
+            servo_mask = arena.servo[0]
+            arena, inv_perm = op_sort_and_swizzle_servo_with_perm(
+                arena, morton_arr, servo_mask
+            )
+        else:
+            if use_morton or morton is not None:
+                morton_arr = morton if morton is not None else op_morton(arena)
+            if l2_block_size is not None or l1_block_size is not None:
+                if l2_block_size is None:
+                    l2_block_size = l1_block_size
+                if l1_block_size is None:
+                    l1_block_size = l2_block_size
+                arena, inv_perm = op_sort_and_swizzle_hierarchical_with_perm(
+                    arena,
+                    l2_block_size,
+                    l1_block_size,
+                    morton=morton_arr,
+                    do_global=do_global,
+                )
+            elif block_size is not None:
+                arena, inv_perm = op_sort_and_swizzle_blocked_with_perm(
+                    arena, block_size, morton=morton_arr
+                )
+            elif morton_arr is not None:
+                arena, inv_perm = op_sort_and_swizzle_morton_with_perm(
+                    arena, morton_arr
+                )
+            else:
+                arena, inv_perm = op_sort_and_swizzle_with_perm(arena)
+        # Root remap is a pointer gather; guard in test mode.
+        root_idx = jnp.where(root_arr != 0, root_arr, jnp.int32(0))
+        root_g = _jax_safe.safe_gather_1d(inv_perm, root_idx, "cycle.root_remap")
+        root_arr = jnp.where(root_arr != 0, root_g, 0)
+        if _TEST_GUARDS and pre_hash != _arena_root_hash_host(arena, root_arr):
+            raise RuntimeError("BSPˢ renormalization changed root structure")
+    tile_size = _damage_tile_size(block_size, l2_block_size, l1_block_size)
+    _damage_metrics_update(arena, tile_size)
+    arena = op_interact(arena)
+    return arena, root_arr
+
+
+__all__ = [
+    "op_interact",
+    "cycle",
+]
