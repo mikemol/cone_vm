@@ -1,0 +1,392 @@
+import jax
+import jax.numpy as jnp
+from jax import lax
+
+from prism_core import jax_safe as _jax_safe
+from prism_coord.coord import coord_xor_batch
+from prism_ledger.intern import intern_nodes
+from prism_metrics.metrics import _cnf2_metrics_enabled, _cnf2_metrics_update
+from prism_semantics.commit import _identity_q, apply_q, commit_stratum
+from prism_vm_core.candidates import _candidate_indices
+from prism_vm_core.domains import (
+    _committed_ids,
+    _host_bool_value,
+    _host_int_value,
+    _provisional_ids,
+)
+from prism_vm_core.gating import _cnf2_enabled, _cnf2_slot1_enabled
+from prism_vm_core.guards import _guards_enabled
+from prism_vm_core.hashes import _ledger_roots_hash_host
+from prism_vm_core.ontology import (
+    OP_ADD,
+    OP_COORD_ONE,
+    OP_COORD_PAIR,
+    OP_COORD_ZERO,
+    OP_MUL,
+    OP_SUC,
+    OP_ZERO,
+    ZERO_PTR,
+)
+from prism_vm_core.structures import CandidateBuffer, Stratum, NodeBatch
+
+
+_TEST_GUARDS = _jax_safe.TEST_GUARDS
+_scatter_drop = _jax_safe.scatter_drop
+
+
+def _node_batch(op, a1, a2) -> NodeBatch:
+    return NodeBatch(op=op, a1=a1, a2=a2)
+
+
+def emit_candidates(ledger, frontier_ids):
+    num_frontier = frontier_ids.shape[0]
+    size = num_frontier * 2
+    enabled = jnp.zeros(size, dtype=jnp.int32)
+    opcode = jnp.zeros(size, dtype=jnp.int32)
+    arg1 = jnp.zeros(size, dtype=jnp.int32)
+    arg2 = jnp.zeros(size, dtype=jnp.int32)
+
+    if num_frontier == 0:
+        return CandidateBuffer(enabled=enabled, opcode=opcode, arg1=arg1, arg2=arg2)
+
+    f_ops = ledger.opcode[frontier_ids]
+    f_a1 = ledger.arg1[frontier_ids]
+    f_a2 = ledger.arg2[frontier_ids]
+    op_a1 = ledger.opcode[f_a1]
+    op_a2 = ledger.opcode[f_a2]
+
+    is_add = f_ops == OP_ADD
+    is_mul = f_ops == OP_MUL
+    is_zero_a1 = op_a1 == OP_ZERO
+    is_zero_a2 = op_a2 == OP_ZERO
+    is_suc_a1 = op_a1 == OP_SUC
+    is_suc_a2 = op_a2 == OP_SUC
+
+    is_add_zero = is_add & (is_zero_a1 | is_zero_a2)
+    is_mul_zero = is_mul & (is_zero_a1 | is_zero_a2)
+    is_add_suc = is_add & (is_suc_a1 | is_suc_a2) & (~is_add_zero)
+    is_mul_suc = is_mul & (is_suc_a1 | is_suc_a2) & (~is_mul_zero)
+    enable0 = is_add_zero | is_mul_zero | is_add_suc | is_mul_suc
+    zero_on_a1 = is_zero_a1
+    zero_on_a2 = (~is_zero_a1) & is_zero_a2
+    zero_other = jnp.where(zero_on_a1, f_a2, f_a1)
+    y_id = jnp.where(is_add_zero, zero_other, jnp.int32(ZERO_PTR))
+
+    suc_on_a1 = is_suc_a1
+    suc_on_a2 = (~is_suc_a1) & is_suc_a2
+    suc_node = jnp.where(suc_on_a1, f_a1, f_a2)
+    other_node = jnp.where(suc_on_a1, f_a2, f_a1)
+    val_x = ledger.arg1[suc_node]
+    val_y = other_node
+
+    cand0_op = jnp.zeros_like(f_ops)
+    cand0_a1 = jnp.zeros_like(f_a1)
+    cand0_a2 = jnp.zeros_like(f_a2)
+
+    id_mask = is_add_zero | is_mul_zero
+    cand0_op = jnp.where(id_mask, ledger.opcode[y_id], cand0_op)
+    cand0_a1 = jnp.where(id_mask, ledger.arg1[y_id], cand0_a1)
+    cand0_a2 = jnp.where(id_mask, ledger.arg2[y_id], cand0_a2)
+
+    cand0_op = jnp.where(is_add_suc, jnp.int32(OP_ADD), cand0_op)
+    cand0_a1 = jnp.where(is_add_suc, val_x, cand0_a1)
+    cand0_a2 = jnp.where(is_add_suc, val_y, cand0_a2)
+
+    cand0_op = jnp.where(is_mul_suc, jnp.int32(OP_MUL), cand0_op)
+    cand0_a1 = jnp.where(is_mul_suc, val_x, cand0_a1)
+    cand0_a2 = jnp.where(is_mul_suc, val_y, cand0_a2)
+
+    cand0_op = jnp.where(enable0, cand0_op, jnp.int32(0))
+    cand0_a1 = jnp.where(enable0, cand0_a1, jnp.int32(0))
+    cand0_a2 = jnp.where(enable0, cand0_a2, jnp.int32(0))
+
+    idx0 = jnp.arange(num_frontier, dtype=jnp.int32) * 2
+    enabled = enabled.at[idx0].set(enable0.astype(jnp.int32))
+    opcode = opcode.at[idx0].set(cand0_op)
+    arg1 = arg1.at[idx0].set(cand0_a1)
+    arg2 = arg2.at[idx0].set(cand0_a2)
+
+    return CandidateBuffer(enabled=enabled, opcode=opcode, arg1=arg1, arg2=arg2)
+
+
+def compact_candidates(candidates):
+    enabled = candidates.enabled.astype(jnp.int32)
+    idx, valid, count = _candidate_indices(enabled)
+    safe_idx = jnp.where(valid, idx, 0)
+
+    compacted = CandidateBuffer(
+        enabled=valid.astype(jnp.int32),
+        opcode=candidates.opcode[safe_idx],
+        arg1=candidates.arg1[safe_idx],
+        arg2=candidates.arg2[safe_idx],
+    )
+    return compacted, count
+
+
+def compact_candidates_with_index(candidates):
+    enabled = candidates.enabled.astype(jnp.int32)
+    idx, valid, count = _candidate_indices(enabled)
+    safe_idx = jnp.where(valid, idx, 0)
+    compacted = CandidateBuffer(
+        enabled=valid.astype(jnp.int32),
+        opcode=candidates.opcode[safe_idx],
+        arg1=candidates.arg1[safe_idx],
+        arg2=candidates.arg2[safe_idx],
+    )
+    return compacted, count, idx
+
+
+def _scatter_compacted_ids(comp_idx, ids_compact, count, size):
+    valid = jnp.arange(size, dtype=jnp.int32) < count
+    scatter_idx = jnp.where(valid, comp_idx, jnp.int32(size))
+    scatter_ids = jnp.where(valid, ids_compact, jnp.int32(0))
+    ids_full = jnp.zeros(size, dtype=ids_compact.dtype)
+    return _scatter_drop(
+        ids_full, scatter_idx, scatter_ids, "scatter_compacted_ids"
+    )
+
+
+def intern_candidates(ledger, candidates):
+    compacted, count = compact_candidates(candidates)
+    enabled = compacted.enabled.astype(jnp.int32)
+    ops = jnp.where(enabled, compacted.opcode, jnp.int32(0))
+    a1 = jnp.where(enabled, compacted.arg1, jnp.int32(0))
+    a2 = jnp.where(enabled, compacted.arg2, jnp.int32(0))
+    ids, new_ledger = intern_nodes(ledger, _node_batch(ops, a1, a2))
+    return ids, new_ledger, count
+
+
+def cycle_candidates(
+    ledger,
+    frontier_ids,
+    validate_stratum: bool = False,
+    validate_mode: str = "strict",
+    intern_fn=intern_nodes,
+    cnf2_enabled_fn=_cnf2_enabled,
+    cnf2_slot1_enabled_fn=_cnf2_slot1_enabled,
+):
+    # BSPᵗ: temporal superstep / barrier semantics.
+    frontier_ids = _committed_ids(frontier_ids)
+    if not cnf2_enabled_fn():
+        # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
+        # See IMPLEMENTATION_PLAN.md (m2 CNF-2 pipeline).
+        raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
+    # SYNC: host read to short-circuit on corrupt ledgers (m1).
+    if _host_bool_value(ledger.corrupt):
+        empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
+        return (
+            ledger,
+            _provisional_ids(frontier_ids.a),
+            (empty, empty, empty),
+            _identity_q,
+        )
+    num_frontier = frontier_ids.a.shape[0]
+    if num_frontier == 0:
+        empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
+        return ledger, _provisional_ids(frontier_ids.a), (empty, empty, empty), _identity_q
+
+    def _peel_one(ptr):
+        def cond(state):
+            curr, _ = state
+            return ledger.opcode[curr] == OP_SUC
+
+        def body(state):
+            curr, depth = state
+            return ledger.arg1[curr], depth + 1
+
+        return lax.while_loop(cond, body, (ptr, jnp.int32(0)))
+
+    rewrite_ids, depths = jax.vmap(_peel_one)(frontier_ids.a)
+
+    r_ops = ledger.opcode[rewrite_ids]
+    r_a1 = ledger.arg1[rewrite_ids]
+    r_a2 = ledger.arg2[rewrite_ids]
+    op_a1 = ledger.opcode[r_a1]
+    op_a2 = ledger.opcode[r_a2]
+    is_coord_a1 = (
+        (op_a1 == OP_COORD_ZERO)
+        | (op_a1 == OP_COORD_ONE)
+        | (op_a1 == OP_COORD_PAIR)
+    )
+    is_coord_a2 = (
+        (op_a2 == OP_COORD_ZERO)
+        | (op_a2 == OP_COORD_ONE)
+        | (op_a2 == OP_COORD_PAIR)
+    )
+    is_coord_add = (r_ops == OP_ADD) & is_coord_a1 & is_coord_a2
+
+    # Coordinate aggregation (Aggregate𝚌) runs before stratum0 to preserve
+    # strict strata while canonicalizing coord-add payloads.
+    coord_ids = jnp.zeros_like(rewrite_ids)
+    coord_enabled = is_coord_add.astype(jnp.int32)
+    coord_idx, coord_valid, coord_count = _candidate_indices(coord_enabled)
+    coord_count_i = _host_int_value(coord_count)
+    if coord_count_i > 0:
+        coord_idx_safe = jnp.where(coord_valid, coord_idx, 0)
+        coord_left = r_a1[coord_idx_safe][:coord_count_i]
+        coord_right = r_a2[coord_idx_safe][:coord_count_i]
+        coord_ids_compact, ledger = coord_xor_batch(
+            ledger, coord_left, coord_right
+        )
+        coord_ids_full = jnp.zeros_like(coord_idx_safe)
+        coord_ids_full = coord_ids_full.at[:coord_count_i].set(coord_ids_compact)
+        coord_ids = _scatter_compacted_ids(
+            coord_idx, coord_ids_full, coord_count, num_frontier
+        )
+
+    start0 = ledger.count.astype(jnp.int32)
+    candidates = emit_candidates(ledger, rewrite_ids)
+    compacted0, count0, comp_idx0 = compact_candidates_with_index(candidates)
+    enabled0 = compacted0.enabled.astype(jnp.int32)
+    ops0 = jnp.where(enabled0, compacted0.opcode, jnp.int32(0))
+    a1_0 = jnp.where(enabled0, compacted0.arg1, jnp.int32(0))
+    a2_0 = jnp.where(enabled0, compacted0.arg2, jnp.int32(0))
+    ids_compact, ledger0 = intern_fn(ledger, _node_batch(ops0, a1_0, a2_0))
+    size0 = candidates.enabled.shape[0]
+    ids_full0 = _scatter_compacted_ids(comp_idx0, ids_compact, count0, size0)
+    # Candidate buffer layout invariant: slot0 at 2*i, slot1 at 2*i+1.
+    # cycle_candidates relies on this; see IMPLEMENTATION_PLAN.md.
+    idx0 = jnp.arange(num_frontier, dtype=jnp.int32) * 2
+    slot0_ids = ids_full0[idx0]
+    slot0_ids = jnp.where(is_coord_add, coord_ids, slot0_ids)
+    is_add = r_ops == OP_ADD
+    is_mul = r_ops == OP_MUL
+    is_suc_a1 = op_a1 == OP_SUC
+    is_suc_a2 = op_a2 == OP_SUC
+    is_add_suc = is_add & (is_suc_a1 | is_suc_a2)
+    is_mul_suc = is_mul & (is_suc_a1 | is_suc_a2)
+    is_zero_a1 = op_a1 == OP_ZERO
+    is_zero_a2 = op_a2 == OP_ZERO
+    is_add_zero = is_add & (is_zero_a1 | is_zero_a2)
+    is_mul_zero = is_mul & (is_zero_a1 | is_zero_a2)
+    is_add_suc = is_add_suc & (~is_add_zero)
+    is_mul_suc = is_mul_suc & (~is_mul_zero)
+    suc_on_a1 = is_suc_a1
+    suc_on_a2 = (~is_suc_a1) & is_suc_a2
+    suc_node = jnp.where(suc_on_a1, r_a1, r_a2)
+    val_x = ledger.arg1[suc_node]
+    val_y = jnp.where(suc_on_a1, r_a2, r_a1)
+
+    # Slot1 is the continuation slot in CNF-2; enabled starting in m2. Under
+    # test guards (m3 normative), hyperstrata visibility is enforced so slot1
+    # reads only from slot0 + pre-step.
+    # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
+    slot1_gate = cnf2_slot1_enabled_fn()
+    slot1_add = is_add_suc & slot1_gate
+    slot1_mul = is_mul_suc & slot1_gate
+    slot1_enabled = slot1_add | slot1_mul
+    slot1_ops = jnp.zeros_like(r_ops)
+    slot1_a1 = jnp.zeros_like(r_a1)
+    slot1_a2 = jnp.zeros_like(r_a2)
+    slot1_ops = jnp.where(slot1_add, jnp.int32(OP_SUC), slot1_ops)
+    slot1_a1 = jnp.where(slot1_add, slot0_ids, slot1_a1)
+    slot1_ops = jnp.where(slot1_mul, jnp.int32(OP_ADD), slot1_ops)
+    slot1_a1 = jnp.where(slot1_mul, val_y, slot1_a1)
+    slot1_a2 = jnp.where(slot1_mul, slot0_ids, slot1_a2)
+
+    slot1_ops = jnp.where(slot1_enabled, slot1_ops, jnp.int32(0))
+    slot1_a1 = jnp.where(slot1_enabled, slot1_a1, jnp.int32(0))
+    slot1_a2 = jnp.where(slot1_enabled, slot1_a2, jnp.int32(0))
+    if slot1_gate:
+        slot1_ids, ledger1 = intern_fn(
+            ledger0, _node_batch(slot1_ops, slot1_a1, slot1_a2)
+        )
+    else:
+        slot1_ids = jnp.zeros_like(rewrite_ids)
+        ledger1 = ledger0
+    zero_on_a1 = is_zero_a1
+    zero_on_a2 = (~is_zero_a1) & is_zero_a2
+    zero_other = jnp.where(zero_on_a1, r_a2, r_a1)
+    base_next = rewrite_ids
+    base_next = jnp.where(is_add_zero, zero_other, base_next)
+    base_next = jnp.where(is_mul_zero, jnp.int32(ZERO_PTR), base_next)
+    base_next = jnp.where(slot1_add, slot1_ids, base_next)
+    base_next = jnp.where(slot1_mul, slot1_ids, base_next)
+    base_next = jnp.where(is_coord_add, coord_ids, base_next)
+    changed_mask = base_next != rewrite_ids
+
+    wrap_strata = []
+    wrap_depths = depths
+    next_frontier = base_next
+    ledger2 = ledger1
+    while _host_bool_value(jnp.any((wrap_depths > 0) & (~ledger2.oom))):
+        to_wrap = (wrap_depths > 0) & (~ledger2.oom)
+        ops = jnp.where(to_wrap, jnp.int32(OP_SUC), jnp.int32(0))
+        a1 = jnp.where(to_wrap, next_frontier, jnp.int32(0))
+        a2 = jnp.zeros_like(a1)
+        start = _host_int_value(ledger2.count)
+        new_ids, ledger2 = intern_fn(ledger2, _node_batch(ops, a1, a2))
+        end = _host_int_value(ledger2.count)
+        if end > start:
+            wrap_strata.append((start, end - start))
+        next_frontier = jnp.where(to_wrap, new_ids, next_frontier)
+        wrap_depths = wrap_depths - to_wrap.astype(jnp.int32)
+
+    # Strata counts track appended id ranges (ledger.count deltas), not
+    # proposal counts; keep validators/q-map aligned (see IMPLEMENTATION_PLAN.md).
+    stratum0 = Stratum(
+        start=start0, count=(ledger0.count - start0).astype(jnp.int32)
+    )
+    start1 = ledger0.count.astype(jnp.int32)
+    stratum1 = Stratum(
+        start=start1, count=(ledger1.count - start1).astype(jnp.int32)
+    )
+    if wrap_strata:
+        start2_i = wrap_strata[0][0]
+        count2_i = sum(count for _, count in wrap_strata)
+    else:
+        start2_i = _host_int_value(ledger1.count)
+        count2_i = 0
+    stratum2 = Stratum(
+        start=jnp.int32(start2_i), count=jnp.int32(count2_i)
+    )
+    if _cnf2_metrics_enabled():
+        rewrite_child = _host_int_value(count0)
+        changed_count = _host_int_value(jnp.sum(changed_mask.astype(jnp.int32)))
+        _cnf2_metrics_update(rewrite_child, changed_count, int(count2_i))
+    validate = validate_stratum or _guards_enabled()
+    ledger2, _, q_map = commit_stratum(
+        ledger2,
+        stratum0,
+        validate=validate,
+        validate_mode=validate_mode,
+        intern_fn=intern_fn,
+    )
+    ledger2, _, q_map = commit_stratum(
+        ledger2,
+        stratum1,
+        prior_q=q_map,
+        validate=validate,
+        validate_mode=validate_mode,
+        intern_fn=intern_fn,
+    )
+    # Wrapper strata are micro-strata in s=2; commit in order for hyperstrata visibility.
+    for start_i, count_i in wrap_strata:
+        micro_stratum = Stratum(
+            start=jnp.int32(start_i), count=jnp.int32(count_i)
+        )
+        ledger2, _, q_map = commit_stratum(
+            ledger2,
+            micro_stratum,
+            prior_q=q_map,
+            validate=validate,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+        )
+    next_frontier = _provisional_ids(next_frontier)
+    if _TEST_GUARDS:
+        pre_hash = _ledger_roots_hash_host(ledger2, next_frontier.a)
+        post_ids = apply_q(q_map, next_frontier).a
+        post_hash = _ledger_roots_hash_host(ledger2, post_ids)
+        if pre_hash != post_hash:
+            raise RuntimeError("BSPᵗ projection changed root structure")
+    return ledger2, next_frontier, (stratum0, stratum1, stratum2), q_map
+
+
+__all__ = [
+    "emit_candidates",
+    "compact_candidates",
+    "compact_candidates_with_index",
+    "intern_candidates",
+    "cycle_candidates",
+]
