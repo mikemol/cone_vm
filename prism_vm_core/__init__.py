@@ -1,5 +1,14 @@
 """Prism VM core data structures."""
 
+from prism_vm_core.constants import (
+    LEDGER_CAPACITY,
+    MAX_COORD_STEPS,
+    MAX_COUNT,
+    MAX_ID,
+    MAX_KEY_NODES,
+    MAX_ROWS,
+    _PREFIX_SCAN_CHUNK,
+)
 from prism_vm_core.ontology import (
     OP_ADD,
     OP_COORD_ONE,
@@ -34,6 +43,13 @@ from prism_vm_core.structures import (
 
 __all__ = [
     "OP_ADD",
+    "LEDGER_CAPACITY",
+    "MAX_COORD_STEPS",
+    "MAX_COUNT",
+    "MAX_ID",
+    "MAX_KEY_NODES",
+    "MAX_ROWS",
+    "_PREFIX_SCAN_CHUNK",
     "OP_COORD_ONE",
     "OP_COORD_PAIR",
     "OP_COORD_ZERO",
