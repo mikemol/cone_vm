@@ -27,6 +27,11 @@ from prism_vm_core.constants import (
     MAX_ROWS,
     _PREFIX_SCAN_CHUNK,
 )
+from prism_vm_core.graphs import (
+    init_arena as _init_arena,
+    init_ledger as _init_ledger,
+    init_manifest as _init_manifest,
+)
 from prism_vm_core.ontology import (
     OP_ADD,
     OP_COORD_ONE,
@@ -759,75 +764,13 @@ def _checked_pack_key(op, a1, a2, count):
     return bad, _pack_key(op_safe, a1_safe, a2_safe)
 
 def init_manifest():
-    return Manifest(
-        opcode=jnp.zeros(MAX_ROWS, dtype=jnp.int32),
-        arg1=jnp.zeros(MAX_ROWS, dtype=jnp.int32),
-        arg2=jnp.zeros(MAX_ROWS, dtype=jnp.int32),
-        active_count=jnp.array(1, dtype=jnp.int32),
-        oom=jnp.array(False, dtype=jnp.bool_),
-    )
+    return _init_manifest()
 
 def init_arena():
-    arena = Arena(
-        opcode=jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32),
-        arg1=jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32),
-        arg2=jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32),
-        rank=jnp.full(LEDGER_CAPACITY, RANK_FREE, dtype=jnp.int8),
-        count=jnp.array(1, dtype=jnp.int32),
-        oom=jnp.array(False, dtype=jnp.bool_),
-        servo=jnp.zeros(3, dtype=jnp.uint32),
-    )
-    arena = arena._replace(
-        opcode=arena.opcode.at[1].set(OP_ZERO),
-        arg1=arena.arg1.at[1].set(0),
-        arg2=arena.arg2.at[1].set(0),
-        count=jnp.array(2, dtype=jnp.int32),
-    )
-    return arena
+    return _init_arena(LEDGER_CAPACITY, RANK_FREE, OP_ZERO)
 
 def init_ledger():
-    max_key = jnp.uint8(0xFF)
-
-    opcode = jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32)
-    arg1 = jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32)
-    arg2 = jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32)
-
-    opcode = opcode.at[1].set(OP_ZERO)
-
-    keys_b0_sorted = jnp.full(LEDGER_CAPACITY, max_key, dtype=jnp.uint8)
-    keys_b1_sorted = jnp.full(LEDGER_CAPACITY, max_key, dtype=jnp.uint8)
-    keys_b2_sorted = jnp.full(LEDGER_CAPACITY, max_key, dtype=jnp.uint8)
-    keys_b3_sorted = jnp.full(LEDGER_CAPACITY, max_key, dtype=jnp.uint8)
-    keys_b4_sorted = jnp.full(LEDGER_CAPACITY, max_key, dtype=jnp.uint8)
-    ids_sorted = jnp.zeros(LEDGER_CAPACITY, dtype=jnp.int32)
-
-    k0_b0, k0_b1, k0_b2, k0_b3, k0_b4 = _pack_key(
-        jnp.uint8(OP_NULL), jnp.uint16(0), jnp.uint16(0)
-    )
-    k1_b0, k1_b1, k1_b2, k1_b3, k1_b4 = _pack_key(
-        jnp.uint8(OP_ZERO), jnp.uint16(0), jnp.uint16(0)
-    )
-    keys_b0_sorted = keys_b0_sorted.at[0].set(k0_b0).at[1].set(k1_b0)
-    keys_b1_sorted = keys_b1_sorted.at[0].set(k0_b1).at[1].set(k1_b1)
-    keys_b2_sorted = keys_b2_sorted.at[0].set(k0_b2).at[1].set(k1_b2)
-    keys_b3_sorted = keys_b3_sorted.at[0].set(k0_b3).at[1].set(k1_b3)
-    keys_b4_sorted = keys_b4_sorted.at[0].set(k0_b4).at[1].set(k1_b4)
-    ids_sorted = ids_sorted.at[0].set(0).at[1].set(1)
-
-    return Ledger(
-        opcode=opcode,
-        arg1=arg1,
-        arg2=arg2,
-        keys_b0_sorted=keys_b0_sorted,
-        keys_b1_sorted=keys_b1_sorted,
-        keys_b2_sorted=keys_b2_sorted,
-        keys_b3_sorted=keys_b3_sorted,
-        keys_b4_sorted=keys_b4_sorted,
-        ids_sorted=ids_sorted,
-        count=jnp.array(2, dtype=jnp.int32),
-        oom=jnp.array(False, dtype=jnp.bool_),
-        corrupt=jnp.array(False, dtype=jnp.bool_),
-    )
+    return _init_ledger(_pack_key, LEDGER_CAPACITY, OP_NULL, OP_ZERO)
 
 
 def ledger_has_corrupt(ledger) -> HostBool:
