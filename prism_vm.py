@@ -68,6 +68,17 @@ from prism_vm_core.domains import (
     _require_ledger_id,
     _require_manifest_ptr,
 )
+from prism_vm_core.gating import (
+    _cnf2_enabled,
+    _cnf2_slot1_enabled,
+    _default_bsp_mode,
+    _gpu_metrics_device_index,
+    _gpu_metrics_enabled,
+    _normalize_bsp_mode,
+    _parse_milestone_value,
+    _read_pytest_milestone,
+    _servo_enabled,
+)
 import numpy as np
 
 # NOTE: JAX op dtype normalization (int32) is assumed; tighten if drift appears
@@ -119,75 +130,6 @@ def _bincount_32(x, weights):
         return jnp.bincount(x, weights=weights, minlength=32, length=32)
     out = jnp.zeros(32, dtype=weights.dtype)
     return out.at[x].add(weights)
-
-
-def _parse_milestone_value(value):
-    if not value:
-        return None
-    value = value.strip().lower()
-    if value.startswith("m"):
-        value = value[1:]
-    if value.isdigit():
-        return int(value)
-    return None
-
-
-def _read_pytest_milestone():
-    if not _TEST_GUARDS:
-        return None
-    path = os.path.join(os.path.dirname(__file__), ".pytest-milestone")
-    try:
-        with open(path) as handle:
-            for line in handle:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if "=" in line:
-                    key, value = line.split("=", 1)
-                    if key.strip() == "PRISM_MILESTONE":
-                        return _parse_milestone_value(value)
-                else:
-                    return _parse_milestone_value(line)
-    except FileNotFoundError:
-        return None
-    return None
-
-
-def _cnf2_enabled():
-    # CNF-2 pipeline is staged for m2+; guard uses env/milestone in tests.
-    # See IMPLEMENTATION_PLAN.md (m2 CNF-2 enablement).
-    value = os.environ.get("PRISM_ENABLE_CNF2", "").strip().lower()
-    if value in ("1", "true", "yes", "on"):
-        return True
-    milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
-    if milestone is None:
-        milestone = _read_pytest_milestone()
-    return milestone is not None and milestone >= 2
-
-
-def _cnf2_slot1_enabled():
-    # Slot1 continuation is staged for m2+; hyperstrata visibility is enforced
-    # under test guards (m3 normative) to justify continuation enablement.
-    # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
-    value = os.environ.get("PRISM_ENABLE_CNF2_SLOT1", "").strip().lower()
-    if value in ("1", "true", "yes", "on"):
-        return True
-    milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
-    if milestone is None:
-        milestone = _read_pytest_milestone()
-    return milestone is not None and milestone >= 2
-
-
-def _default_bsp_mode():
-    # CNF-2 becomes the default at m2; intrinsic remains the oracle path.
-    # See IMPLEMENTATION_PLAN.md (m1/m2 engine staging).
-    return "cnf2" if _cnf2_enabled() else "intrinsic"
-
-
-def _normalize_bsp_mode(bsp_mode):
-    if bsp_mode in (None, "", "auto"):
-        return _default_bsp_mode()
-    return bsp_mode
 
 
 def _guards_enabled():
@@ -513,16 +455,6 @@ def _blind_spectral_probe(arena):
     return lax.stop_gradient(spectrum)
 
 
-def _servo_enabled():
-    value = os.environ.get("PRISM_ENABLE_SERVO", "").strip().lower()
-    if value in ("1", "true", "yes", "on"):
-        return True
-    milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
-    if milestone is None:
-        milestone = _read_pytest_milestone()
-    return milestone is not None and milestone >= 5
-
-
 _SERVO_MASK_DEFAULT = jnp.uint32(0xFFFFFFFF)
 
 
@@ -566,20 +498,6 @@ def _servo_update(arena):
     mask_next = _servo_mask_from_k(k_next)
     new_servo = arena.servo.at[0].set(mask_next)
     return arena._replace(servo=new_servo)
-
-
-def _gpu_metrics_enabled():
-    value = os.environ.get("PRISM_GPU_METRICS", "").strip().lower()
-    return value in ("1", "true", "yes", "on")
-
-
-def _gpu_metrics_device_index():
-    value = os.environ.get("PRISM_GPU_INDEX", "").strip()
-    if not value:
-        return 0
-    if not value.isdigit():
-        raise ValueError("PRISM_GPU_INDEX must be an integer")
-    return int(value)
 
 
 class GPUWatchdog:
