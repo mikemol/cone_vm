@@ -90,6 +90,26 @@ from prism_vm_core.guards import (
     _guards_enabled,
     _pop_token,
 )
+from prism_metrics.gpu import GPUWatchdog, _gpu_watchdog_create
+from prism_metrics.metrics import (
+    _cnf2_metrics_enabled,
+    _cnf2_metrics_update,
+    _damage_metrics_enabled,
+    _damage_metrics_update,
+    _damage_tile_size,
+    cnf2_metrics_get,
+    cnf2_metrics_reset,
+    damage_metrics_get,
+    damage_metrics_reset,
+)
+from prism_metrics.probes import (
+    _coord_norm_probe_assert,
+    _coord_norm_probe_enabled,
+    _coord_norm_probe_reset_cb,
+    _coord_norm_probe_tick,
+    coord_norm_probe_get,
+    coord_norm_probe_reset,
+)
 import numpy as np
 
 # NOTE: JAX op dtype normalization (int32) is assumed; tighten if drift appears
@@ -141,190 +161,6 @@ def _bincount_32(x, weights):
         return jnp.bincount(x, weights=weights, minlength=32, length=32)
     out = jnp.zeros(32, dtype=weights.dtype)
     return out.at[x].add(weights)
-
-
-_coord_norm_probe_count = 0
-
-
-def coord_norm_probe_reset():
-    # Debug-only probe used by m4 tests to detect coord normalization scope.
-    # See IMPLEMENTATION_PLAN.md (m4 coord probes).
-    global _coord_norm_probe_count
-    _coord_norm_probe_count = 0
-
-
-def coord_norm_probe_get():
-    return int(_coord_norm_probe_count)
-
-
-def _coord_norm_probe_enabled():
-    value = os.environ.get("PRISM_COORD_NORM_PROBE", "").strip().lower()
-    return value in ("1", "true", "yes", "on")
-
-
-def _coord_norm_probe_tick(n):
-    # Only increments when PRISM_COORD_NORM_PROBE is enabled.
-    if not _coord_norm_probe_enabled():
-        return
-    global _coord_norm_probe_count
-    _coord_norm_probe_count += int(n)
-
-
-def _coord_norm_probe_reset_cb(_):
-    coord_norm_probe_reset()
-
-
-def _coord_norm_probe_assert(has_coord):
-    if not _coord_norm_probe_enabled():
-        return
-    expect = bool(has_coord)
-    count = coord_norm_probe_get()
-    if expect and count <= 0:
-        raise RuntimeError("coord_norm probe missing for coord pair batch")
-    if not expect and count != 0:
-        raise RuntimeError("coord_norm probe fired for non-coord batch")
-
-
-_damage_metrics_cycles = 0
-_damage_metrics_hot_nodes = 0
-_damage_metrics_edge_total = 0
-_damage_metrics_edge_cross = 0
-_cnf2_metrics_cycles = 0
-_cnf2_metrics_rewrite_child = 0
-_cnf2_metrics_changed = 0
-_cnf2_metrics_wrap_emit = 0
-
-
-def _damage_metrics_enabled():
-    value = os.environ.get("PRISM_DAMAGE_METRICS", "").strip().lower()
-    return value in ("1", "true", "yes", "on")
-
-
-def _cnf2_metrics_enabled():
-    value = os.environ.get("PRISM_CNF2_METRICS", "").strip().lower()
-    return value in ("1", "true", "yes", "on")
-
-
-def _damage_tile_size(block_size, l2_block_size, l1_block_size):
-    value = os.environ.get("PRISM_DAMAGE_TILE_SIZE", "").strip()
-    if value:
-        if not value.isdigit():
-            raise ValueError("PRISM_DAMAGE_TILE_SIZE must be an integer")
-        return int(value)
-    for candidate in (block_size, l1_block_size, l2_block_size):
-        if candidate is not None:
-            return int(candidate)
-    return 0
-
-
-def damage_metrics_reset():
-    global _damage_metrics_cycles
-    global _damage_metrics_hot_nodes
-    global _damage_metrics_edge_total
-    global _damage_metrics_edge_cross
-    _damage_metrics_cycles = 0
-    _damage_metrics_hot_nodes = 0
-    _damage_metrics_edge_total = 0
-    _damage_metrics_edge_cross = 0
-
-
-def cnf2_metrics_reset():
-    global _cnf2_metrics_cycles
-    global _cnf2_metrics_rewrite_child
-    global _cnf2_metrics_changed
-    global _cnf2_metrics_wrap_emit
-    _cnf2_metrics_cycles = 0
-    _cnf2_metrics_rewrite_child = 0
-    _cnf2_metrics_changed = 0
-    _cnf2_metrics_wrap_emit = 0
-
-
-def damage_metrics_get():
-    if not _damage_metrics_enabled():
-        return {
-            "cycles": 0,
-            "hot_nodes": 0,
-            "edge_total": 0,
-            "edge_cross": 0,
-            "damage_rate": 0.0,
-        }
-    edge_total = int(_damage_metrics_edge_total)
-    edge_cross = int(_damage_metrics_edge_cross)
-    damage_rate = (edge_cross / edge_total) if edge_total else 0.0
-    return {
-        "cycles": int(_damage_metrics_cycles),
-        "hot_nodes": int(_damage_metrics_hot_nodes),
-        "edge_total": edge_total,
-        "edge_cross": edge_cross,
-        "damage_rate": float(damage_rate),
-    }
-
-
-def cnf2_metrics_get():
-    if not _cnf2_metrics_enabled():
-        return {
-            "cycles": 0,
-            "rewrite_child": 0,
-            "changed": 0,
-            "wrap_emit": 0,
-        }
-    return {
-        "cycles": int(_cnf2_metrics_cycles),
-        "rewrite_child": int(_cnf2_metrics_rewrite_child),
-        "changed": int(_cnf2_metrics_changed),
-        "wrap_emit": int(_cnf2_metrics_wrap_emit),
-    }
-
-
-def _cnf2_metrics_update(rewrite_child, changed, wrap_emit):
-    global _cnf2_metrics_cycles
-    global _cnf2_metrics_rewrite_child
-    global _cnf2_metrics_changed
-    global _cnf2_metrics_wrap_emit
-    if not _cnf2_metrics_enabled():
-        return
-    _cnf2_metrics_cycles += 1
-    _cnf2_metrics_rewrite_child += int(rewrite_child)
-    _cnf2_metrics_changed += int(changed)
-    _cnf2_metrics_wrap_emit += int(wrap_emit)
-
-
-def _damage_metrics_update(arena, tile_size):
-    global _damage_metrics_cycles
-    global _damage_metrics_hot_nodes
-    global _damage_metrics_edge_total
-    global _damage_metrics_edge_cross
-    if not _damage_metrics_enabled() or tile_size <= 0:
-        return
-    count = _host_int_value(arena.count)
-    if count <= 0:
-        return
-    ranks = np.asarray(jax.device_get(arena.rank[:count]))
-    arg1 = np.asarray(jax.device_get(arena.arg1[:count]))
-    arg2 = np.asarray(jax.device_get(arena.arg2[:count]))
-    idx = np.arange(count, dtype=np.int32)
-    tile = idx // int(tile_size)
-    hot_mask = ranks == RANK_HOT
-    hot_nodes = int(hot_mask.sum())
-    if hot_nodes <= 0:
-        _damage_metrics_cycles += 1
-        return
-    hot_idx = idx[hot_mask]
-    tile_hot = tile[hot_mask]
-    a1_hot = arg1[hot_mask]
-    a2_hot = arg2[hot_mask]
-    valid1 = (a1_hot > 0) & (a1_hot < count)
-    valid2 = (a2_hot > 0) & (a2_hot < count)
-    a1_safe = np.where(valid1, a1_hot, 0)
-    a2_safe = np.where(valid2, a2_hot, 0)
-    cross1 = valid1 & (tile_hot != tile[a1_safe])
-    cross2 = valid2 & (tile_hot != tile[a2_safe])
-    edge_total = int(valid1.sum() + valid2.sum())
-    edge_cross = int(cross1.sum() + cross2.sum())
-    _damage_metrics_cycles += 1
-    _damage_metrics_hot_nodes += hot_nodes
-    _damage_metrics_edge_total += edge_total
-    _damage_metrics_edge_cross += edge_cross
 
 
 @jit
@@ -396,73 +232,6 @@ def _servo_update(arena):
     new_servo = arena.servo.at[0].set(mask_next)
     return arena._replace(servo=new_servo)
 
-
-class GPUWatchdog:
-    def __init__(self, device_index=0):
-        self.enabled = False
-        self.handle = None
-        self._nvml = None
-        try:
-            import importlib
-
-            nvml = importlib.import_module("pynvml")
-            nvml.nvmlInit()
-            self.handle = nvml.nvmlDeviceGetHandleByIndex(device_index)
-            self._nvml = nvml
-            self.enabled = True
-        except Exception:
-            self.enabled = False
-            self._nvml = None
-            self.handle = None
-
-    def poll(self):
-        if not self.enabled or self._nvml is None:
-            return None
-        try:
-            util = self._nvml.nvmlDeviceGetUtilizationRates(self.handle)
-            mem = self._nvml.nvmlDeviceGetMemoryInfo(self.handle)
-            try:
-                power_mw = self._nvml.nvmlDeviceGetPowerUsage(self.handle)
-            except Exception:
-                power_mw = None
-            try:
-                clock = self._nvml.nvmlDeviceGetClockInfo(
-                    self.handle, self._nvml.NVML_CLOCK_SM
-                )
-            except Exception:
-                clock = None
-        except Exception:
-            return None
-
-        return {
-            "gpu_util": int(getattr(util, "gpu", 0)),
-            "mem_io": int(getattr(util, "memory", 0)),
-            "vram_used_mb": int(getattr(mem, "used", 0) // (1024**2)),
-            "vram_total_mb": int(getattr(mem, "total", 0) // (1024**2)),
-            "power_w": (
-                float(power_mw) / 1000.0 if power_mw is not None else None
-            ),
-            "sm_clock": int(clock) if clock is not None else None,
-        }
-
-    def close(self):
-        if self.enabled and self._nvml is not None:
-            try:
-                self._nvml.nvmlShutdown()
-            except Exception:
-                pass
-        self.enabled = False
-        self._nvml = None
-        self.handle = None
-
-
-def _gpu_watchdog_create():
-    if not _gpu_metrics_enabled():
-        return None
-    watchdog = GPUWatchdog(_gpu_metrics_device_index())
-    if not watchdog.enabled:
-        return None
-    return watchdog
 
 # --- Rank (2-bit Scheduler) ---
 RANK_HOT = 0
