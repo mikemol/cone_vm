@@ -18,6 +18,15 @@ from prism_vm_core.structures import (
     hyperstrata_precedes,
     staging_context_forgets_detail,
 )
+from prism_vm_core.constants import (
+    LEDGER_CAPACITY,
+    MAX_COORD_STEPS,
+    MAX_COUNT,
+    MAX_ID,
+    MAX_KEY_NODES,
+    MAX_ROWS,
+    _PREFIX_SCAN_CHUNK,
+)
 from prism_vm_core.ontology import (
     OP_ADD,
     OP_COORD_ONE,
@@ -128,21 +137,6 @@ def _committed_ids(value) -> CommittedIds:
 
 # NOTE: JAX op dtype normalization (int32) is assumed; tighten if drift appears
 # (see IMPLEMENTATION_PLAN.md).
-
-MAX_ROWS = 1024 * 32
-MAX_KEY_NODES = 1 << 16
-LEDGER_CAPACITY = MAX_KEY_NODES - 1
-MAX_ID = LEDGER_CAPACITY - 1
-MAX_COUNT = MAX_ID + 1  # Next-free upper bound; equals LEDGER_CAPACITY.
-# Hard-cap is semantic (univalence), not just capacity; see IMPLEMENTATION_PLAN.md.
-if LEDGER_CAPACITY >= MAX_KEY_NODES:
-    raise ValueError("LEDGER_CAPACITY exceeds 16-bit key packing")
-MAX_COORD_STEPS = 8
-_PREFIX_SCAN_CHUNK = int(os.environ.get("PRISM_PREFIX_SCAN_CHUNK", "4096") or 4096)
-if _PREFIX_SCAN_CHUNK <= 0:
-    _PREFIX_SCAN_CHUNK = LEDGER_CAPACITY
-if _PREFIX_SCAN_CHUNK > LEDGER_CAPACITY:
-    _PREFIX_SCAN_CHUNK = LEDGER_CAPACITY
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
 # Test-time guards favor correctness over performance (m1 gate).
 # See IMPLEMENTATION_PLAN.md (m1 acceptance gate).
