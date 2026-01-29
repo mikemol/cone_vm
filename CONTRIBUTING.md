@@ -37,6 +37,14 @@ execution. Without GPU access, CUDA backend init can fail. Do not mask these
 failures; rerun with GPU access enabled, or explicitly select a CPU-only path
 when that is the intent of the test run.
 
+## Test runner helper (durable logs)
+Use the helper to run pytest with durable logs in `artifacts/test_runs/`:
+```
+scripts/run_tests.sh [pytest args...]
+```
+If running under Codex or another sandboxed runner, increase the sandbox
+command timeout before invoking the helper.
+
 ## Agda proofs
 Agda checks run in a pinned container image. See `agda/README.md` for details.
 Local run:
