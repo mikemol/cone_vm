@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from jax import jit, lax
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.di import wrap_policy
 from prism_core.safety import SafetyPolicy
 from prism_vm_core.domains import _host_int, _host_int_value
 from prism_vm_core.guards import (
@@ -143,17 +144,6 @@ def _invert_perm(perm):
     inv = jnp.empty_like(perm)
     return inv.at[perm].set(jnp.arange(perm.shape[0], dtype=perm.dtype))
 
-def _resolve_safe_gather(safe_gather_fn, safe_gather_policy: SafetyPolicy | None):
-    if safe_gather_policy is None:
-        return safe_gather_fn
-    policy = safe_gather_policy
-
-    def _safe_gather(arr, idx, label):
-        return safe_gather_fn(arr, idx, label, policy=policy)
-
-    return _safe_gather
-
-
 def _apply_perm_and_swizzle(
     arena,
     perm,
@@ -162,7 +152,7 @@ def _apply_perm_and_swizzle(
     safe_gather_policy: SafetyPolicy | None = None,
 ):
     # BSP_s renorm: layout-only; must commute with q/denote.
-    safe_gather_fn = _resolve_safe_gather(safe_gather_fn, safe_gather_policy)
+    safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
     inv_perm = _invert_perm(perm)
     new_ops = arena.opcode[perm]
     new_arg1 = arena.arg1[perm]

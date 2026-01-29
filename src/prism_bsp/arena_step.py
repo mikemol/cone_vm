@@ -3,6 +3,7 @@ import jax.numpy as jnp
 from jax import jit, lax
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.di import wrap_policy
 from prism_metrics.metrics import _damage_metrics_update, _damage_tile_size
 from prism_vm_core.domains import _host_int_value
 from prism_vm_core.gating import _servo_enabled
@@ -145,13 +146,7 @@ def op_interact_cfg(
 ):
     """Interface/Control wrapper for op_interact with DI bundle."""
     safe_gather_fn = cfg.safe_gather_fn or _jax_safe.safe_gather_1d
-    if cfg.safe_gather_policy is not None:
-        policy = cfg.safe_gather_policy
-
-        def _safe_gather(arr, idx, label):
-            return safe_gather_fn(arr, idx, label, policy=policy)
-
-        safe_gather_fn = _safe_gather
+    safe_gather_fn = wrap_policy(safe_gather_fn, cfg.safe_gather_policy)
     scatter_drop_fn = cfg.scatter_drop_fn or _jax_safe.scatter_drop
     guard_max_fn = cfg.guard_max_fn or _guard_max
     return op_interact(
@@ -336,13 +331,7 @@ def cycle_cfg(
         or op_sort_and_swizzle_servo_with_perm
     )
     safe_gather_fn = cfg.safe_gather_fn or _jax_safe.safe_gather_1d
-    if cfg.safe_gather_policy is not None:
-        policy = cfg.safe_gather_policy
-
-        def _safe_gather(arr, idx, label):
-            return safe_gather_fn(arr, idx, label, policy=policy)
-
-        safe_gather_fn = _safe_gather
+    safe_gather_fn = wrap_policy(safe_gather_fn, cfg.safe_gather_policy)
     arena_root_hash_fn = cfg.arena_root_hash_fn or _arena_root_hash_host
     damage_tile_size_fn = cfg.damage_tile_size_fn or _damage_tile_size
     damage_metrics_update_fn = cfg.damage_metrics_update_fn or _damage_metrics_update
@@ -350,15 +339,7 @@ def cycle_cfg(
     if op_interact_fn is None and cfg.interact_cfg is not None:
         op_interact_fn = lambda a: op_interact_cfg(a, cfg=cfg.interact_cfg)
     if op_interact_fn is None:
-        if cfg.safe_gather_policy is not None:
-            policy = cfg.safe_gather_policy
-
-            def _safe_gather(arr, idx, label):
-                return safe_gather_fn(arr, idx, label, policy=policy)
-
-            op_interact_fn = lambda a: op_interact(a, safe_gather_fn=_safe_gather)
-        else:
-            op_interact_fn = op_interact
+        op_interact_fn = lambda a: op_interact(a, safe_gather_fn=safe_gather_fn)
     return cycle_core(
         arena,
         root_ptr,
