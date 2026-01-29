@@ -5,7 +5,7 @@ from typing import NamedTuple, Tuple
 
 from prism_core import alloc as _alloc
 from prism_core.jax_safe import safe_index_1d
-from prism_core.compact import CompactResult, compact_mask
+from prism_core.compact import CompactConfig, CompactResult, compact_mask_cfg
 from prism_core.safety import DEFAULT_SAFETY_POLICY, SafetyPolicy, oob_mask
 from ic_core.domains import _node_id, _port_id
 
@@ -385,12 +385,13 @@ def ic_wire_star_jax(
     )
 
 
-@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
+@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn", "compact_cfg"))
 def ic_find_active_pairs(
     state: ICState,
     *,
     safety_policy: SafetyPolicy | None = None,
     safe_index_fn=safe_index_1d,
+    compact_cfg: CompactConfig | None = None,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Return indices of nodes in active principal-principal pairs."""
     if safety_policy is None:
@@ -413,26 +414,36 @@ def ic_find_active_pairs(
     back_node, back_port = decode_port(back)
     mutual = (back_node == idx) & (back_port == PORT_PRINCIPAL)
     active = is_connected & is_principal & ok & mutual & (idx < tgt_node)
-    pairs = _compact_mask(active).idx
+    pairs = _compact_mask(active, compact_cfg=compact_cfg).idx
     return pairs, active
 
 
-def _compact_mask(mask: jnp.ndarray) -> CompactResult:
-    return compact_mask(mask, index_dtype=jnp.uint32, count_dtype=jnp.uint32)
+def _compact_mask(
+    mask: jnp.ndarray, *, compact_cfg: CompactConfig | None = None
+) -> CompactResult:
+    if compact_cfg is None:
+        compact_cfg = CompactConfig(
+            index_dtype=jnp.uint32, count_dtype=jnp.uint32
+        )
+    return compact_mask_cfg(mask, cfg=compact_cfg)
 
 
-@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
+@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn", "compact_cfg"))
 def ic_compact_active_pairs(
     state: ICState,
     *,
     safety_policy: SafetyPolicy | None = None,
     safe_index_fn=safe_index_1d,
+    compact_cfg: CompactConfig | None = None,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Return compacted active pair indices and a count."""
     _, active = ic_find_active_pairs(
-        state, safety_policy=safety_policy, safe_index_fn=safe_index_fn
+        state,
+        safety_policy=safety_policy,
+        safe_index_fn=safe_index_fn,
+        compact_cfg=compact_cfg,
     )
-    idx, valid, count = _compact_mask(active)
+    idx, valid, count = _compact_mask(active, compact_cfg=compact_cfg)
     compacted = jnp.where(valid, idx, jnp.uint32(0))
     return compacted, count, active
 

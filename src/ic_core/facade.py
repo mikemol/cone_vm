@@ -165,16 +165,28 @@ def graph_config_with_index_fn(
     return replace(cfg, safe_index_fn=safe_index_fn)
 
 
+def graph_config_with_compact_cfg(
+    compact_cfg,
+    *,
+    cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+) -> ICGraphConfig:
+    """Return a graph config with compact_cfg set."""
+    return replace(cfg, compact_cfg=compact_cfg)
+
+
 def graph_config_with_guard(
     *,
     safety_policy: SafetyPolicy | None = None,
     guard_cfg: ICGuardConfig = DEFAULT_IC_GUARD_CONFIG,
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+    compact_cfg=None,
 ) -> ICGraphConfig:
     """Return a graph config using safe_index_1d_cfg with guard config."""
     cfg = replace(cfg, safe_index_fn=make_safe_index_fn(cfg=guard_cfg))
     if safety_policy is not None:
         cfg = replace(cfg, safety_policy=safety_policy)
+    if compact_cfg is not None:
+        cfg = replace(cfg, compact_cfg=compact_cfg)
     return cfg
 
 
@@ -340,6 +352,7 @@ def ic_find_active_pairs_cfg(
         state,
         safety_policy=cfg.safety_policy,
         safe_index_fn=safe_index_fn,
+        compact_cfg=cfg.compact_cfg,
     )
 
 
@@ -352,6 +365,7 @@ def ic_compact_active_pairs_cfg(
         state,
         safety_policy=cfg.safety_policy,
         safe_index_fn=safe_index_fn,
+        compact_cfg=cfg.compact_cfg,
     )
 
 
@@ -451,6 +465,7 @@ __all__ = [
     "DEFAULT_GRAPH_CONFIG",
     "graph_config_with_policy",
     "graph_config_with_index_fn",
+    "graph_config_with_compact_cfg",
     "graph_config_with_guard",
     "rule_config_with_alloc",
     "ICGuardConfig",
