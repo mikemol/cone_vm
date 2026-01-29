@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from prism_core.safety import SafetyPolicy
+from prism_core.jax_safe import safe_index_1d
 
 from ic_core.config import ICEngineConfig, ICGraphConfig, ICRuleConfig
 from ic_core.domains import (
@@ -132,6 +133,15 @@ def graph_config_with_policy(
     return replace(cfg, safety_policy=safety_policy)
 
 
+def graph_config_with_index_fn(
+    safe_index_fn,
+    *,
+    cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+) -> ICGraphConfig:
+    """Return a graph config with safe_index_fn set."""
+    return replace(cfg, safe_index_fn=safe_index_fn)
+
+
 def ic_wire_jax_cfg(
     state: ICState,
     node_a: jnp.ndarray,
@@ -149,6 +159,7 @@ def ic_wire_jax_cfg(
         node_b,
         port_b,
         safety_policy=cfg.safety_policy,
+        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
     )
 
 
@@ -169,6 +180,7 @@ def ic_wire_jax_safe_cfg(
         node_b,
         port_b,
         safety_policy=cfg.safety_policy,
+        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
     )
 
 
@@ -180,7 +192,13 @@ def ic_wire_ptrs_jax_cfg(
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
     """Interface/Control wrapper for ic_wire_ptrs_jax with safety policy."""
-    return ic_wire_ptrs_jax(state, ptr_a, ptr_b, safety_policy=cfg.safety_policy)
+    return ic_wire_ptrs_jax(
+        state,
+        ptr_a,
+        ptr_b,
+        safety_policy=cfg.safety_policy,
+        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
+    )
 
 
 def ic_wire_pairs_jax_cfg(
@@ -200,6 +218,7 @@ def ic_wire_pairs_jax_cfg(
         node_b,
         port_b,
         safety_policy=cfg.safety_policy,
+        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
     )
 
 
@@ -212,7 +231,11 @@ def ic_wire_ptr_pairs_jax_cfg(
 ) -> ICState:
     """Interface/Control wrapper for ic_wire_ptr_pairs_jax with safety policy."""
     return ic_wire_ptr_pairs_jax(
-        state, ptr_a, ptr_b, safety_policy=cfg.safety_policy
+        state,
+        ptr_a,
+        ptr_b,
+        safety_policy=cfg.safety_policy,
+        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
     )
 
 
@@ -233,6 +256,7 @@ def ic_wire_star_jax_cfg(
         leaf_nodes,
         leaf_ports,
         safety_policy=cfg.safety_policy,
+        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
     )
 
 
@@ -329,6 +353,7 @@ __all__ = [
     "DEFAULT_ENGINE_CONFIG",
     "DEFAULT_GRAPH_CONFIG",
     "graph_config_with_policy",
+    "graph_config_with_index_fn",
     "ICNodeId",
     "ICPortId",
     "ICPtr",

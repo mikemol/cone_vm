@@ -92,6 +92,12 @@ class ApplyTemplateFn(Protocol):
         ...
 
 
+@runtime_checkable
+class SafeIndexFn(Protocol):
+    def __call__(self, idx, size, label: str, *, policy=None):
+        ...
+
+
 __all__ = [
     "CompactPairsFn",
     "DecodePortFn",
@@ -104,4 +110,5 @@ __all__ = [
     "ApplyEraseFn",
     "ApplyCommuteFn",
     "ApplyTemplateFn",
+    "SafeIndexFn",
 ]
