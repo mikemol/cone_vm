@@ -178,6 +178,104 @@ def arena_cycle_config_with_guard(
     return replace(cfg, guard_cfg=guard_cfg, interact_cfg=interact_cfg)
 
 
+def op_sort_with_perm_cfg(
+    arena,
+    *,
+    safe_gather_fn=_jax_safe.safe_gather_1d,
+    safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Interface/Control wrapper for op_sort_and_swizzle_with_perm with guard cfg."""
+    return op_sort_and_swizzle_with_perm(
+        arena,
+        safe_gather_fn=safe_gather_fn,
+        safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
+
+
+def op_sort_blocked_with_perm_cfg(
+    arena,
+    block_size,
+    morton=None,
+    *,
+    safe_gather_fn=_jax_safe.safe_gather_1d,
+    safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Interface/Control wrapper for op_sort_and_swizzle_blocked_with_perm with guard cfg."""
+    return op_sort_and_swizzle_blocked_with_perm(
+        arena,
+        block_size,
+        morton=morton,
+        safe_gather_fn=safe_gather_fn,
+        safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
+
+
+def op_sort_hierarchical_with_perm_cfg(
+    arena,
+    l2_block_size,
+    l1_block_size,
+    morton=None,
+    do_global=False,
+    *,
+    safe_gather_fn=_jax_safe.safe_gather_1d,
+    safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Interface/Control wrapper for op_sort_and_swizzle_hierarchical_with_perm with guard cfg."""
+    return op_sort_and_swizzle_hierarchical_with_perm(
+        arena,
+        l2_block_size,
+        l1_block_size,
+        morton=morton,
+        do_global=do_global,
+        safe_gather_fn=safe_gather_fn,
+        safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
+
+
+def op_sort_morton_with_perm_cfg(
+    arena,
+    morton,
+    *,
+    safe_gather_fn=_jax_safe.safe_gather_1d,
+    safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Interface/Control wrapper for op_sort_and_swizzle_morton_with_perm with guard cfg."""
+    return op_sort_and_swizzle_morton_with_perm(
+        arena,
+        morton,
+        safe_gather_fn=safe_gather_fn,
+        safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
+
+
+def op_sort_servo_with_perm_cfg(
+    arena,
+    morton,
+    servo_mask,
+    *,
+    safe_gather_fn=_jax_safe.safe_gather_1d,
+    safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Interface/Control wrapper for op_sort_and_swizzle_servo_with_perm with guard cfg."""
+    return op_sort_and_swizzle_servo_with_perm(
+        arena,
+        morton,
+        servo_mask,
+        safe_gather_fn=safe_gather_fn,
+        safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
+
+
 def cnf2_config_with_policy(
     safety_policy: SafetyPolicy | None,
     *,
