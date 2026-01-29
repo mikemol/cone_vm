@@ -9,6 +9,8 @@ from prism_core.guards import (
     guard_gather_index_cfg as _guard_gather_index_cfg,
     safe_gather_1d_cfg as _safe_gather_1d_cfg,
     safe_gather_1d_ok_cfg as _safe_gather_1d_ok_cfg,
+    make_safe_gather_fn as _make_safe_gather_fn,
+    make_safe_index_fn as _make_safe_index_fn,
 )
 from prism_vm_core.ontology import OP_NULL, OP_ZERO
 
@@ -84,6 +86,14 @@ def safe_gather_1d_ok_cfg(
     return _safe_gather_1d_ok_cfg(
         arr, idx, label, guard=guard, policy=policy, cfg=cfg
     )
+
+
+def make_safe_gather_fn(*, cfg: GuardConfig = DEFAULT_GUARD_CONFIG, policy=None, safe_gather_fn=None):
+    return _make_safe_gather_fn(cfg=cfg, policy=policy, safe_gather_fn=safe_gather_fn)
+
+
+def make_safe_index_fn(*, cfg: GuardConfig = DEFAULT_GUARD_CONFIG, policy=None):
+    return _make_safe_index_fn(cfg=cfg, policy=policy)
 
 
 def _pop_token(tokens):
@@ -226,6 +236,8 @@ __all__ = [
     "guard_gather_index_cfg",
     "safe_gather_1d_cfg",
     "safe_gather_1d_ok_cfg",
+    "make_safe_gather_fn",
+    "make_safe_index_fn",
     "guard_slot0_perm_cfg",
     "guard_null_row_cfg",
     "guard_zero_row_cfg",

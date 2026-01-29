@@ -210,6 +210,8 @@ from prism_vm_core.guards import (
     guards_enabled_cfg,
     guard_max_cfg,
     guard_gather_index_cfg,
+    make_safe_gather_fn,
+    make_safe_index_fn,
     guard_slot0_perm_cfg,
     guard_null_row_cfg,
     guard_zero_row_cfg,
@@ -255,6 +257,8 @@ DEFAULT_GUARD_CONFIG = DEFAULT_GUARD_CONFIG
 guards_enabled_cfg = guards_enabled_cfg
 guard_max_cfg = guard_max_cfg
 guard_gather_index_cfg = guard_gather_index_cfg
+make_safe_gather_fn = make_safe_gather_fn
+make_safe_index_fn = make_safe_index_fn
 guard_slot0_perm_cfg = guard_slot0_perm_cfg
 guard_null_row_cfg = guard_null_row_cfg
 guard_zero_row_cfg = guard_zero_row_cfg
