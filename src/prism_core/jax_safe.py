@@ -2,7 +2,7 @@ import os
 import jax
 import jax.numpy as jnp
 
-from prism_core.safety import DEFAULT_SAFETY_POLICY, SafetyPolicy
+from prism_core.safety import DEFAULT_SAFETY_POLICY, SafetyPolicy, oob_mask
 
 TEST_GUARDS = os.environ.get("PRISM_TEST_GUARDS", "").strip().lower() in (
     "1",
@@ -131,6 +131,29 @@ def safe_gather_1d(
     return values
 
 
+def safe_gather_1d_ok(
+    arr,
+    idx,
+    label="safe_gather_1d_ok",
+    guard=None,
+    *,
+    policy: SafetyPolicy | None = None,
+):
+    """Guarded gather that also returns ok + corruption flag per SafetyPolicy."""
+    values, ok = safe_gather_1d(
+        arr,
+        idx,
+        label,
+        guard=guard,
+        policy=policy,
+        return_ok=True,
+    )
+    if policy is None:
+        policy = DEFAULT_SAFETY_POLICY
+    corrupt = oob_mask(ok, policy=policy)
+    return values, ok, corrupt
+
+
 def safe_index_1d(
     idx,
     size,
@@ -165,5 +188,6 @@ __all__ = [
     "scatter_strict",
     "guard_gather_index",
     "safe_gather_1d",
+    "safe_gather_1d_ok",
     "safe_index_1d",
 ]

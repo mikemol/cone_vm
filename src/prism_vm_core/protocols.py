@@ -63,6 +63,12 @@ class SafeGatherFn(Protocol):
 
 
 @runtime_checkable
+class SafeGatherOkFn(Protocol):
+    def __call__(self, arr, idx, label: str, *, policy=None):
+        ...
+
+
+@runtime_checkable
 class SafeIndexFn(Protocol):
     def __call__(self, idx, size, label: str, *, policy=None):
         ...
@@ -164,6 +170,7 @@ class CommitStratumFn(Protocol):
         *,
         intern_fn: InternFn | None = None,
         safe_gather_policy=None,
+        safe_gather_ok_fn=None,
     ):
         ...
 
@@ -189,6 +196,7 @@ __all__ = [
     "CandidateIndicesFn",
     "ScatterDropFn",
     "SafeGatherFn",
+    "SafeGatherOkFn",
     "SafeIndexFn",
     "GuardMaxFn",
     "OpRankFn",
