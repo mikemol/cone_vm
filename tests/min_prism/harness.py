@@ -6,6 +6,21 @@ import prism_vm as pv
 _COMMUTATIVE_OPS = {pv.OP_ADD, pv.OP_MUL}
 
 
+def make_cycle_intrinsic_jit(**kwargs):
+    """Build a jitted intrinsic cycle entrypoint with fixed DI."""
+    return pv.cycle_intrinsic_jit(**kwargs)
+
+
+def make_cycle_candidates_jit(**kwargs):
+    """Build a jitted CNF-2 cycle entrypoint with fixed DI."""
+    return pv.cycle_candidates_jit(**kwargs)
+
+
+def make_cycle_jit(**kwargs):
+    """Build a jitted BSP arena cycle entrypoint with fixed DI."""
+    return pv.cycle_jit(**kwargs)
+
+
 def _structural_keyer(ledger):
     count = int(pv._host_int_value(ledger.count))
     ops = jax.device_get(ledger.opcode[:count])
@@ -51,12 +66,25 @@ def novelty_set(ledger):
     return set(canon_state_ledger(ledger)[0])
 
 
-def fixed_point_steps_intrinsic(ledger, root_id, max_steps=8):
+def fixed_point_steps_intrinsic(
+    ledger,
+    root_id,
+    max_steps=8,
+    *,
+    cycle_intrinsic_fn=None,
+    cycle_intrinsic_kwargs=None,
+):
     """Run intrinsic cycles until novelty stabilizes or max_steps reached."""
     frontier = jnp.array([int(root_id)], dtype=jnp.int32)
+    if cycle_intrinsic_fn is None:
+        cycle_intrinsic_fn = pv.cycle_intrinsic
+    if cycle_intrinsic_kwargs is None:
+        cycle_intrinsic_kwargs = {}
     prev = novelty_set(ledger)
     for step in range(max_steps):
-        ledger, frontier = pv.cycle_intrinsic(ledger, frontier)
+        ledger, frontier = cycle_intrinsic_fn(
+            ledger, frontier, **cycle_intrinsic_kwargs
+        )
         curr = novelty_set(ledger)
         if curr == prev:
             return step + 1, ledger, frontier, True
@@ -64,12 +92,26 @@ def fixed_point_steps_intrinsic(ledger, root_id, max_steps=8):
     return max_steps, ledger, frontier, False
 
 
-def fixed_point_steps_cnf2(ledger, root_id, max_steps=8):
+def fixed_point_steps_cnf2(
+    ledger,
+    root_id,
+    max_steps=8,
+    *,
+    cycle_candidates_fn=None,
+    cycle_candidates_kwargs=None,
+):
     """Run CNF-2 cycles until novelty stabilizes or max_steps reached."""
     frontier = pv._committed_ids(jnp.array([int(root_id)], dtype=jnp.int32))
+    if cycle_candidates_fn is None:
+        cycle_candidates_fn = pv.cycle_candidates
+        cycle_candidates_kwargs = {}
+    if cycle_candidates_kwargs is None:
+        cycle_candidates_kwargs = {}
     prev = novelty_set(ledger)
     for step in range(max_steps):
-        ledger, frontier_prov, _, q_map = pv.cycle_candidates(ledger, frontier)
+        ledger, frontier_prov, _, q_map = cycle_candidates_fn(
+            ledger, frontier, **cycle_candidates_kwargs
+        )
         frontier = pv.apply_q(q_map, frontier_prov)
         curr = novelty_set(ledger)
         if curr == prev:
