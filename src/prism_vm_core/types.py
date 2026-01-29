@@ -64,6 +64,7 @@ from prism_vm_core.domains import (
     _require_arena_ptr,
     _require_ledger_id,
     _require_manifest_ptr,
+    _require_ptr_domain,
 )
 
 __all__ = [
@@ -119,4 +120,5 @@ __all__ = [
     "_require_arena_ptr",
     "_require_ledger_id",
     "_require_manifest_ptr",
+    "_require_ptr_domain",
 ]

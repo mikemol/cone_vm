@@ -42,6 +42,7 @@ from ic_core.domains import (
     _require_ic_ptr,
     _require_node_id,
     _require_port_id,
+    _require_ptr_domain,
 )
 from ic_core.protocols import (
     AllocPlanFn,
@@ -483,6 +484,7 @@ __all__ = [
     "_require_node_id",
     "_require_port_id",
     "_require_ic_ptr",
+    "_require_ptr_domain",
     "_host_int",
     "_host_bool",
     "_host_int_value",

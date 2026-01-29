@@ -20,6 +20,12 @@ from prism_vm_core.ontology import (
 )
 
 
+def _require_ptr_domain(ptr, label: str, expected_type):
+    if not isinstance(ptr, expected_type):
+        raise TypeError(f"{label} expected {expected_type.__name__}")
+    return ptr
+
+
 class QMap(Protocol):
     def __call__(self, ids: ProvisionalIds) -> CommittedIds: ...
 
@@ -49,21 +55,15 @@ def _arena_ptr(value) -> ArenaPtr:
 
 
 def _require_manifest_ptr(ptr: ManifestPtr, label: str) -> ManifestPtr:
-    if not isinstance(ptr, ManifestPtr):
-        raise TypeError(f"{label} expected ManifestPtr")
-    return ptr
+    return _require_ptr_domain(ptr, label, ManifestPtr)
 
 
 def _require_ledger_id(ptr: LedgerId, label: str) -> LedgerId:
-    if not isinstance(ptr, LedgerId):
-        raise TypeError(f"{label} expected LedgerId")
-    return ptr
+    return _require_ptr_domain(ptr, label, LedgerId)
 
 
 def _require_arena_ptr(ptr: ArenaPtr, label: str) -> ArenaPtr:
-    if not isinstance(ptr, ArenaPtr):
-        raise TypeError(f"{label} expected ArenaPtr")
-    return ptr
+    return _require_ptr_domain(ptr, label, ArenaPtr)
 
 
 def _host_raise_if_bad(
@@ -103,6 +103,7 @@ __all__ = [
     "_require_manifest_ptr",
     "_require_ledger_id",
     "_require_arena_ptr",
+    "_require_ptr_domain",
     "_host_int",
     "_host_bool",
     "_host_int_value",
