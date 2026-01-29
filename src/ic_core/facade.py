@@ -472,6 +472,7 @@ __all__ = [
     "ICGuardConfig",
     "DEFAULT_IC_GUARD_CONFIG",
     "safe_index_1d_cfg",
+    "make_safe_index_fn",
     "graph_config_with_index_fn",
     "ICNodeId",
     "ICPortId",
