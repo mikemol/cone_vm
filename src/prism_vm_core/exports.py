@@ -108,6 +108,8 @@ __all__ = [
     "Ledger",
     "CandidateBuffer",
     "CompactResult",
+    "CompactConfig",
+    "DEFAULT_COMPACT_CONFIG",
     "NodeBatch",
     "_candidate_indices",
     "candidate_indices_cfg",
