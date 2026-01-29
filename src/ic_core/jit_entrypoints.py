@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from functools import lru_cache, partial
+from functools import partial
 
-import jax
-
+from prism_core.di import cached_jit
 from ic_core.config import ICEngineConfig
 from ic_core.engine import (
     DEFAULT_ENGINE_CONFIG,
@@ -12,7 +11,7 @@ from ic_core.engine import (
 )
 
 
-@lru_cache
+@cached_jit
 def _apply_active_pairs_jit(cfg: ICEngineConfig):
     def _impl(state):
         return ic_apply_active_pairs(
@@ -25,7 +24,7 @@ def _apply_active_pairs_jit(cfg: ICEngineConfig):
             scan_corrupt_fn=cfg.scan_corrupt_fn,
         )
 
-    return jax.jit(_impl)
+    return _impl
 
 
 def apply_active_pairs_jit(cfg: ICEngineConfig | None = None):
@@ -35,7 +34,7 @@ def apply_active_pairs_jit(cfg: ICEngineConfig | None = None):
     return _apply_active_pairs_jit(cfg)
 
 
-@lru_cache
+@cached_jit
 def _reduce_jit(cfg: ICEngineConfig):
     apply_fn = partial(
         ic_apply_active_pairs,
@@ -55,7 +54,7 @@ def _reduce_jit(cfg: ICEngineConfig):
             scan_corrupt_fn=cfg.scan_corrupt_fn,
         )
 
-    return jax.jit(_impl)
+    return _impl
 
 
 def reduce_jit(cfg: ICEngineConfig | None = None):

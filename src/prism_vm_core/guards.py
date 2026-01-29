@@ -5,6 +5,10 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.guards import (
+    GuardConfig as _CoreGuardConfig,
+    guard_gather_index_cfg as _guard_gather_index_cfg,
+)
 from prism_vm_core.ontology import OP_NULL, OP_ZERO
 
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
@@ -16,12 +20,11 @@ def _guards_enabled():
 
 
 @dataclass(frozen=True, slots=True)
-class GuardConfig:
+class GuardConfig(_CoreGuardConfig):
     """Guard DI bundle (host-side control surface)."""
 
     guards_enabled_fn: Optional[Callable[[], bool]] = None
     guard_max_fn: Optional[Callable[..., None]] = None
-    guard_gather_index_fn: Optional[Callable[..., None]] = None
     guard_slot0_perm_fn: Optional[Callable[..., None]] = None
     guard_null_row_fn: Optional[Callable[..., None]] = None
     guard_zero_row_fn: Optional[Callable[..., None]] = None
@@ -64,8 +67,7 @@ def guard_gather_index_cfg(
     guard=None,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
-    fn = cfg.guard_gather_index_fn or _jax_safe.guard_gather_index
-    return fn(idx, size, label, guard=guard)
+    return _guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
 
 
 def _pop_token(tokens):

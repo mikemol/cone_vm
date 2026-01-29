@@ -3,13 +3,14 @@ from __future__ import annotations
 """JIT entrypoint factories with explicit DI and static args."""
 
 from dataclasses import replace
-from functools import lru_cache, partial
+from functools import partial
 from typing import Optional
 
 import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.di import cached_jit, resolve, wrap_policy
 from prism_core.safety import SafetyPolicy
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -66,9 +67,8 @@ def _noop_metrics(_arena, _tile_size):
     return jnp.int32(0)
 
 
-@lru_cache
+@cached_jit
 def _intern_nodes_jit(cfg: InternConfig):
-    @jax.jit
     def _impl(ledger, batch: NodeBatch):
         return _ledger_intern.intern_nodes(ledger, batch, cfg=cfg)
 
@@ -82,11 +82,8 @@ def intern_nodes_jit(cfg: InternConfig | None = None):
     return _intern_nodes_jit(cfg)
 
 
-@lru_cache
-def _op_interact_jit(
-    safe_gather_fn, scatter_drop_fn, guard_max_fn
-):
-    @jax.jit
+@cached_jit
+def _op_interact_jit(safe_gather_fn, scatter_drop_fn, guard_max_fn):
     def _impl(arena):
         return _op_interact(
             arena,
@@ -108,13 +105,7 @@ def op_interact_jit(
     """Return a jitted op_interact entrypoint for fixed DI."""
     if guard_max_fn is None:
         from prism_vm_core.guards import _guard_max as guard_max_fn  # type: ignore
-    if safe_gather_policy is not None:
-        policy = safe_gather_policy
-
-        def _safe_gather(arr, idx, label):
-            return safe_gather_fn(arr, idx, label, policy=policy)
-
-        safe_gather_fn = _safe_gather
+    safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
     return _op_interact_jit(safe_gather_fn, scatter_drop_fn, guard_max_fn)
 
 
@@ -125,8 +116,8 @@ def op_interact_jit_cfg(
     if cfg is None:
         cfg = DEFAULT_ARENA_INTERACT_CONFIG
     return op_interact_jit(
-        safe_gather_fn=cfg.safe_gather_fn or _jax_safe.safe_gather_1d,
-        scatter_drop_fn=cfg.scatter_drop_fn or _jax_safe.scatter_drop,
+        safe_gather_fn=resolve(cfg.safe_gather_fn, _jax_safe.safe_gather_1d),
+        scatter_drop_fn=resolve(cfg.scatter_drop_fn, _jax_safe.scatter_drop),
         guard_max_fn=cfg.guard_max_fn,
         safe_gather_policy=cfg.safe_gather_policy,
     )
@@ -338,7 +329,7 @@ def cycle_candidates_jit(
     return _run
 
 
-@lru_cache
+@cached_jit
 def _cycle_jit(
     do_sort,
     use_morton,
@@ -358,7 +349,6 @@ def _cycle_jit(
     safe_gather_fn,
     op_interact_fn,
 ):
-    @jax.jit
     def _impl(arena, root_ptr):
         return _cycle_core(
             arena,

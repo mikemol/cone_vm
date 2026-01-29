@@ -1,13 +1,19 @@
 from typing import Protocol
 
-import jax
 import jax.numpy as jnp
+
+from prism_core.host import (
+    HostBool,
+    HostInt,
+    _host_bool,
+    _host_bool_value,
+    _host_int,
+    _host_int_value,
+)
 
 from prism_vm_core.ontology import (
     ArenaPtr,
     CommittedIds,
-    HostBool,
-    HostInt,
     LedgerId,
     ManifestPtr,
     ProvisionalIds,
@@ -58,30 +64,6 @@ def _require_arena_ptr(ptr: ArenaPtr, label: str) -> ArenaPtr:
     if not isinstance(ptr, ArenaPtr):
         raise TypeError(f"{label} expected ArenaPtr")
     return ptr
-
-
-def _host_int(value) -> HostInt:
-    if isinstance(value, HostInt):
-        return value
-    if isinstance(value, HostBool):
-        raise TypeError("expected HostInt, got HostBool")
-    return HostInt(int(jax.device_get(value)))
-
-
-def _host_bool(value) -> HostBool:
-    if isinstance(value, HostBool):
-        return value
-    if isinstance(value, HostInt):
-        raise TypeError("expected HostBool, got HostInt")
-    return HostBool(bool(jax.device_get(value)))
-
-
-def _host_int_value(value) -> int:
-    return int(_host_int(value))
-
-
-def _host_bool_value(value) -> bool:
-    return bool(_host_bool(value))
 
 
 def _host_raise_if_bad(
