@@ -3,6 +3,8 @@ import jax.numpy as jnp
 from typing import NamedTuple, Tuple
 
 from prism_core import alloc as _alloc
+from prism_core.jax_safe import safe_index_1d
+from prism_core.compact import compact_mask
 
 # Interaction-combinator (IC) graph + safety helpers.
 
@@ -183,9 +185,12 @@ def ic_wire_pairs_jax(
         port_b_u = jnp.asarray(port_b, dtype=jnp.uint32)
 
         n_nodes = s.ports.shape[0]
-        n_nodes_u = jnp.uint32(n_nodes)
-        na = jnp.minimum(node_a_u, n_nodes_u - jnp.uint32(1))
-        nb = jnp.minimum(node_b_u, n_nodes_u - jnp.uint32(1))
+        na_i = jnp.asarray(node_a_u, dtype=jnp.int32)
+        nb_i = jnp.asarray(node_b_u, dtype=jnp.int32)
+        na_safe, _ = safe_index_1d(na_i, n_nodes, "ic_wire_pairs_jax.na")
+        nb_safe, _ = safe_index_1d(nb_i, n_nodes, "ic_wire_pairs_jax.nb")
+        na = na_safe.astype(jnp.uint32)
+        nb = nb_safe.astype(jnp.uint32)
         pa = port_a_u & jnp.uint32(0x3)
         pb = port_b_u & jnp.uint32(0x3)
 
@@ -286,11 +291,9 @@ def ic_find_active_pairs(state: ICState) -> Tuple[jnp.ndarray, jnp.ndarray]:
 
 
 def _compact_mask(mask: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    size = mask.shape[0]
-    count = jnp.sum(mask).astype(jnp.uint32)
-    idx = jnp.nonzero(mask, size=size, fill_value=0)[0].astype(jnp.uint32)
-    valid = jnp.arange(size, dtype=jnp.uint32) < count
-    return idx, valid, count
+    return compact_mask(
+        mask, index_dtype=jnp.uint32, count_dtype=jnp.uint32
+    )
 
 
 @jax.jit

@@ -1,12 +1,10 @@
 import jax.numpy as jnp
 
+from prism_core.compact import compact_mask
+
 
 def _candidate_indices(enabled):
-    size = enabled.shape[0]
-    count = jnp.sum(enabled).astype(jnp.int32)
-    idx = jnp.nonzero(enabled, size=size, fill_value=0)[0].astype(jnp.int32)
-    valid = jnp.arange(size, dtype=jnp.int32) < count
-    return idx, valid, count
+    return compact_mask(enabled, index_dtype=jnp.int32, count_dtype=jnp.int32)
 
 
 __all__ = ["_candidate_indices"]

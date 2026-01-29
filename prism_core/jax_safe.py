@@ -110,6 +110,16 @@ def safe_gather_1d(arr, idx, label="safe_gather_1d", guard=None):
     return arr[idx_safe]
 
 
+def safe_index_1d(idx, size, label="safe_index_1d", guard=None):
+    """Return a clamped index and an in-bounds mask for 1D indexing."""
+    size_i = jnp.asarray(size, dtype=jnp.int32)
+    idx_i = jnp.asarray(idx, dtype=jnp.int32)
+    guard_gather_index(idx_i, size_i, label, guard=guard)
+    ok = (idx_i >= 0) & (idx_i < size_i)
+    idx_safe = jnp.clip(idx_i, 0, size_i - 1)
+    return idx_safe, ok
+
+
 __all__ = [
     "TEST_GUARDS",
     "SCATTER_GUARD",
@@ -121,4 +131,5 @@ __all__ = [
     "scatter_strict",
     "guard_gather_index",
     "safe_gather_1d",
+    "safe_index_1d",
 ]
