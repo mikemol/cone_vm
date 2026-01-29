@@ -211,6 +211,9 @@ from prism_vm_core.guards import (
     guards_enabled_cfg,
     guard_max_cfg,
     guard_gather_index_cfg,
+    safe_gather_1d_cfg as _safe_gather_1d_cfg,
+    safe_gather_1d_ok_cfg as _safe_gather_1d_ok_cfg,
+    safe_index_1d_cfg as _safe_index_1d_cfg,
     make_safe_gather_fn,
     make_safe_index_fn,
     guard_slot0_perm_cfg,
@@ -317,10 +320,14 @@ def safe_gather_1d_cfg(
     return_ok: bool = False,
 ):
     """Interface/Control wrapper for safe_gather_1d with guard config."""
-    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
-    guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
-    return _jax_safe.safe_gather_1d(
-        arr, idx, label, guard=False, policy=policy, return_ok=return_ok
+    return _safe_gather_1d_cfg(
+        arr,
+        idx,
+        label,
+        guard=guard,
+        policy=policy,
+        cfg=cfg,
+        return_ok=return_ok,
     )
 
 
@@ -334,10 +341,13 @@ def safe_gather_1d_ok_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Interface/Control wrapper for safe_gather_1d_ok with guard config."""
-    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
-    guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
-    return _jax_safe.safe_gather_1d_ok(
-        arr, idx, label, guard=False, policy=policy
+    return _safe_gather_1d_ok_cfg(
+        arr,
+        idx,
+        label,
+        guard=guard,
+        policy=policy,
+        cfg=cfg,
     )
 
 
@@ -369,9 +379,14 @@ def safe_index_1d_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Interface/Control wrapper for safe_index_1d with guard config."""
-    guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
-    safe_index_fn = wrap_index_policy(_jax_safe.safe_index_1d, policy)
-    return safe_index_fn(idx, size, label, guard=False)
+    return _safe_index_1d_cfg(
+        idx,
+        size,
+        label,
+        guard=guard,
+        policy=policy,
+        cfg=cfg,
+    )
 
 def node_batch(op, a1, a2) -> NodeBatch:
     """Interface/Control wrapper for batch shape checks.
