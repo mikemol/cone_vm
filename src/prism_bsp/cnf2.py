@@ -4,6 +4,7 @@ from jax import lax
 from functools import partial
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.di import call_with_optional_kwargs
 from prism_core.guards import safe_gather_1d_ok_cfg
 from prism_core.compact import scatter_compacted_ids
 from prism_core.safety import SafetyPolicy, oob_any
@@ -598,57 +599,71 @@ def cycle_candidates(
         )
         cnf2_metrics_update_fn(rewrite_child, changed_count, int(count2_i))
     validate = validate_stratum or guards_enabled_fn()
-    ledger2, _, q_map = commit_stratum_fn(
+    commit_optional = {
+        "safe_gather_policy": safe_gather_policy,
+        "safe_gather_ok_fn": safe_gather_ok_fn,
+    }
+    ledger2, _, q_map = call_with_optional_kwargs(
+        commit_stratum_fn,
+        commit_optional,
         ledger2,
         stratum0,
         validate=validate,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
-        safe_gather_policy=safe_gather_policy,
-        safe_gather_ok_fn=safe_gather_ok_fn,
     )
-    ledger2, _, q_map = commit_stratum_fn(
+    ledger2, _, q_map = call_with_optional_kwargs(
+        commit_stratum_fn,
+        commit_optional,
         ledger2,
         stratum1,
         prior_q=q_map,
         validate=validate,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
-        safe_gather_policy=safe_gather_policy,
-        safe_gather_ok_fn=safe_gather_ok_fn,
     )
     # Wrapper strata are micro-strata in s=2; commit in order for hyperstrata visibility.
     for start_i, count_i in wrap_strata:
         micro_stratum = Stratum(
             start=jnp.int32(start_i), count=jnp.int32(count_i)
         )
-        ledger2, _, q_map = commit_stratum_fn(
+        ledger2, _, q_map = call_with_optional_kwargs(
+            commit_stratum_fn,
+            commit_optional,
             ledger2,
             micro_stratum,
             prior_q=q_map,
             validate=validate,
             validate_mode=validate_mode,
             intern_fn=intern_fn,
-            safe_gather_policy=safe_gather_policy,
-            safe_gather_ok_fn=safe_gather_ok_fn,
         )
     next_frontier = _provisional_ids(next_frontier)
     meta = getattr(q_map, "_prism_meta", None)
     post_ids = None
     ok = None
     if meta is not None and meta.safe_gather_policy is not None:
-        post_ids, ok = apply_q_fn(q_map, next_frontier, return_ok=True)
-        corrupt = oob_any(ok, policy=meta.safe_gather_policy)
-        ledger2 = ledger2._replace(corrupt=ledger2.corrupt | corrupt)
+        post_ids, ok = _apply_q_optional_ok(apply_q_fn, q_map, next_frontier)
+        if ok is not None:
+            corrupt = oob_any(ok, policy=meta.safe_gather_policy)
+            ledger2 = ledger2._replace(corrupt=ledger2.corrupt | corrupt)
     if _TEST_GUARDS:
         pre_hash = ledger_roots_hash_host_fn(ledger2, next_frontier.a)
         if post_ids is None:
-            post_ids, ok = apply_q_fn(q_map, next_frontier, return_ok=True)
+            post_ids, ok = _apply_q_optional_ok(apply_q_fn, q_map, next_frontier)
         post_ids = post_ids.a
         post_hash = ledger_roots_hash_host_fn(ledger2, post_ids)
         if pre_hash != post_hash:
             raise RuntimeError("BSPᵗ projection changed root structure")
     return ledger2, next_frontier, (stratum0, stratum1, stratum2), q_map
+
+
+def _apply_q_optional_ok(apply_q_fn, q_map, ids):
+    result = call_with_optional_kwargs(
+        apply_q_fn, {"return_ok": True}, q_map, ids
+    )
+    if isinstance(result, tuple) and len(result) == 2:
+        return result
+    return result, None
 
 
 __all__ = [

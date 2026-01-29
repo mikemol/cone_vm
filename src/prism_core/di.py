@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from inspect import Parameter, signature
 from typing import Callable, TypeVar
 
 import jax
@@ -69,6 +70,28 @@ def call_with_optional_kw(fn: Callable[..., T], name: str, value, *args, **kwarg
         raise
 
 
+def call_with_optional_kwargs(
+    fn: Callable[..., T], optional: dict, *args, **kwargs
+) -> T:
+    """Call fn with optional keyword arguments filtered to accepted names."""
+    optional = {k: v for k, v in optional.items() if v is not None}
+    if not optional:
+        return fn(*args, **kwargs)
+    try:
+        sig = signature(fn)
+    except (TypeError, ValueError):
+        return fn(*args, **kwargs, **optional)
+    if any(p.kind == Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+        return fn(*args, **kwargs, **optional)
+    allowed = {
+        name
+        for name, p in sig.parameters.items()
+        if p.kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY)
+    }
+    filtered = {k: v for k, v in optional.items() if k in allowed}
+    return fn(*args, **kwargs, **filtered)
+
+
 __all__ = [
     "resolve",
     "wrap_policy",
@@ -76,4 +99,5 @@ __all__ = [
     "cached_factory",
     "cached_jit",
     "call_with_optional_kw",
+    "call_with_optional_kwargs",
 ]
