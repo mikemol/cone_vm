@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax import lax
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.safety import SafetyPolicy, oob_any
+from prism_core.safety import SafetyPolicy
 from prism_core.di import wrap_policy
 from prism_ledger.intern import intern_nodes
 from prism_vm_core.constants import _PREFIX_SCAN_CHUNK
@@ -19,9 +19,10 @@ from prism_vm_core.domains import (
 )
 from prism_vm_core.guards import _guards_enabled
 from prism_vm_core.structures import NodeBatch, Stratum
-from prism_vm_core.protocols import HostRaiseFn, InternFn, NodeBatchFn
+from prism_vm_core.protocols import HostRaiseFn, InternFn, NodeBatchFn, SafeGatherOkFn
 
 safe_gather_1d = _jax_safe.safe_gather_1d
+safe_gather_1d_ok = _jax_safe.safe_gather_1d_ok
 
 
 def _node_batch(op, a1, a2):
@@ -150,7 +151,11 @@ def _q_map_ok(ids, meta: QMapMeta):
     in_range = (ids_arr >= start) & (ids_arr < start + count)
     idx = jnp.where(in_range, ids_arr - start, jnp.int32(0))
     ok_idx = idx < meta.canon_len
-    return jnp.where(in_range, ok_idx, True)
+    ok = jnp.where(in_range, ok_idx, True)
+    policy = meta.safe_gather_policy or SafetyPolicy()
+    if policy.mode == "clamp":
+        ok = jnp.ones_like(ok, dtype=jnp.bool_)
+    return ok
 
 
 def apply_q(
@@ -180,6 +185,7 @@ def _apply_stratum_q(
     label: str,
     *,
     safe_gather_fn=safe_gather_1d,
+    safe_gather_ok_fn: SafeGatherOkFn = safe_gather_1d_ok,
     guards_enabled_fn=_guards_enabled,
     provisional_ids_fn=_provisional_ids,
     return_ok: bool = False,
@@ -204,15 +210,17 @@ def _apply_stratum_q(
     in_range = (ids.a >= start) & (ids.a < start + count)
     idx = jnp.where(in_range, ids.a - start, jnp.int32(0))
     canon_len = jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32)
-    ok_idx = idx < canon_len
+    values, ok_idx, corrupt = safe_gather_ok_fn(
+        canon_ids.a, idx, label, policy=oob_policy
+    )
     ok = jnp.where(in_range, ok_idx, True)
-    mapped = safe_gather_fn(canon_ids.a, idx, label)
+    mapped = values
     out = provisional_ids_fn(jnp.where(in_range, mapped, ids.a))
     if not return_ok:
         return out
     if oob_policy is None:
         oob_policy = SafetyPolicy()
-    corrupt = oob_any(ok, policy=oob_policy)
+    corrupt = jnp.where(in_range, corrupt, False)
     return out, ok, corrupt
 
 
@@ -235,6 +243,7 @@ def commit_stratum(
     provisional_ids_fn=_provisional_ids,
     committed_ids_fn=_committed_ids,
     safe_gather_fn=safe_gather_1d,
+    safe_gather_ok_fn: SafeGatherOkFn = safe_gather_1d_ok,
     safe_gather_policy: SafetyPolicy | None = None,
 ):
     # Collapseʰ: homomorphic projection q at the stratum boundary.
@@ -278,8 +287,10 @@ def commit_stratum(
             canon_ids,
             "commit_stratum.q",
             safe_gather_fn=safe_gather_fn,
+            safe_gather_ok_fn=safe_gather_ok_fn,
             guards_enabled_fn=guards_enabled_fn,
             provisional_ids_fn=provisional_ids_fn,
+            oob_policy=safe_gather_policy,
         )
         return q_prev(mapped)
 

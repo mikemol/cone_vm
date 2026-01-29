@@ -249,6 +249,25 @@ def safe_gather_1d(
     )
 
 
+def safe_gather_1d_ok(
+    arr,
+    idx,
+    label="safe_gather_1d_ok",
+    *,
+    guard=None,
+    policy: SafetyPolicy | None = None,
+):
+    """Interface/Control wrapper for safe_gather_1d_ok.
+
+    Axis: Interface/Control. Commutes with q. Erased by q.
+    """
+    if guard is None:
+        guard = _GATHER_GUARD
+    return _jax_safe.safe_gather_1d_ok(
+        arr, idx, label, guard=guard, policy=policy
+    )
+
+
 def safe_index_1d(
     idx,
     size,

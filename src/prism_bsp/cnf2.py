@@ -308,6 +308,7 @@ def cycle_candidates(
     commit_stratum_fn: CommitStratumFn = commit_stratum,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
+    safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
@@ -349,6 +350,9 @@ def cycle_candidates(
         )
         apply_q_fn = _maybe_override(apply_q_fn, apply_q, cfg.apply_q_fn)
         identity_q_fn = _maybe_override(identity_q_fn, _identity_q, cfg.identity_q_fn)
+        safe_gather_ok_fn = _maybe_override(
+            safe_gather_ok_fn, _jax_safe.safe_gather_1d_ok, cfg.safe_gather_ok_fn
+        )
         host_bool_value_fn = _maybe_override(
             host_bool_value_fn, _host_bool_value, cfg.host_bool_value_fn
         )
@@ -596,6 +600,7 @@ def cycle_candidates(
         validate_mode=validate_mode,
         intern_fn=intern_fn,
         safe_gather_policy=safe_gather_policy,
+        safe_gather_ok_fn=safe_gather_ok_fn,
     )
     ledger2, _, q_map = commit_stratum_fn(
         ledger2,
@@ -605,6 +610,7 @@ def cycle_candidates(
         validate_mode=validate_mode,
         intern_fn=intern_fn,
         safe_gather_policy=safe_gather_policy,
+        safe_gather_ok_fn=safe_gather_ok_fn,
     )
     # Wrapper strata are micro-strata in s=2; commit in order for hyperstrata visibility.
     for start_i, count_i in wrap_strata:
@@ -619,6 +625,7 @@ def cycle_candidates(
             validate_mode=validate_mode,
             intern_fn=intern_fn,
             safe_gather_policy=safe_gather_policy,
+            safe_gather_ok_fn=safe_gather_ok_fn,
         )
     next_frontier = _provisional_ids(next_frontier)
     meta = getattr(q_map, "_prism_meta", None)

@@ -29,6 +29,7 @@ from prism_vm_core.protocols import (
     OpRankFn,
     OpSortWithPermFn,
     SafeGatherFn,
+    SafeGatherOkFn,
     ScatterDropFn,
     ServoEnabledFn,
     ServoUpdateFn,
@@ -68,6 +69,7 @@ class Cnf2Config:
     commit_stratum_fn: CommitStratumFn | None = None
     apply_q_fn: ApplyQFn | None = None
     identity_q_fn: IdentityQFn | None = None
+    safe_gather_ok_fn: SafeGatherOkFn | None = None
     host_bool_value_fn: HostBoolValueFn | None = None
     host_int_value_fn: HostIntValueFn | None = None
     guards_enabled_fn: GuardsEnabledFn | None = None
