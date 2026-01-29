@@ -44,6 +44,7 @@ from prism_vm_core.structures import (
     staging_context_forgets_detail,
 )
 from prism_core.compact import CompactResult
+from prism_core.alloc import AllocConfig, DEFAULT_ALLOC_CONFIG
 from prism_vm_core.domains import (
     QMap,
     _arena_ptr,
@@ -89,6 +90,8 @@ __all__ = [
     "Arena",
     "CandidateBuffer",
     "CompactResult",
+    "AllocConfig",
+    "DEFAULT_ALLOC_CONFIG",
     "Ledger",
     "Manifest",
     "NodeBatch",

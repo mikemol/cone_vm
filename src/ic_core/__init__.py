@@ -1,5 +1,6 @@
 from ic_core import config as _config
 from ic_core import domains as _domains
+from ic_core import types as _types
 from ic_core import protocols as _protocols
 from ic_core import jit_entrypoints as _jit_entrypoints
 from ic_core import engine as _engine
@@ -7,6 +8,7 @@ from ic_core import graph as _graph
 from ic_core import rules as _rules
 from ic_core.config import *
 from ic_core.domains import *
+from ic_core.types import *
 from ic_core.protocols import *
 from ic_core.engine import *
 from ic_core.graph import *
@@ -16,6 +18,7 @@ from ic_core.jit_entrypoints import *
 __all__ = []
 __all__ += _config.__all__
 __all__ += _domains.__all__
+__all__ += _types.__all__
 __all__ += _protocols.__all__
 __all__ += _jit_entrypoints.__all__
 __all__ += _graph.__all__
