@@ -220,6 +220,9 @@ facade/config boundary. Silent overrides are invalid.
 `wrap_index_policy`) to bind SafetyPolicy into safe-gather/index DI without
 monkeypatching.
 
+**Implementation Note:** Prefer `oob_any(ok, policy=...)` to fold OOB masks into
+a single corruption bit when propagating SafetyPolicy across stages (e.g., q/commit).
+
 **Test Obligations:**
 
 - (m1) `tests/test_gather_guard.py`
