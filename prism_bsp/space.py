@@ -1,3 +1,4 @@
+import functools
 import inspect
 import os
 
@@ -199,7 +200,9 @@ def _apply_perm_and_swizzle(
     )
 
 
-@jit
+@functools.partial(
+    jax.jit, static_argnames=("safe_gather_fn", "safe_gather_policy")
+)
 def _op_sort_and_swizzle_with_perm_full(
     arena,
     *,
@@ -617,7 +620,9 @@ def op_morton(arena):
     return swizzle_2to1(x, y)
 
 
-@jit
+@functools.partial(
+    jax.jit, static_argnames=("safe_gather_fn", "safe_gather_policy")
+)
 def _op_sort_and_swizzle_morton_with_perm_full(
     arena,
     morton,
@@ -723,7 +728,9 @@ def op_sort_and_swizzle_morton(
     return sorted_arena
 
 
-@jit
+@functools.partial(
+    jax.jit, static_argnames=("safe_gather_fn", "safe_gather_policy")
+)
 def _op_sort_and_swizzle_servo_with_perm_full(
     arena,
     morton,
@@ -750,7 +757,11 @@ def _op_sort_and_swizzle_servo_with_perm_full(
     )
 
 
-@jit
+@functools.partial(
+    jax.jit,
+    static_argnums=(2,),
+    static_argnames=("safe_gather_fn", "safe_gather_policy"),
+)
 def _op_sort_and_swizzle_servo_with_perm_prefix(
     arena,
     morton,
