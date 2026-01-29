@@ -19,7 +19,8 @@ from prism_vm_core.domains import (
 )
 from prism_vm_core.guards import _guards_enabled
 from prism_vm_core.structures import NodeBatch, Stratum
-from prism_vm_core.protocols import HostRaiseFn, InternFn, NodeBatchFn, SafeGatherOkFn
+from prism_core.protocols import SafeGatherOkFn
+from prism_vm_core.protocols import HostRaiseFn, InternFn, NodeBatchFn
 
 safe_gather_1d = _jax_safe.safe_gather_1d
 safe_gather_1d_ok = _jax_safe.safe_gather_1d_ok

@@ -7,6 +7,7 @@ from prism_coord.config import CoordConfig
 from prism_core.compact import CompactConfig
 from prism_core.safety import SafetyPolicy
 from prism_ledger.config import InternConfig
+from prism_core.protocols import SafeGatherFn, SafeGatherOkFn
 from prism_vm_core.protocols import (
     ApplyQFn,
     ArenaRootHashFn,
@@ -29,8 +30,6 @@ from prism_vm_core.protocols import (
     OpMortonFn,
     OpRankFn,
     OpSortWithPermFn,
-    SafeGatherFn,
-    SafeGatherOkFn,
     ScatterDropFn,
     ServoEnabledFn,
     ServoUpdateFn,

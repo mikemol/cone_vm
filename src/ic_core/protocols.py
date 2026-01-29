@@ -5,6 +5,7 @@ from typing import Protocol, Tuple, runtime_checkable
 import jax.numpy as jnp
 
 from ic_core.graph import ICState
+from prism_core.protocols import SafeIndexFn
 
 
 @runtime_checkable
@@ -89,12 +90,6 @@ class ApplyTemplateFn(Protocol):
         node_b: jnp.ndarray,
         template_id: jnp.ndarray,
     ) -> ICState:
-        ...
-
-
-@runtime_checkable
-class SafeIndexFn(Protocol):
-    def __call__(self, idx, size, label: str, *, policy=None):
         ...
 
 
