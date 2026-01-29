@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.safety import oob_mask
 from prism_baseline.kernels import dispatch_kernel, kernel_add, kernel_mul, optimize_ptr
 from prism_bsp.arena_step import cycle
 from prism_bsp.intrinsic import cycle_intrinsic
@@ -481,7 +482,15 @@ def run_program_lines_bsp(
                 vm.ledger, frontier_prov, _, q_map = cycle_candidates(
                     vm.ledger, frontier, validate_stratum=validate_stratum
                 )
-                frontier = apply_q(q_map, frontier_prov)
+                frontier, ok = apply_q(q_map, frontier_prov, return_ok=True)
+                meta = getattr(q_map, "_prism_meta", None)
+                if meta is not None and meta.safe_gather_policy is not None:
+                    corrupt = jnp.any(
+                        oob_mask(ok, policy=meta.safe_gather_policy)
+                    )
+                    vm.ledger = vm.ledger._replace(
+                        corrupt=vm.ledger.corrupt | corrupt
+                    )
             _host_raise_if_bad(vm.ledger, "Ledger capacity exceeded during cycle")
         root_ptr = frontier.a[0]
         root_ptr_int = _host_int_value(root_ptr)
