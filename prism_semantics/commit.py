@@ -15,6 +15,7 @@ from prism_vm_core.domains import (
 )
 from prism_vm_core.guards import _guards_enabled
 from prism_vm_core.structures import NodeBatch, Stratum
+from prism_vm_core.protocols import HostRaiseFn, InternFn, NodeBatchFn
 
 safe_gather_1d = _jax_safe.safe_gather_1d
 
@@ -49,13 +50,20 @@ def validate_stratum_no_within_refs_jax(ledger, stratum):
     return lax.fori_loop(0, num_chunks, _scan_chunk, jnp.bool_(True))
 
 
-def validate_stratum_no_within_refs(ledger, stratum):
-    if _guards_enabled():
-        start = max(0, _host_int_value(stratum.start))
-        count = max(0, _host_int_value(stratum.count))
+def validate_stratum_no_within_refs(
+    ledger,
+    stratum,
+    *,
+    guards_enabled_fn=_guards_enabled,
+    host_int_value_fn=_host_int_value,
+    host_bool_fn=_host_bool,
+):
+    if guards_enabled_fn():
+        start = max(0, host_int_value_fn(stratum.start))
+        count = max(0, host_int_value_fn(stratum.count))
         if count == 0:
             return True
-        ledger_count = _host_int_value(ledger.count)
+        ledger_count = host_int_value_fn(ledger.count)
         end = min(start + count, ledger_count)
         if end <= start:
             return True
@@ -64,9 +72,9 @@ def validate_stratum_no_within_refs(ledger, stratum):
         a2 = jax.device_get(ledger.arg2[start:end])
         ok_a1 = bool((a1 < start).all())
         ok_a2 = bool((a2 < start).all())
-        return _host_bool(ok_a1 and ok_a2)
+        return host_bool_fn(ok_a1 and ok_a2)
     # SYNC: host bool() reads device result for validation (m1).
-    return _host_bool(validate_stratum_no_within_refs_jax(ledger, stratum))
+    return host_bool_fn(validate_stratum_no_within_refs_jax(ledger, stratum))
 
 
 @jax.jit
@@ -94,13 +102,20 @@ def validate_stratum_no_future_refs_jax(ledger, stratum):
     return lax.fori_loop(0, num_chunks, _scan_chunk, jnp.bool_(True))
 
 
-def validate_stratum_no_future_refs(ledger, stratum):
-    if _guards_enabled():
-        start = max(0, _host_int_value(stratum.start))
-        count = max(0, _host_int_value(stratum.count))
+def validate_stratum_no_future_refs(
+    ledger,
+    stratum,
+    *,
+    guards_enabled_fn=_guards_enabled,
+    host_int_value_fn=_host_int_value,
+    host_bool_fn=_host_bool,
+):
+    if guards_enabled_fn():
+        start = max(0, host_int_value_fn(stratum.start))
+        count = max(0, host_int_value_fn(stratum.count))
         if count == 0:
             return True
-        ledger_count = _host_int_value(ledger.count)
+        ledger_count = host_int_value_fn(ledger.count)
         end = min(start + count, ledger_count)
         if end <= start:
             return True
@@ -109,17 +124,17 @@ def validate_stratum_no_future_refs(ledger, stratum):
         a2 = jax.device_get(ledger.arg2[start:end])
         ok_a1 = bool((a1 < ids).all())
         ok_a2 = bool((a2 < ids).all())
-        return _host_bool(ok_a1 and ok_a2)
-    return _host_bool(validate_stratum_no_future_refs_jax(ledger, stratum))
+        return host_bool_fn(ok_a1 and ok_a2)
+    return host_bool_fn(validate_stratum_no_future_refs_jax(ledger, stratum))
 
 
-def _identity_q(ids):
-    return _committed_ids(ids.a)
+def _identity_q(ids, *, committed_ids_fn=_committed_ids):
+    return committed_ids_fn(ids.a)
 
 
-def apply_q(q: QMap, ids):
+def apply_q(q: QMap, ids, *, provisional_ids_fn=_provisional_ids):
     # Collapseʰ: homomorphic projection q.
-    return q(_provisional_ids(ids))
+    return q(provisional_ids_fn(ids))
 
 
 def _apply_stratum_q(
@@ -127,10 +142,14 @@ def _apply_stratum_q(
     stratum: Stratum,
     canon_ids,
     label: str,
+    *,
+    safe_gather_fn=safe_gather_1d,
+    guards_enabled_fn=_guards_enabled,
+    provisional_ids_fn=_provisional_ids,
 ):
     expected = jnp.maximum(jnp.asarray(stratum.count, dtype=jnp.int32), 0)
     actual = jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32)
-    if _guards_enabled():
+    if guards_enabled_fn():
         mismatch = expected != actual
 
         def _raise(bad_val, exp_val, act_val):
@@ -146,8 +165,8 @@ def _apply_stratum_q(
     count = expected
     in_range = (ids.a >= start) & (ids.a < start + count)
     idx = jnp.where(in_range, ids.a - start, jnp.int32(0))
-    mapped = safe_gather_1d(canon_ids.a, idx, label)
-    return _provisional_ids(jnp.where(in_range, mapped, ids.a))
+    mapped = safe_gather_fn(canon_ids.a, idx, label)
+    return provisional_ids_fn(jnp.where(in_range, mapped, ids.a))
 
 
 def commit_stratum(
@@ -156,15 +175,27 @@ def commit_stratum(
     prior_q: QMap | None = None,
     validate: bool = False,
     validate_mode: str = "strict",
-    intern_fn=intern_nodes,
+    *,
+    intern_fn: InternFn = intern_nodes,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    identity_q_fn=_identity_q,
+    apply_stratum_q_fn=_apply_stratum_q,
+    validate_within_fn=validate_stratum_no_within_refs,
+    validate_future_fn=validate_stratum_no_future_refs,
+    guards_enabled_fn=_guards_enabled,
+    host_int_value_fn=_host_int_value,
+    host_raise_fn: HostRaiseFn = _host_raise_if_bad,
+    provisional_ids_fn=_provisional_ids,
+    committed_ids_fn=_committed_ids,
+    safe_gather_fn=safe_gather_1d,
 ):
     # Collapseʰ: homomorphic projection q at the stratum boundary.
     if validate:
         mode = (validate_mode or "strict").strip().lower()
         if mode == "strict":
-            ok = validate_stratum_no_within_refs(ledger, stratum)
+            ok = validate_within_fn(ledger, stratum)
         elif mode == "hyper":
-            ok = validate_stratum_no_future_refs(ledger, stratum)
+            ok = validate_future_fn(ledger, stratum)
         else:
             raise ValueError(f"Unknown validate_mode={validate_mode!r}")
         if not ok:
@@ -173,27 +204,35 @@ def commit_stratum(
             raise ValueError("Stratum contains future references")
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
-    q_prev: QMap = prior_q or _identity_q
+    q_prev: QMap = prior_q or identity_q_fn
     # SYNC: host int() pulls device scalar for host-side control flow (m1).
-    count = _host_int_value(jnp.maximum(stratum.count, 0))
+    count = host_int_value_fn(jnp.maximum(stratum.count, 0))
     if count == 0:
-        canon_ids = _committed_ids(jnp.zeros((0,), dtype=jnp.int32))
+        canon_ids = committed_ids_fn(jnp.zeros((0,), dtype=jnp.int32))
         return ledger, canon_ids, q_prev
     start = jnp.asarray(stratum.start, dtype=jnp.int32)
     ids = start + jnp.arange(count, dtype=jnp.int32)
     ops = ledger.opcode[ids]
-    a1 = q_prev(_provisional_ids(ledger.arg1[ids])).a
-    a2 = q_prev(_provisional_ids(ledger.arg2[ids])).a
-    canon_ids_raw, ledger = intern_fn(ledger, _node_batch(ops, a1, a2))
-    canon_ids = _committed_ids(canon_ids_raw)
-    if (validate or _guards_enabled()) and canon_ids.a.shape[0] != count:
+    a1 = q_prev(provisional_ids_fn(ledger.arg1[ids])).a
+    a2 = q_prev(provisional_ids_fn(ledger.arg2[ids])).a
+    canon_ids_raw, ledger = intern_fn(ledger, node_batch_fn(ops, a1, a2))
+    canon_ids = committed_ids_fn(canon_ids_raw)
+    if (validate or guards_enabled_fn()) and canon_ids.a.shape[0] != count:
         raise ValueError("Stratum count mismatch in commit_stratum")
 
     def q_map(ids_in):
-        mapped = _apply_stratum_q(ids_in, stratum, canon_ids, "commit_stratum.q")
+        mapped = apply_stratum_q_fn(
+            ids_in,
+            stratum,
+            canon_ids,
+            "commit_stratum.q",
+            safe_gather_fn=safe_gather_fn,
+            guards_enabled_fn=guards_enabled_fn,
+            provisional_ids_fn=provisional_ids_fn,
+        )
         return q_prev(mapped)
 
-    _host_raise_if_bad(ledger, "Ledger capacity exceeded during commit_stratum")
+    host_raise_fn(ledger, "Ledger capacity exceeded during commit_stratum")
     return ledger, canon_ids, q_map
 
 

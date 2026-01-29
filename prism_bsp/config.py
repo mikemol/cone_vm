@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable
+
+from prism_coord.config import CoordConfig
+from prism_ledger.config import InternConfig
+from prism_vm_core.protocols import (
+    ApplyQFn,
+    CandidateIndicesFn,
+    CommitStratumFn,
+    CoordXorBatchFn,
+    EmitCandidatesFn,
+    GuardsEnabledFn,
+    HostBoolValueFn,
+    HostIntValueFn,
+    IdentityQFn,
+    InternFn,
+    LedgerRootsHashFn,
+    NodeBatchFn,
+    ScatterDropFn,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class Cnf2Flags:
+    """CNF-2 gate toggles for DI.
+
+    None means "defer to default gating".
+    """
+
+    enabled: bool | None = None
+    slot1_enabled: bool | None = None
+
+
+DEFAULT_CNF2_FLAGS = Cnf2Flags()
+
+@dataclass(frozen=True, slots=True)
+class Cnf2Config:
+    """CNF-2 dependency injection bundle.
+
+    Any field set to None defers to the call-site default. Call-site keyword
+    arguments override config values (DI precedence).
+    """
+
+    flags: Cnf2Flags | None = None
+    intern_cfg: InternConfig | None = None
+    coord_cfg: CoordConfig | None = None
+    intern_fn: InternFn | None = None
+    node_batch_fn: NodeBatchFn | None = None
+    coord_xor_batch_fn: CoordXorBatchFn | None = None
+    emit_candidates_fn: EmitCandidatesFn | None = None
+    candidate_indices_fn: CandidateIndicesFn | None = None
+    scatter_drop_fn: ScatterDropFn | None = None
+    commit_stratum_fn: CommitStratumFn | None = None
+    apply_q_fn: ApplyQFn | None = None
+    identity_q_fn: IdentityQFn | None = None
+    host_bool_value_fn: HostBoolValueFn | None = None
+    host_int_value_fn: HostIntValueFn | None = None
+    guards_enabled_fn: GuardsEnabledFn | None = None
+    ledger_roots_hash_host_fn: LedgerRootsHashFn | None = None
+    cnf2_enabled_fn: Callable[[], bool] | None = None
+    cnf2_slot1_enabled_fn: Callable[[], bool] | None = None
+    cnf2_metrics_enabled_fn: Callable[[], bool] | None = None
+    cnf2_metrics_update_fn: Callable[[int, int, int], None] | None = None
+
+
+DEFAULT_CNF2_CONFIG = Cnf2Config()
+
+__all__ = [
+    "Cnf2Flags",
+    "DEFAULT_CNF2_FLAGS",
+    "Cnf2Config",
+    "DEFAULT_CNF2_CONFIG",
+]

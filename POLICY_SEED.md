@@ -209,6 +209,24 @@ This policy is enforced through **multiple, composable layers**. No single layer
 * Pre-commit and pre-push hooks run the same policy checks.
 * Hooks are advisory (bypassable), CI is authoritative.
 
+### 5.4 Failure Surfacing and Diagnosis (No Masking)
+
+Failures must be **mapped, understood, and surfaced**, not suppressed.
+
+* **No silent fallbacks.** If a subsystem fails (e.g., CUDA init), the failure
+  MUST be explicitly recorded and visible in logs or test output.
+* **No masking by default.** Environment tweaks that hide failures (e.g.,
+  disabling a backend) are forbidden unless they are paired with a clear,
+  explicit diagnostic that the failure exists and remains unresolved.
+* **Presence implies expectations.** If hardware or system resources are present
+  (e.g., NVIDIA device nodes), tests MUST assert that the corresponding runtime
+  backend initializes correctly; otherwise they MUST fail with a concrete
+  diagnostic.
+* **Actionable diagnostics.** Failure reports MUST include enough context to
+  determine whether the fault is environment, dependency, or code.
+* **Durable logs.** Test failures MUST be recorded in `artifacts/` (e.g.
+  `artifacts/test_runs/...`) so regressions can be reviewed without re‑running.
+
 ---
 
 ## 6. Meta-Policy: How This Policy May Change

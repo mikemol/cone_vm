@@ -123,9 +123,8 @@ def test_commit_stratum_count_mismatch_fails(monkeypatch):
         ids, new_ledger = real_intern(ledger_in, batch_or_ops, a1, a2)
         return ids[:0], new_ledger
 
-    monkeypatch.setattr(pv, "intern_nodes", bad_intern)
     with pytest.raises(ValueError, match="Stratum count mismatch"):
-        pv.commit_stratum(ledger, stratum, validate=True)
+        pv.commit_stratum(ledger, stratum, validate=True, intern_fn=bad_intern)
 
 
 def test_commit_stratum_validate_trips_on_within_refs():

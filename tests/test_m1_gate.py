@@ -240,12 +240,13 @@ def test_intern_overflow_trips_corrupt_without_partial_alloc():
 def test_intern_spawn_clipping_trips_corrupt(monkeypatch):
     ledger = pv.init_ledger()
     snapshot = _seed_snapshot(ledger)
-    monkeypatch.setattr(pv, "_FORCE_SPAWN_CLIP", True)
     ops = jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32)
     a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
     a2 = jnp.array([0, 0], dtype=jnp.int32)
     with jax.disable_jit():
-        ids, new_ledger = pv.intern_nodes(ledger, ops, a1, a2)
+        ids, new_ledger = pv.intern_nodes(
+            ledger, ops, a1, a2, force_spawn_clip=True
+        )
     assert pv.ledger_has_corrupt(new_ledger)
     assert not bool(new_ledger.oom)
     assert int(new_ledger.count) == int(ledger.count)
@@ -327,12 +328,13 @@ def test_ledger_full_key_equality_distinguishes_each_key_byte(a1_vals, a2_vals):
 
 def test_ledger_full_key_equality_under_full_range_buckets(monkeypatch):
     ledger = pv.init_ledger()
-    monkeypatch.setattr(pv, "_OP_BUCKETS_FULL_RANGE", True)
     ops = jnp.array([pv.OP_ADD, pv.OP_ADD, pv.OP_ADD], dtype=jnp.int32)
     a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
     a2 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR + 1, pv.ZERO_PTR], dtype=jnp.int32)
     with jax.disable_jit():
-        ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+        ids, ledger = pv.intern_nodes(
+            ledger, ops, a1, a2, op_buckets_full_range=True
+        )
     assert int(ids[0]) == int(ids[2])
     assert int(ids[0]) != int(ids[1])
     assert int(ledger.count) == 4
@@ -354,7 +356,6 @@ def test_ledger_full_key_equality_full_range_bucket_permutation(monkeypatch):
                 mapping[key] = int(node_id)
         return mapping
 
-    monkeypatch.setattr(pv, "_OP_BUCKETS_FULL_RANGE", True)
     ops = jnp.array(
         [pv.OP_ADD, pv.OP_ADD, pv.OP_MUL, pv.OP_ADD, pv.OP_MUL],
         dtype=jnp.int32,
@@ -363,9 +364,15 @@ def test_ledger_full_key_equality_full_range_bucket_permutation(monkeypatch):
     a2 = jnp.array([1, 2, 1, 3, 2], dtype=jnp.int32)
     perm = jnp.array([4, 1, 3, 0, 2], dtype=jnp.int32)
     with jax.disable_jit():
-        ids_a, ledger_a = pv.intern_nodes(pv.init_ledger(), ops, a1, a2)
+        ids_a, ledger_a = pv.intern_nodes(
+            pv.init_ledger(), ops, a1, a2, op_buckets_full_range=True
+        )
         ids_b, ledger_b = pv.intern_nodes(
-            pv.init_ledger(), ops[perm], a1[perm], a2[perm]
+            pv.init_ledger(),
+            ops[perm],
+            a1[perm],
+            a2[perm],
+            op_buckets_full_range=True,
         )
     assert _key_map(ops, a1, a2, ids_a) == _key_map(
         ops[perm], a1[perm], a2[perm], ids_b

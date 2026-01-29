@@ -1,11 +1,14 @@
 import jax
 import jax.numpy as jnp
 from jax import lax
+from functools import partial
 
 from prism_core import jax_safe as _jax_safe
 from prism_coord.coord import coord_xor_batch
 from prism_ledger.intern import intern_nodes
+from prism_ledger.config import InternConfig
 from prism_metrics.metrics import _cnf2_metrics_enabled, _cnf2_metrics_update
+from prism_bsp.config import Cnf2Config
 from prism_semantics.commit import _identity_q, apply_q, commit_stratum
 from prism_vm_core.candidates import _candidate_indices
 from prism_vm_core.domains import (
@@ -28,6 +31,21 @@ from prism_vm_core.ontology import (
     ZERO_PTR,
 )
 from prism_vm_core.structures import CandidateBuffer, Stratum, NodeBatch
+from prism_vm_core.protocols import (
+    ApplyQFn,
+    CandidateIndicesFn,
+    CommitStratumFn,
+    CoordXorBatchFn,
+    EmitCandidatesFn,
+    GuardsEnabledFn,
+    HostBoolValueFn,
+    HostIntValueFn,
+    IdentityQFn,
+    InternFn,
+    LedgerRootsHashFn,
+    NodeBatchFn,
+    ScatterDropFn,
+)
 
 
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
@@ -109,9 +127,11 @@ def emit_candidates(ledger, frontier_ids):
     return CandidateBuffer(enabled=enabled, opcode=opcode, arg1=arg1, arg2=arg2)
 
 
-def compact_candidates(candidates):
+def compact_candidates(
+    candidates, *, candidate_indices_fn=_candidate_indices
+):
     enabled = candidates.enabled.astype(jnp.int32)
-    idx, valid, count = _candidate_indices(enabled)
+    idx, valid, count = candidate_indices_fn(enabled)
     safe_idx = jnp.where(valid, idx, 0)
 
     compacted = CandidateBuffer(
@@ -123,9 +143,11 @@ def compact_candidates(candidates):
     return compacted, count
 
 
-def compact_candidates_with_index(candidates):
+def compact_candidates_with_index(
+    candidates, *, candidate_indices_fn=_candidate_indices
+):
     enabled = candidates.enabled.astype(jnp.int32)
-    idx, valid, count = _candidate_indices(enabled)
+    idx, valid, count = candidate_indices_fn(enabled)
     safe_idx = jnp.where(valid, idx, 0)
     compacted = CandidateBuffer(
         enabled=valid.astype(jnp.int32),
@@ -136,23 +158,40 @@ def compact_candidates_with_index(candidates):
     return compacted, count, idx
 
 
-def _scatter_compacted_ids(comp_idx, ids_compact, count, size):
+def _scatter_compacted_ids(
+    comp_idx,
+    ids_compact,
+    count,
+    size,
+    *,
+    scatter_drop_fn=_scatter_drop,
+):
     valid = jnp.arange(size, dtype=jnp.int32) < count
     scatter_idx = jnp.where(valid, comp_idx, jnp.int32(size))
     scatter_ids = jnp.where(valid, ids_compact, jnp.int32(0))
     ids_full = jnp.zeros(size, dtype=ids_compact.dtype)
-    return _scatter_drop(
+    return scatter_drop_fn(
         ids_full, scatter_idx, scatter_ids, "scatter_compacted_ids"
     )
 
 
-def intern_candidates(ledger, candidates):
-    compacted, count = compact_candidates(candidates)
+def intern_candidates(
+    ledger,
+    candidates,
+    *,
+    compact_candidates_fn=compact_candidates,
+    intern_fn: InternFn = intern_nodes,
+    intern_cfg: InternConfig | None = None,
+    node_batch_fn: NodeBatchFn = _node_batch,
+):
+    if intern_cfg is not None and intern_fn is intern_nodes:
+        intern_fn = partial(intern_nodes, cfg=intern_cfg)
+    compacted, count = compact_candidates_fn(candidates)
     enabled = compacted.enabled.astype(jnp.int32)
     ops = jnp.where(enabled, compacted.opcode, jnp.int32(0))
     a1 = jnp.where(enabled, compacted.arg1, jnp.int32(0))
     a2 = jnp.where(enabled, compacted.arg2, jnp.int32(0))
-    ids, new_ledger = intern_nodes(ledger, _node_batch(ops, a1, a2))
+    ids, new_ledger = intern_fn(ledger, node_batch_fn(ops, a1, a2))
     return ids, new_ledger, count
 
 
@@ -161,10 +200,89 @@ def cycle_candidates(
     frontier_ids,
     validate_stratum: bool = False,
     validate_mode: str = "strict",
-    intern_fn=intern_nodes,
+    *,
+    cfg: Cnf2Config | None = None,
+    intern_fn: InternFn = intern_nodes,
+    intern_cfg: InternConfig | None = None,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    coord_xor_batch_fn: CoordXorBatchFn = coord_xor_batch,
+    emit_candidates_fn: EmitCandidatesFn = emit_candidates,
+    candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
+    scatter_drop_fn: ScatterDropFn = _scatter_drop,
+    commit_stratum_fn: CommitStratumFn = commit_stratum,
+    apply_q_fn: ApplyQFn = apply_q,
+    identity_q_fn: IdentityQFn = _identity_q,
+    host_bool_value_fn: HostBoolValueFn = _host_bool_value,
+    host_int_value_fn: HostIntValueFn = _host_int_value,
+    guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
+    ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
     cnf2_enabled_fn=_cnf2_enabled,
     cnf2_slot1_enabled_fn=_cnf2_slot1_enabled,
+    cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
+    cnf2_metrics_update_fn=_cnf2_metrics_update,
 ):
+    def _maybe_override(current, default, override):
+        if override is None:
+            return current
+        if current is default:
+            return override
+        return current
+
+    if cfg is not None:
+        intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
+        if cfg.coord_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
+            coord_xor_batch_fn = partial(coord_xor_batch, cfg=cfg.coord_cfg)
+        intern_fn = _maybe_override(intern_fn, intern_nodes, cfg.intern_fn)
+        node_batch_fn = _maybe_override(node_batch_fn, _node_batch, cfg.node_batch_fn)
+        coord_xor_batch_fn = _maybe_override(
+            coord_xor_batch_fn, coord_xor_batch, cfg.coord_xor_batch_fn
+        )
+        emit_candidates_fn = _maybe_override(
+            emit_candidates_fn, emit_candidates, cfg.emit_candidates_fn
+        )
+        candidate_indices_fn = _maybe_override(
+            candidate_indices_fn, _candidate_indices, cfg.candidate_indices_fn
+        )
+        scatter_drop_fn = _maybe_override(
+            scatter_drop_fn, _scatter_drop, cfg.scatter_drop_fn
+        )
+        commit_stratum_fn = _maybe_override(
+            commit_stratum_fn, commit_stratum, cfg.commit_stratum_fn
+        )
+        apply_q_fn = _maybe_override(apply_q_fn, apply_q, cfg.apply_q_fn)
+        identity_q_fn = _maybe_override(identity_q_fn, _identity_q, cfg.identity_q_fn)
+        host_bool_value_fn = _maybe_override(
+            host_bool_value_fn, _host_bool_value, cfg.host_bool_value_fn
+        )
+        host_int_value_fn = _maybe_override(
+            host_int_value_fn, _host_int_value, cfg.host_int_value_fn
+        )
+        guards_enabled_fn = _maybe_override(
+            guards_enabled_fn, _guards_enabled, cfg.guards_enabled_fn
+        )
+        ledger_roots_hash_host_fn = _maybe_override(
+            ledger_roots_hash_host_fn,
+            _ledger_roots_hash_host,
+            cfg.ledger_roots_hash_host_fn,
+        )
+        if cfg.cnf2_metrics_enabled_fn is not None and cnf2_metrics_enabled_fn is _cnf2_metrics_enabled:
+            cnf2_metrics_enabled_fn = cfg.cnf2_metrics_enabled_fn
+        if cfg.cnf2_metrics_update_fn is not None and cnf2_metrics_update_fn is _cnf2_metrics_update:
+            cnf2_metrics_update_fn = cfg.cnf2_metrics_update_fn
+        if cfg.cnf2_enabled_fn is not None and cnf2_enabled_fn is _cnf2_enabled:
+            cnf2_enabled_fn = cfg.cnf2_enabled_fn
+        if cfg.cnf2_slot1_enabled_fn is not None and cnf2_slot1_enabled_fn is _cnf2_slot1_enabled:
+            cnf2_slot1_enabled_fn = cfg.cnf2_slot1_enabled_fn
+        if cfg.flags is not None:
+            if cfg.flags.enabled is not None and cnf2_enabled_fn is _cnf2_enabled:
+                cnf2_enabled_fn = lambda: bool(cfg.flags.enabled)
+            if cfg.flags.slot1_enabled is not None and cnf2_slot1_enabled_fn is _cnf2_slot1_enabled:
+                cnf2_slot1_enabled_fn = lambda: bool(cfg.flags.slot1_enabled)
+
+    if intern_cfg is not None and intern_fn is intern_nodes:
+        intern_fn = partial(intern_nodes, cfg=intern_cfg)
+    if intern_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
+        coord_xor_batch_fn = partial(coord_xor_batch, intern_cfg=intern_cfg)
     # BSPᵗ: temporal superstep / barrier semantics.
     frontier_ids = _committed_ids(frontier_ids)
     if not cnf2_enabled_fn():
@@ -172,18 +290,23 @@ def cycle_candidates(
         # See IMPLEMENTATION_PLAN.md (m2 CNF-2 pipeline).
         raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
     # SYNC: host read to short-circuit on corrupt ledgers (m1).
-    if _host_bool_value(ledger.corrupt):
+    if host_bool_value_fn(ledger.corrupt):
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
         return (
             ledger,
             _provisional_ids(frontier_ids.a),
             (empty, empty, empty),
-            _identity_q,
+            identity_q_fn,
         )
     num_frontier = frontier_ids.a.shape[0]
     if num_frontier == 0:
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
-        return ledger, _provisional_ids(frontier_ids.a), (empty, empty, empty), _identity_q
+        return (
+            ledger,
+            _provisional_ids(frontier_ids.a),
+            (empty, empty, empty),
+            identity_q_fn,
+        )
 
     def _peel_one(ptr):
         def cond(state):
@@ -219,31 +342,43 @@ def cycle_candidates(
     # strict strata while canonicalizing coord-add payloads.
     coord_ids = jnp.zeros_like(rewrite_ids)
     coord_enabled = is_coord_add.astype(jnp.int32)
-    coord_idx, coord_valid, coord_count = _candidate_indices(coord_enabled)
-    coord_count_i = _host_int_value(coord_count)
+    coord_idx, coord_valid, coord_count = candidate_indices_fn(coord_enabled)
+    coord_count_i = host_int_value_fn(coord_count)
     if coord_count_i > 0:
         coord_idx_safe = jnp.where(coord_valid, coord_idx, 0)
         coord_left = r_a1[coord_idx_safe][:coord_count_i]
         coord_right = r_a2[coord_idx_safe][:coord_count_i]
-        coord_ids_compact, ledger = coord_xor_batch(
+        coord_ids_compact, ledger = coord_xor_batch_fn(
             ledger, coord_left, coord_right
         )
         coord_ids_full = jnp.zeros_like(coord_idx_safe)
         coord_ids_full = coord_ids_full.at[:coord_count_i].set(coord_ids_compact)
         coord_ids = _scatter_compacted_ids(
-            coord_idx, coord_ids_full, coord_count, num_frontier
+            coord_idx,
+            coord_ids_full,
+            coord_count,
+            num_frontier,
+            scatter_drop_fn=scatter_drop_fn,
         )
 
     start0 = ledger.count.astype(jnp.int32)
-    candidates = emit_candidates(ledger, rewrite_ids)
-    compacted0, count0, comp_idx0 = compact_candidates_with_index(candidates)
+    candidates = emit_candidates_fn(ledger, rewrite_ids)
+    compacted0, count0, comp_idx0 = compact_candidates_with_index(
+        candidates, candidate_indices_fn=candidate_indices_fn
+    )
     enabled0 = compacted0.enabled.astype(jnp.int32)
     ops0 = jnp.where(enabled0, compacted0.opcode, jnp.int32(0))
     a1_0 = jnp.where(enabled0, compacted0.arg1, jnp.int32(0))
     a2_0 = jnp.where(enabled0, compacted0.arg2, jnp.int32(0))
-    ids_compact, ledger0 = intern_fn(ledger, _node_batch(ops0, a1_0, a2_0))
+    ids_compact, ledger0 = intern_fn(ledger, node_batch_fn(ops0, a1_0, a2_0))
     size0 = candidates.enabled.shape[0]
-    ids_full0 = _scatter_compacted_ids(comp_idx0, ids_compact, count0, size0)
+    ids_full0 = _scatter_compacted_ids(
+        comp_idx0,
+        ids_compact,
+        count0,
+        size0,
+        scatter_drop_fn=scatter_drop_fn,
+    )
     # Candidate buffer layout invariant: slot0 at 2*i, slot1 at 2*i+1.
     # cycle_candidates relies on this; see IMPLEMENTATION_PLAN.md.
     idx0 = jnp.arange(num_frontier, dtype=jnp.int32) * 2
@@ -289,7 +424,7 @@ def cycle_candidates(
     slot1_a2 = jnp.where(slot1_enabled, slot1_a2, jnp.int32(0))
     if slot1_gate:
         slot1_ids, ledger1 = intern_fn(
-            ledger0, _node_batch(slot1_ops, slot1_a1, slot1_a2)
+            ledger0, node_batch_fn(slot1_ops, slot1_a1, slot1_a2)
         )
     else:
         slot1_ids = jnp.zeros_like(rewrite_ids)
@@ -309,14 +444,14 @@ def cycle_candidates(
     wrap_depths = depths
     next_frontier = base_next
     ledger2 = ledger1
-    while _host_bool_value(jnp.any((wrap_depths > 0) & (~ledger2.oom))):
+    while host_bool_value_fn(jnp.any((wrap_depths > 0) & (~ledger2.oom))):
         to_wrap = (wrap_depths > 0) & (~ledger2.oom)
         ops = jnp.where(to_wrap, jnp.int32(OP_SUC), jnp.int32(0))
         a1 = jnp.where(to_wrap, next_frontier, jnp.int32(0))
         a2 = jnp.zeros_like(a1)
-        start = _host_int_value(ledger2.count)
-        new_ids, ledger2 = intern_fn(ledger2, _node_batch(ops, a1, a2))
-        end = _host_int_value(ledger2.count)
+        start = host_int_value_fn(ledger2.count)
+        new_ids, ledger2 = intern_fn(ledger2, node_batch_fn(ops, a1, a2))
+        end = host_int_value_fn(ledger2.count)
         if end > start:
             wrap_strata.append((start, end - start))
         next_frontier = jnp.where(to_wrap, new_ids, next_frontier)
@@ -335,24 +470,26 @@ def cycle_candidates(
         start2_i = wrap_strata[0][0]
         count2_i = sum(count for _, count in wrap_strata)
     else:
-        start2_i = _host_int_value(ledger1.count)
+        start2_i = host_int_value_fn(ledger1.count)
         count2_i = 0
     stratum2 = Stratum(
         start=jnp.int32(start2_i), count=jnp.int32(count2_i)
     )
-    if _cnf2_metrics_enabled():
-        rewrite_child = _host_int_value(count0)
-        changed_count = _host_int_value(jnp.sum(changed_mask.astype(jnp.int32)))
-        _cnf2_metrics_update(rewrite_child, changed_count, int(count2_i))
-    validate = validate_stratum or _guards_enabled()
-    ledger2, _, q_map = commit_stratum(
+    if cnf2_metrics_enabled_fn():
+        rewrite_child = host_int_value_fn(count0)
+        changed_count = host_int_value_fn(
+            jnp.sum(changed_mask.astype(jnp.int32))
+        )
+        cnf2_metrics_update_fn(rewrite_child, changed_count, int(count2_i))
+    validate = validate_stratum or guards_enabled_fn()
+    ledger2, _, q_map = commit_stratum_fn(
         ledger2,
         stratum0,
         validate=validate,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
     )
-    ledger2, _, q_map = commit_stratum(
+    ledger2, _, q_map = commit_stratum_fn(
         ledger2,
         stratum1,
         prior_q=q_map,
@@ -365,7 +502,7 @@ def cycle_candidates(
         micro_stratum = Stratum(
             start=jnp.int32(start_i), count=jnp.int32(count_i)
         )
-        ledger2, _, q_map = commit_stratum(
+        ledger2, _, q_map = commit_stratum_fn(
             ledger2,
             micro_stratum,
             prior_q=q_map,
@@ -375,9 +512,9 @@ def cycle_candidates(
         )
     next_frontier = _provisional_ids(next_frontier)
     if _TEST_GUARDS:
-        pre_hash = _ledger_roots_hash_host(ledger2, next_frontier.a)
-        post_ids = apply_q(q_map, next_frontier).a
-        post_hash = _ledger_roots_hash_host(ledger2, post_ids)
+        pre_hash = ledger_roots_hash_host_fn(ledger2, next_frontier.a)
+        post_ids = apply_q_fn(q_map, next_frontier).a
+        post_hash = ledger_roots_hash_host_fn(ledger2, post_ids)
         if pre_hash != post_hash:
             raise RuntimeError("BSPᵗ projection changed root structure")
     return ledger2, next_frontier, (stratum0, stratum1, stratum2), q_map

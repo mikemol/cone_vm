@@ -63,9 +63,10 @@ def test_gather_guard_valid_indices_noop():
 
 def test_gather_clamps_when_guard_disabled(monkeypatch):
     x = jnp.arange(5, dtype=jnp.int32)
-    monkeypatch.setattr(pv, "_GATHER_GUARD", False)
     with jax.disable_jit():
-        y_neg = pv.safe_gather_1d(x, jnp.int32(-1), "test.clamp")
-        y_oob = pv.safe_gather_1d(x, jnp.int32(x.shape[0]), "test.clamp")
+        y_neg = pv.safe_gather_1d(x, jnp.int32(-1), "test.clamp", guard=False)
+        y_oob = pv.safe_gather_1d(
+            x, jnp.int32(x.shape[0]), "test.clamp", guard=False
+        )
     assert int(y_neg) == int(x[0])
     assert int(y_oob) == int(x[-1])

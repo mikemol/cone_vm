@@ -1273,6 +1273,79 @@ q ∘ Renormˢ = q
 
 ---
 
+## 31. Facade / Wrapper / Injection (Interface Discipline)
+
+### Meanings (must be qualified)
+
+* **Facadeᵢ**: interface/control wrapper (host/DI layer)
+* **Coreᵣ**: semantic core function (rewrite/canonicalization)
+
+### Axes
+
+* Interface/Control vs Semantics
+
+### Normative Interpretation
+
+> Facade wrappers are **control‑plane only**. They exist to make DI explicit
+> and to surface policy/telemetry without changing semantic meaning.
+
+### Diagnostic Artifacts (Operational)
+
+Test logs and failure maps are **control‑plane artifacts**. They must be stored
+under `artifacts/` (e.g. `artifacts/test_runs/...`) and are **erased by `q`**.
+Diagnostics must never be used to justify a semantic change without a matching
+core‑layer proof or test obligation update.
+
+### Control Bundles (Config Objects)
+
+**Configᶜ**: a control‑plane bundle that packages DI choices (e.g. `InternConfig`,
+`CoordConfig`, `Cnf2Config`). Configᶜ objects are **not semantics**; they are
+interfaces to select which semantic core runs.
+
+**Override Precedence (Normative):**
+
+1. **Explicit call‑site keyword arguments** (most specific)
+2. **Configᶜ object values** (bundled defaults)
+3. **Module defaults** (least specific)
+
+If a conflict exists between (1) and (2), the call‑site wins or the API must
+raise; silent ambiguity is forbidden.
+
+### Erasure by `q`
+
+Wrapper choices (guards, diagnostics, injected dependencies) are erased by `q`:
+
+```
+q ∘ Facadeᵢ = q ∘ Coreᵣ    (given identical injected deps)
+```
+
+### Static‑Arg DI (JIT Discipline)
+
+**Rule:** DI that changes behavior must be expressible as a **static argument**
+to a JIT‑compiled core (e.g. cached per injected function/config).  
+This makes compilation deterministic and prevents “hidden recompiles” driven by
+ambient state or monkeypatching.
+
+### Failure Mode
+
+* wrapper overwrites core or vice‑versa
+* monkeypatching alters semantics instead of control
+* DI choices leak into Ledger meaning
+* recompile storms from dynamic control paths (host `if`/`int()` in core)
+
+### Normative Rule
+
+> All wrapper behavior must be explicit, injected, and documented.
+> Monkeypatching is forbidden when a DI parameter can express the same control.
+> Control bundles must be used to make injection readable and auditable.
+
+### Test Obligations
+
+- (m1) `tests/test_gather_guard.py::test_guard_toggle`
+- (m2) `tests/test_commit_stratum.py::test_commit_stratum_identity`
+- (m2) `tests/test_candidate_cycle.py::test_cycle_candidates_add_zero`
+- (m1) `tests/test_m1_gate.py::test_intern_deterministic_ids_single_engine`
+
 # Meta-Rule: How to Use This Going Forward
 
 Whenever a term or acronym is reused:

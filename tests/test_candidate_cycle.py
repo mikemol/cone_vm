@@ -115,11 +115,10 @@ def _assert_ledger_snapshot(ledger, snapshot):
 
 def test_cycle_candidates_rejects_when_cnf2_disabled(monkeypatch):
     _require_cycle_candidates()
-    monkeypatch.setattr(pv, "_cnf2_enabled", lambda: False)
     ledger = pv.init_ledger()
     frontier = pv._committed_ids(jnp.array([pv.ZERO_PTR], dtype=jnp.int32))
     with pytest.raises(RuntimeError, match="cycle_candidates disabled until m2"):
-        pv.cycle_candidates(ledger, frontier)
+        pv.cycle_candidates(ledger, frontier, cnf2_enabled_fn=lambda: False)
 
 
 def test_cycle_candidates_empty_frontier_no_mutation():
@@ -615,9 +614,10 @@ def test_cycle_candidates_validate_stratum_trips_on_within_refs(monkeypatch):
             new_ledger = new_ledger._replace(arg1=new_arg1)
         return ids, new_ledger
 
-    monkeypatch.setattr(pv, "intern_nodes", bad_intern)
     with pytest.raises(ValueError, match="Stratum contains within-tier references"):
-        pv.cycle_candidates(ledger, frontier, validate_stratum=True)
+        pv.cycle_candidates(
+            ledger, frontier, validate_stratum=True, intern_fn=bad_intern
+        )
 
 
 @pytest.mark.m3
@@ -687,8 +687,7 @@ def test_cycle_candidates_emits_from_pre_step_ledger(monkeypatch):
         assert int(pv._host_int_value(ledger_in.count)) == pre_count
         return real_emit(ledger_in, frontier_ids)
 
-    monkeypatch.setattr(pv, "emit_candidates", _emit_checked)
-    pv.cycle_candidates(ledger, frontier)
+    pv.cycle_candidates(ledger, frontier, emit_candidates_fn=_emit_checked)
 
 
 def test_cycle_candidates_stop_path_on_corrupt():
@@ -748,10 +747,8 @@ def test_cycle_candidates_stop_path_on_oom_is_non_mutating(monkeypatch):
     frontier = pv._committed_ids(jnp.array([suc_ids[0]], dtype=jnp.int32))
     snapshot = _ledger_snapshot(ledger)
     ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
-    monkeypatch.setattr(pv, "_host_raise_if_bad", lambda *args, **kwargs: None)
-
     out_ledger, frontier_prov, strata, q_map = pv.cycle_candidates(
-        ledger, frontier
+        ledger, frontier, host_raise_if_bad_fn=lambda *args, **kwargs: None
     )
     mapped = pv.apply_q(q_map, frontier_prov).a
     stratum0, stratum1, stratum2 = strata
