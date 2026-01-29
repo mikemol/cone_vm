@@ -8,6 +8,7 @@ shadowing or monkeypatching drift.
 """
 
 from typing import Optional
+from functools import partial
 from dataclasses import replace
 
 import jax
@@ -588,6 +589,7 @@ def commit_stratum(
     intern_fn: InternFn | None = None,
     *,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for commit_stratum injection.
 
@@ -596,7 +598,12 @@ def commit_stratum(
     """
     if intern_fn is None:
         intern_fn = intern_nodes
-    safe_gather_fn = wrap_policy(safe_gather_1d, safe_gather_policy)
+    safe_gather_fn = safe_gather_1d
+    safe_gather_ok_fn = safe_gather_1d_ok
+    if guard_cfg is not None:
+        safe_gather_fn = partial(safe_gather_1d_cfg, cfg=guard_cfg)
+        safe_gather_ok_fn = partial(safe_gather_1d_ok_cfg, cfg=guard_cfg)
+    safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
     return _commit_stratum_impl(
         ledger,
         stratum,
@@ -605,6 +612,8 @@ def commit_stratum(
         validate_mode=validate_mode,
         intern_fn=intern_fn,
         safe_gather_fn=safe_gather_fn,
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        safe_gather_policy=safe_gather_policy,
     )
 
 
