@@ -13,6 +13,7 @@ class GuardConfig:
     guards_enabled_fn: Optional[Callable[[], bool]] = None
     guard_max_fn: Optional[Callable[..., None]] = None
     guard_gather_index_fn: Optional[Callable[..., None]] = None
+    safe_index_fn: Optional[Callable[..., tuple]] = None
     guard_slot0_perm_fn: Optional[Callable[..., None]] = None
     guard_null_row_fn: Optional[Callable[..., None]] = None
     guard_zero_row_fn: Optional[Callable[..., None]] = None
@@ -45,6 +46,8 @@ def safe_index_1d_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Guard-configured wrapper for safe_index_1d (shared)."""
+    if cfg.safe_index_fn is not None:
+        return cfg.safe_index_fn(idx, size, label, guard=guard, policy=policy)
     guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
     return _jax_safe.safe_index_1d(idx, size, label, guard=False, policy=policy)
 
@@ -55,8 +58,12 @@ def make_safe_index_fn(
     policy=None,
 ):
     """Return a SafeIndexFn wired to the provided GuardConfig."""
-    def _safe_index(idx, size, label, *, policy=policy):
-        return safe_index_1d_cfg(idx, size, label, policy=policy, cfg=cfg)
+    if cfg.safe_index_fn is not None:
+        def _safe_index(idx, size, label, *, policy=policy):
+            return cfg.safe_index_fn(idx, size, label, guard=None, policy=policy)
+    else:
+        def _safe_index(idx, size, label, *, policy=policy):
+            return safe_index_1d_cfg(idx, size, label, policy=policy, cfg=cfg)
 
     return _safe_index
 
