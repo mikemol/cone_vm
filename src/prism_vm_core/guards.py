@@ -7,6 +7,7 @@ from prism_core import jax_safe as _jax_safe
 from prism_core.guards import (
     GuardConfig,
     guard_gather_index_cfg as _guard_gather_index_cfg,
+    safe_index_1d_cfg as _safe_index_1d_cfg,
     safe_gather_1d_cfg as _safe_gather_1d_cfg,
     safe_gather_1d_ok_cfg as _safe_gather_1d_ok_cfg,
     make_safe_gather_fn as _make_safe_gather_fn,
@@ -87,6 +88,19 @@ def safe_gather_1d_ok_cfg(
         arr, idx, label, guard=guard, policy=policy, cfg=cfg
     )
 
+
+def safe_index_1d_cfg(
+    idx,
+    size,
+    label="safe_index_1d",
+    *,
+    guard=None,
+    policy=None,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+):
+    return _safe_index_1d_cfg(
+        idx, size, label, guard=guard, policy=policy, cfg=cfg
+    )
 
 def make_safe_gather_fn(*, cfg: GuardConfig = DEFAULT_GUARD_CONFIG, policy=None, safe_gather_fn=None):
     return _make_safe_gather_fn(cfg=cfg, policy=policy, safe_gather_fn=safe_gather_fn)
@@ -234,6 +248,7 @@ __all__ = [
     "guards_enabled_cfg",
     "guard_max_cfg",
     "guard_gather_index_cfg",
+    "safe_index_1d_cfg",
     "safe_gather_1d_cfg",
     "safe_gather_1d_ok_cfg",
     "make_safe_gather_fn",

@@ -186,6 +186,7 @@ def cycle_core(
     op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm,
     op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm,
     safe_gather_fn=_jax_safe.safe_gather_1d,
+    guard_cfg=None,
     arena_root_hash_fn=_arena_root_hash_host,
     damage_tile_size_fn=_damage_tile_size,
     damage_metrics_update_fn=_damage_metrics_update,
@@ -206,7 +207,11 @@ def cycle_core(
             morton_arr = morton if morton is not None else op_morton_fn(arena)
             servo_mask = arena.servo[0]
             arena, inv_perm = op_sort_and_swizzle_servo_with_perm_fn(
-                arena, morton_arr, servo_mask, safe_gather_fn=safe_gather_fn
+                arena,
+                morton_arr,
+                servo_mask,
+                safe_gather_fn=safe_gather_fn,
+                guard_cfg=guard_cfg,
             )
         else:
             if use_morton or morton is not None:
@@ -223,18 +228,28 @@ def cycle_core(
                     morton=morton_arr,
                     do_global=do_global,
                     safe_gather_fn=safe_gather_fn,
+                    guard_cfg=guard_cfg,
                 )
             elif block_size is not None:
                 arena, inv_perm = op_sort_and_swizzle_blocked_with_perm_fn(
-                    arena, block_size, morton=morton_arr, safe_gather_fn=safe_gather_fn
+                    arena,
+                    block_size,
+                    morton=morton_arr,
+                    safe_gather_fn=safe_gather_fn,
+                    guard_cfg=guard_cfg,
                 )
             elif morton_arr is not None:
                 arena, inv_perm = op_sort_and_swizzle_morton_with_perm_fn(
-                    arena, morton_arr, safe_gather_fn=safe_gather_fn
+                    arena,
+                    morton_arr,
+                    safe_gather_fn=safe_gather_fn,
+                    guard_cfg=guard_cfg,
                 )
             else:
                 arena, inv_perm = op_sort_and_swizzle_with_perm_fn(
-                    arena, safe_gather_fn=safe_gather_fn
+                    arena,
+                    safe_gather_fn=safe_gather_fn,
+                    guard_cfg=guard_cfg,
                 )
         # Root remap is a pointer gather; guard in test mode.
         root_idx = jnp.where(root_arr != 0, root_arr, jnp.int32(0))
@@ -269,6 +284,7 @@ def cycle(
     op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm,
     op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm,
     safe_gather_fn=_jax_safe.safe_gather_1d,
+    guard_cfg=None,
     arena_root_hash_fn=_arena_root_hash_host,
     damage_tile_size_fn=_damage_tile_size,
     damage_metrics_update_fn=_damage_metrics_update,
@@ -294,6 +310,7 @@ def cycle(
         op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
         op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
         safe_gather_fn=safe_gather_fn,
+        guard_cfg=guard_cfg,
         arena_root_hash_fn=arena_root_hash_fn,
         damage_tile_size_fn=damage_tile_size_fn,
         damage_metrics_update_fn=damage_metrics_update_fn,

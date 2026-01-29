@@ -11,9 +11,11 @@ from prism_core.di import wrap_policy
 from prism_core.safety import SafetyPolicy
 from prism_vm_core.domains import _host_int, _host_int_value
 from prism_vm_core.guards import (
-    _guard_null_row,
-    _guard_slot0_perm,
-    _guard_swizzle_args,
+    GuardConfig,
+    DEFAULT_GUARD_CONFIG,
+    guard_null_row_cfg,
+    guard_slot0_perm_cfg,
+    guard_swizzle_args_cfg,
 )
 from prism_vm_core.ontology import OP_NULL
 from prism_vm_core.structures import Arena
@@ -150,6 +152,7 @@ def _apply_perm_and_swizzle(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     # BSP_s renorm: layout-only; must commute with q/denote.
     safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
@@ -171,10 +174,19 @@ def _apply_perm_and_swizzle(
     # IMPLEMENTATION_PLAN.md.
     # Swizzle is renormalization only; denotation must not change (plan).
     # See IMPLEMENTATION_PLAN.md (m3 denotation invariance).
-    _guard_slot0_perm(perm, inv_perm, "swizzle.perm")
-    _guard_null_row(new_ops, swizzled_arg1, swizzled_arg2, "swizzle.row0")
-    _guard_swizzle_args(
-        swizzled_arg1, swizzled_arg2, live, arena.count, "swizzle.args"
+    if guard_cfg is None:
+        guard_cfg = DEFAULT_GUARD_CONFIG
+    guard_slot0_perm_cfg(perm, inv_perm, "swizzle.perm", cfg=guard_cfg)
+    guard_null_row_cfg(
+        new_ops, swizzled_arg1, swizzled_arg2, "swizzle.row0", cfg=guard_cfg
+    )
+    guard_swizzle_args_cfg(
+        swizzled_arg1,
+        swizzled_arg2,
+        live,
+        arena.count,
+        "swizzle.args",
+        cfg=guard_cfg,
     )
     return (
         Arena(
@@ -191,13 +203,14 @@ def _apply_perm_and_swizzle(
 
 
 @functools.partial(
-    jax.jit, static_argnames=("safe_gather_fn", "safe_gather_policy")
+    jax.jit, static_argnames=("safe_gather_fn", "safe_gather_policy", "guard_cfg")
 )
 def _op_sort_and_swizzle_with_perm_full(
     arena,
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     size = arena.rank.shape[0]
     idx = jnp.arange(size, dtype=jnp.int32)
@@ -209,6 +222,7 @@ def _op_sort_and_swizzle_with_perm_full(
         perm,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
 
 
@@ -218,6 +232,7 @@ def _op_sort_and_swizzle_with_perm_prefix(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     size = arena.rank.shape[0]
     if active_count <= 1:
@@ -227,6 +242,7 @@ def _op_sort_and_swizzle_with_perm_prefix(
             perm,
             safe_gather_fn=safe_gather_fn,
             safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
         )
     idx = jnp.arange(active_count, dtype=jnp.int32)
     sort_key = arena.rank[:active_count].astype(jnp.int32) * (active_count + 1) + idx
@@ -239,6 +255,7 @@ def _op_sort_and_swizzle_with_perm_prefix(
         perm,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
 
 
@@ -247,6 +264,7 @@ def op_sort_and_swizzle_with_perm(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     # BSPˢ: layout/space only.
     active_count = _active_prefix_count(arena)
@@ -257,12 +275,14 @@ def op_sort_and_swizzle_with_perm(
             arena,
             safe_gather_fn=safe_gather_fn,
             safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
         )
     return _op_sort_and_swizzle_with_perm_prefix(
         arena,
         active_count_i,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
 
 
@@ -271,12 +291,14 @@ def op_sort_and_swizzle(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     # BSPˢ: layout/space only.
     sorted_arena, _ = op_sort_and_swizzle_with_perm(
         arena,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
     return sorted_arena
 
@@ -347,6 +369,7 @@ def op_sort_and_swizzle_blocked_with_perm(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     # BSPˢ: layout/space only.
     active_count = _active_prefix_count(arena)
@@ -358,6 +381,7 @@ def op_sort_and_swizzle_blocked_with_perm(
         perm,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
 
 
@@ -368,6 +392,7 @@ def op_sort_and_swizzle_blocked(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     # BSPˢ: layout/space only.
     sorted_arena, _ = op_sort_and_swizzle_blocked_with_perm(
@@ -376,6 +401,7 @@ def op_sort_and_swizzle_blocked(
         morton=morton,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
     return sorted_arena
 
@@ -414,6 +440,7 @@ def op_sort_and_swizzle_hierarchical_with_perm(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     # BSPˢ: layout/space only.
     size = int(arena.rank.shape[0])
@@ -430,6 +457,7 @@ def op_sort_and_swizzle_hierarchical_with_perm(
         morton=morton,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
     morton = _apply_perm_to_morton(morton, inv_perm)
     inv_perm_total = inv_perm
@@ -441,6 +469,7 @@ def op_sort_and_swizzle_hierarchical_with_perm(
             morton=morton,
             safe_gather_fn=safe_gather_fn,
             safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
         )
         morton = _apply_perm_to_morton(morton, inv_perm_l1)
         inv_perm_total = inv_perm_l1[inv_perm_total]
@@ -453,6 +482,7 @@ def op_sort_and_swizzle_hierarchical_with_perm(
                 morton=morton,
                 safe_gather_fn=safe_gather_fn,
                 safe_gather_policy=safe_gather_policy,
+                guard_cfg=guard_cfg,
             )
             morton = _apply_perm_to_morton(morton, inv_perm_global)
             inv_perm_total = inv_perm_global[inv_perm_total]
@@ -469,6 +499,7 @@ def op_sort_and_swizzle_hierarchical(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     # BSPˢ: layout/space only.
     sorted_arena, _ = op_sort_and_swizzle_hierarchical_with_perm(
@@ -479,6 +510,7 @@ def op_sort_and_swizzle_hierarchical(
         do_global=do_global,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
     return sorted_arena
 
@@ -611,7 +643,7 @@ def op_morton(arena):
 
 
 @functools.partial(
-    jax.jit, static_argnames=("safe_gather_fn", "safe_gather_policy")
+    jax.jit, static_argnames=("safe_gather_fn", "safe_gather_policy", "guard_cfg")
 )
 def _op_sort_and_swizzle_morton_with_perm_full(
     arena,
@@ -619,6 +651,7 @@ def _op_sort_and_swizzle_morton_with_perm_full(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     size = arena.rank.shape[0]
     idx = jnp.arange(size, dtype=jnp.uint32)
@@ -635,6 +668,7 @@ def _op_sort_and_swizzle_morton_with_perm_full(
         perm,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
 
 
@@ -645,6 +679,7 @@ def _op_sort_and_swizzle_morton_with_perm_prefix(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     size = arena.rank.shape[0]
     if active_count <= 1:
@@ -654,6 +689,7 @@ def _op_sort_and_swizzle_morton_with_perm_prefix(
             perm,
             safe_gather_fn=safe_gather_fn,
             safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
         )
     idx = jnp.arange(active_count, dtype=jnp.uint32)
     rank_u = arena.rank[:active_count].astype(jnp.uint32)
@@ -671,6 +707,7 @@ def _op_sort_and_swizzle_morton_with_perm_prefix(
         perm,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
 
 
@@ -680,6 +717,7 @@ def op_sort_and_swizzle_morton_with_perm(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     # BSPˢ: layout/space only.
     active_count = _active_prefix_count(arena)
@@ -691,6 +729,7 @@ def op_sort_and_swizzle_morton_with_perm(
             morton,
             safe_gather_fn=safe_gather_fn,
             safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
         )
     return _op_sort_and_swizzle_morton_with_perm_prefix(
         arena,
@@ -698,6 +737,7 @@ def op_sort_and_swizzle_morton_with_perm(
         active_count_i,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
 
 
@@ -707,6 +747,7 @@ def op_sort_and_swizzle_morton(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     # BSPˢ: layout/space only.
     sorted_arena, _ = op_sort_and_swizzle_morton_with_perm(
@@ -714,12 +755,13 @@ def op_sort_and_swizzle_morton(
         morton,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
     return sorted_arena
 
 
 @functools.partial(
-    jax.jit, static_argnames=("safe_gather_fn", "safe_gather_policy")
+    jax.jit, static_argnames=("safe_gather_fn", "safe_gather_policy", "guard_cfg")
 )
 def _op_sort_and_swizzle_servo_with_perm_full(
     arena,
@@ -728,6 +770,7 @@ def _op_sort_and_swizzle_servo_with_perm_full(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     size = arena.rank.shape[0]
     idx = jnp.arange(size, dtype=jnp.uint32)
@@ -744,13 +787,14 @@ def _op_sort_and_swizzle_servo_with_perm_full(
         perm,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
 
 
 @functools.partial(
     jax.jit,
     static_argnums=(2,),
-    static_argnames=("safe_gather_fn", "safe_gather_policy"),
+    static_argnames=("safe_gather_fn", "safe_gather_policy", "guard_cfg"),
 )
 def _op_sort_and_swizzle_servo_with_perm_prefix(
     arena,
@@ -760,6 +804,7 @@ def _op_sort_and_swizzle_servo_with_perm_prefix(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     size = arena.rank.shape[0]
     if active_count <= 1:
@@ -769,6 +814,7 @@ def _op_sort_and_swizzle_servo_with_perm_prefix(
             perm,
             safe_gather_fn=safe_gather_fn,
             safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
         )
     idx = jnp.arange(active_count, dtype=jnp.uint32)
     mask = jnp.where(servo_mask == 0, _SERVO_MASK_DEFAULT, servo_mask).astype(
@@ -786,6 +832,7 @@ def _op_sort_and_swizzle_servo_with_perm_prefix(
         perm,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
 
 
@@ -796,6 +843,7 @@ def op_sort_and_swizzle_servo_with_perm(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     # BSPˢ: layout/space only (servo-masked Morton).
     active_count = _active_prefix_count(arena)
@@ -808,6 +856,7 @@ def op_sort_and_swizzle_servo_with_perm(
             servo_mask,
             safe_gather_fn=safe_gather_fn,
             safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
         )
     return _op_sort_and_swizzle_servo_with_perm_prefix(
         arena,
@@ -816,6 +865,7 @@ def op_sort_and_swizzle_servo_with_perm(
         servo_mask,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
 
 
@@ -826,6 +876,7 @@ def op_sort_and_swizzle_servo(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     # BSPˢ: layout/space only (servo-masked Morton).
     sorted_arena, _ = op_sort_and_swizzle_servo_with_perm(
@@ -834,6 +885,7 @@ def op_sort_and_swizzle_servo(
         servo_mask,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
     return sorted_arena
 

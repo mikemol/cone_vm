@@ -361,6 +361,7 @@ def _cycle_jit(
     op_sort_and_swizzle_hierarchical_with_perm_fn,
     op_sort_and_swizzle_servo_with_perm_fn,
     safe_gather_fn,
+    guard_cfg,
     op_interact_fn,
 ):
     def _impl(arena, root_ptr):
@@ -384,6 +385,7 @@ def _cycle_jit(
             op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
             op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
             safe_gather_fn=safe_gather_fn,
+            guard_cfg=guard_cfg,
             arena_root_hash_fn=_noop_root_hash,
             damage_tile_size_fn=_noop_tile_size,
             damage_metrics_update_fn=_noop_metrics,
@@ -445,6 +447,7 @@ def cycle_jit(
         op_sort_and_swizzle_hierarchical_with_perm_fn,
         op_sort_and_swizzle_servo_with_perm_fn,
         safe_gather_fn,
+        guard_cfg,
         op_interact_fn,
     )
 
