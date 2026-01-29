@@ -121,6 +121,30 @@ from prism_metrics.metrics import (
     damage_metrics_reset,
 )
 from prism_metrics.gpu import GPUWatchdog, _gpu_watchdog_create
+
+
+def arena_interact_config_with_policy(
+    safety_policy: SafetyPolicy | None,
+    *,
+    cfg: ArenaInteractConfig = DEFAULT_ARENA_INTERACT_CONFIG,
+) -> ArenaInteractConfig:
+    """Return an ArenaInteractConfig with safety_policy set."""
+    return replace(cfg, safe_gather_policy=safety_policy)
+
+
+def arena_cycle_config_with_policy(
+    safety_policy: SafetyPolicy | None,
+    *,
+    cfg: ArenaCycleConfig = DEFAULT_ARENA_CYCLE_CONFIG,
+    include_interact: bool = True,
+) -> ArenaCycleConfig:
+    """Return an ArenaCycleConfig with safety_policy set (and optionally its interact_cfg)."""
+    interact_cfg = cfg.interact_cfg
+    if include_interact:
+        if interact_cfg is None:
+            interact_cfg = DEFAULT_ARENA_INTERACT_CONFIG
+        interact_cfg = replace(interact_cfg, safe_gather_policy=safety_policy)
+    return replace(cfg, safe_gather_policy=safety_policy, interact_cfg=interact_cfg)
 from prism_vm_core.gating import (
     _cnf2_enabled as _cnf2_enabled_default,
     _cnf2_slot1_enabled as _cnf2_slot1_enabled_default,

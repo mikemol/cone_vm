@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from prism_core.safety import SafetyPolicy
+
 from ic_core.protocols import (
     AllocPlanFn,
     ApplyAnnFn,
@@ -15,6 +17,13 @@ from ic_core.protocols import (
     RuleForTypesFn,
     ScanCorruptFn,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class ICGraphConfig:
+    """Graph-level DI bundle for IC wiring safety."""
+
+    safety_policy: SafetyPolicy | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,4 +51,4 @@ class ICEngineConfig:
     scan_corrupt_fn: ScanCorruptFn
 
 
-__all__ = ["ICRuleConfig", "ICEngineConfig"]
+__all__ = ["ICRuleConfig", "ICEngineConfig", "ICGraphConfig"]
