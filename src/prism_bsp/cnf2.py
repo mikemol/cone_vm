@@ -12,7 +12,7 @@ from prism_ledger.config import InternConfig
 from prism_metrics.metrics import _cnf2_metrics_enabled, _cnf2_metrics_update
 from prism_bsp.config import Cnf2Config
 from prism_semantics.commit import _identity_q, apply_q, commit_stratum
-from prism_vm_core.candidates import _candidate_indices
+from prism_vm_core.candidates import _candidate_indices, candidate_indices_cfg
 from prism_vm_core.domains import (
     _committed_ids,
     _host_bool_value,
@@ -168,6 +168,8 @@ def compact_candidates_cfg(
     candidate_indices_fn = _candidate_indices
     if cfg is not None and cfg.candidate_indices_fn is not None:
         candidate_indices_fn = cfg.candidate_indices_fn
+    if cfg is not None and cfg.compact_cfg is not None and candidate_indices_fn is _candidate_indices:
+        candidate_indices_fn = partial(candidate_indices_cfg, compact_cfg=cfg.compact_cfg)
     return compact_candidates(candidates, candidate_indices_fn=candidate_indices_fn)
 
 
@@ -196,6 +198,8 @@ def compact_candidates_with_index_cfg(
     candidate_indices_fn = _candidate_indices
     if cfg is not None and cfg.candidate_indices_fn is not None:
         candidate_indices_fn = cfg.candidate_indices_fn
+    if cfg is not None and cfg.compact_cfg is not None and candidate_indices_fn is _candidate_indices:
+        candidate_indices_fn = partial(candidate_indices_cfg, compact_cfg=cfg.compact_cfg)
     return compact_candidates_with_index(
         candidates, candidate_indices_fn=candidate_indices_fn
     )
@@ -342,6 +346,8 @@ def cycle_candidates(
         candidate_indices_fn = _maybe_override(
             candidate_indices_fn, _candidate_indices, cfg.candidate_indices_fn
         )
+        if cfg.compact_cfg is not None and candidate_indices_fn is _candidate_indices:
+            candidate_indices_fn = partial(candidate_indices_cfg, compact_cfg=cfg.compact_cfg)
         scatter_drop_fn = _maybe_override(
             scatter_drop_fn, _scatter_drop, cfg.scatter_drop_fn
         )

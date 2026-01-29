@@ -26,7 +26,7 @@ from prism_bsp.config import (
 )
 from prism_vm_core.protocols import EmitCandidatesFn, HostRaiseFn, InternFn
 from prism_vm_core.structures import NodeBatch
-from prism_vm_core.candidates import _candidate_indices
+from prism_vm_core.candidates import _candidate_indices, candidate_indices_cfg
 from prism_bsp.cnf2 import (
     emit_candidates as _emit_candidates_default,
     compact_candidates as _compact_candidates,
@@ -159,6 +159,8 @@ def compact_candidates_jit_cfg(cfg: Cnf2Config | None = None):
     candidate_indices_fn = _candidate_indices
     if cfg is not None and cfg.candidate_indices_fn is not None:
         candidate_indices_fn = cfg.candidate_indices_fn
+    if cfg is not None and cfg.compact_cfg is not None and candidate_indices_fn is _candidate_indices:
+        candidate_indices_fn = partial(candidate_indices_cfg, compact_cfg=cfg.compact_cfg)
     return compact_candidates_jit(candidate_indices_fn=candidate_indices_fn)
 
 
@@ -178,6 +180,8 @@ def compact_candidates_with_index_jit_cfg(cfg: Cnf2Config | None = None):
     candidate_indices_fn = _candidate_indices
     if cfg is not None and cfg.candidate_indices_fn is not None:
         candidate_indices_fn = cfg.candidate_indices_fn
+    if cfg is not None and cfg.compact_cfg is not None and candidate_indices_fn is _candidate_indices:
+        candidate_indices_fn = partial(candidate_indices_cfg, compact_cfg=cfg.compact_cfg)
     return compact_candidates_with_index_jit(candidate_indices_fn=candidate_indices_fn)
 
 
