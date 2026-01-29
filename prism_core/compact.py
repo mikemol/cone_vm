@@ -1,13 +1,19 @@
+from typing import NamedTuple
+
 import jax.numpy as jnp
+
+
+class CompactResult(NamedTuple):
+    idx: jnp.ndarray
+    valid: jnp.ndarray
+    count: jnp.ndarray
 
 
 def compact_mask(mask, *, index_dtype=None, count_dtype=None):
     """Compact a boolean mask into indices + valid mask + count.
 
     Returns:
-      idx: indices of True entries (padded to size with 0)
-      valid: boolean mask for entries < count
-      count: number of True entries
+      CompactResult: (idx, valid, count)
     """
     size = mask.shape[0]
     count = jnp.sum(mask)
@@ -18,7 +24,7 @@ def compact_mask(mask, *, index_dtype=None, count_dtype=None):
         idx = idx.astype(index_dtype)
     comp_dtype = idx.dtype
     valid = jnp.arange(size, dtype=comp_dtype) < count.astype(comp_dtype)
-    return idx, valid, count
+    return CompactResult(idx=idx, valid=valid, count=count)
 
 
-__all__ = ["compact_mask"]
+__all__ = ["CompactResult", "compact_mask"]

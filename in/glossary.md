@@ -568,6 +568,28 @@ pretty(denote(q(renorm(P)))) = pretty(denote(q(P)))
 
 * Resource limits vs Semantic validity
 
+### SafetyPolicy (Indexing Semantics)
+
+**Axis:** Interface/Control vs Semantic validity
+
+**Meanings (must be qualified):**
+
+* **SafetyPolicyᶜᵒʳʳᵘᵖᵗ**: OOB yields CORRUPT (semantic error)
+* **SafetyPolicyᶜˡᵃᵐᵖ**: OOB clamps (deterministic fallback)
+* **SafetyPolicyᵈʳᵒᵖ**: OOB drops (masked/no-op semantics)
+
+**Normative Rule**
+
+> CORRUPT is the only semantics-bearing response to OOB.
+> CLAMP and DROP are Interface/Control conveniences and must not leak into
+> denotation. Any use of clamp/drop must be erased by `q` and must not create
+> new identity or observable rewrite effects.
+
+**Test Obligations**
+
+- (m1) `tests/test_gather_guard.py::test_gather_guard_oob_raises`
+- (m1) `tests/test_gather_guard.py::test_gather_clamps_when_guard_disabled`
+
 ### Desired Commutation
 
 ```
@@ -584,6 +606,31 @@ denote(q(P)) is undefined iff CORRUPT
 
 > CORRUPT is a hard semantic error; OOM is an admissible resource boundary.
 > Any partial allocation of "new" proposals without CORRUPT is invalid.
+
+---
+
+## 13.1 Pointer Domains (Host Wrappers)
+
+### Meanings in Play
+
+* **Domain Wrapper (Host)**: type-level separation between pointer domains
+  (e.g. `ManifestPtr` vs `LedgerId`, `ICNodeId` vs `ICPortId` vs `ICPtr`)
+* **Device Pointer**: encoded `uint32` pointer used inside kernels
+
+### Axes
+
+* Interface/Control vs Device semantics
+
+### Normative Rule
+
+> Host pointer wrappers are Interface/Control only; they prevent domain-mixing
+> and must never be smuggled into device kernels. Device kernels operate on
+> raw encoded pointers. Any host wrapper conversion is a boundary crossing and
+> must be explicit.
+
+### Test Obligations
+
+- (m2) `tests/test_type_runtime.py::test_candidate_indices_runtime_typecheck_accepts_int32`
 
 ### Spawn Clipping (Forbidden)
 

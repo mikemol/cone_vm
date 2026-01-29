@@ -4,7 +4,9 @@ from typing import NamedTuple, Tuple
 
 from prism_core import alloc as _alloc
 from prism_core.jax_safe import safe_index_1d
-from prism_core.compact import compact_mask
+from prism_core.compact import CompactResult, compact_mask
+from prism_core.safety import oob_mask
+from ic_core.domains import _node_id, _port_id
 
 # Interaction-combinator (IC) graph + safety helpers.
 
@@ -95,8 +97,12 @@ def ic_wire(
     node_b: int,
     port_b: int,
 ) -> ICState:
-    ptr_a = encode_port(jnp.asarray(node_a), jnp.asarray(port_a))
-    ptr_b = encode_port(jnp.asarray(node_b), jnp.asarray(port_b))
+    node_a_i = int(_node_id(node_a))
+    port_a_i = int(_port_id(port_a))
+    node_b_i = int(_node_id(node_b))
+    port_b_i = int(_port_id(port_b))
+    ptr_a = encode_port(jnp.asarray(node_a_i), jnp.asarray(port_a_i))
+    ptr_b = encode_port(jnp.asarray(node_b_i), jnp.asarray(port_b_i))
     ports = state.ports
     ports = ports.at[node_a, port_a].set(ptr_b)
     ports = ports.at[node_b, port_b].set(ptr_a)
@@ -147,7 +153,7 @@ def ic_wire_jax(
         ok = ok_a & ok_b
         do = (ptr_a != jnp.uint32(0)) & (ptr_b != jnp.uint32(0)) & ok
         bad_port = (port_a_u == jnp.uint32(3)) | (port_b_u == jnp.uint32(3))
-        corrupt = (~ok) | (do & bad_port)
+        corrupt = oob_mask(ok) | (do & bad_port)
         ports = s.ports
         ports = ports.at[node_a_u, port_a_u].set(ptr_b)
         ports = ports.at[node_b_u, port_b_u].set(ptr_a)
@@ -178,7 +184,7 @@ def ic_wire_ptrs_jax(state: ICState, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray) -> 
         ok = ok_a & ok_b
         do = do & ok
         bad_port = (pa == jnp.uint32(3)) | (pb == jnp.uint32(3))
-        corrupt = jnp.any(~ok) | jnp.any(do & bad_port)
+        corrupt = oob_mask(ok) | jnp.any(do & bad_port)
         safe_node = jnp.uint32(0)
         safe_port = jnp.uint32(0)
         na_s = jnp.where(do, na, safe_node)
@@ -240,7 +246,7 @@ def ic_wire_pairs_jax(
         ok = ok_a & ok_b
         do = (ptr_a != jnp.uint32(0)) & (ptr_b != jnp.uint32(0)) & ok
         bad_port = (pa == jnp.uint32(3)) | (pb == jnp.uint32(3))
-        corrupt = jnp.any(~ok) | jnp.any(do & bad_port)
+        corrupt = oob_mask(ok) | jnp.any(do & bad_port)
 
         safe_node = jnp.uint32(0)
         safe_port = jnp.uint32(0)
@@ -286,7 +292,7 @@ def ic_wire_ptr_pairs_jax(state: ICState, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray
         ok = ok_a & ok_b
         do = do & ok
         bad_port = (pa == jnp.uint32(3)) | (pb == jnp.uint32(3))
-        corrupt = jnp.any(~ok) | jnp.any(do & bad_port)
+        corrupt = oob_mask(ok) | jnp.any(do & bad_port)
         na_s = jnp.where(do, na, safe_node)
         pa_s = jnp.where(do, pa, safe_port)
         nb_s = jnp.where(do, nb, safe_node)
@@ -341,10 +347,8 @@ def ic_find_active_pairs(state: ICState) -> Tuple[jnp.ndarray, jnp.ndarray]:
     return pairs.astype(jnp.uint32), active
 
 
-def _compact_mask(mask: jnp.ndarray) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    return compact_mask(
-        mask, index_dtype=jnp.uint32, count_dtype=jnp.uint32
-    )
+def _compact_mask(mask: jnp.ndarray) -> CompactResult:
+    return compact_mask(mask, index_dtype=jnp.uint32, count_dtype=jnp.uint32)
 
 
 @jax.jit

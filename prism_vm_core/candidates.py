@@ -1,9 +1,9 @@
 import jax.numpy as jnp
 
-from prism_core.compact import compact_mask
+from prism_core.compact import CompactResult, compact_mask
 
 
-def _candidate_indices(enabled):
+def _candidate_indices(enabled) -> CompactResult:
     return compact_mask(enabled, index_dtype=jnp.int32, count_dtype=jnp.int32)
 
 

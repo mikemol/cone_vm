@@ -4,6 +4,7 @@ from typing import Protocol, Tuple, runtime_checkable
 
 import jax.numpy as jnp
 
+from prism_core.compact import CompactResult
 from prism_vm_core.structures import Arena, CandidateBuffer, Ledger, NodeBatch, Stratum
 
 
@@ -43,9 +44,7 @@ class CoordXorBatchFn(Protocol):
 
 @runtime_checkable
 class CandidateIndicesFn(Protocol):
-    def __call__(
-        self, enabled
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    def __call__(self, enabled) -> CompactResult:
         ...
 
 
@@ -57,7 +56,9 @@ class ScatterDropFn(Protocol):
 
 @runtime_checkable
 class SafeGatherFn(Protocol):
-    def __call__(self, arr, idx, label: str):
+    def __call__(
+        self, arr, idx, label: str, *, policy=None, return_ok: bool = False
+    ):
         ...
 
 
