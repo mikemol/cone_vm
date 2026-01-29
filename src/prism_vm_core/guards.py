@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Callable, Optional
 
 import jax
@@ -6,7 +5,7 @@ import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.guards import (
-    GuardConfig as _CoreGuardConfig,
+    GuardConfig,
     guard_gather_index_cfg as _guard_gather_index_cfg,
 )
 from prism_vm_core.ontology import OP_NULL, OP_ZERO
@@ -17,19 +16,6 @@ _HAS_DEBUG_CALLBACK = _jax_safe.HAS_DEBUG_CALLBACK
 
 def _guards_enabled():
     return _TEST_GUARDS and _HAS_DEBUG_CALLBACK
-
-
-@dataclass(frozen=True, slots=True)
-class GuardConfig(_CoreGuardConfig):
-    """Guard DI bundle (host-side control surface)."""
-
-    guards_enabled_fn: Optional[Callable[[], bool]] = None
-    guard_max_fn: Optional[Callable[..., None]] = None
-    guard_slot0_perm_fn: Optional[Callable[..., None]] = None
-    guard_null_row_fn: Optional[Callable[..., None]] = None
-    guard_zero_row_fn: Optional[Callable[..., None]] = None
-    guard_zero_args_fn: Optional[Callable[..., None]] = None
-    guard_swizzle_args_fn: Optional[Callable[..., None]] = None
 
 
 DEFAULT_GUARD_CONFIG = GuardConfig()
