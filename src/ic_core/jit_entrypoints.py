@@ -3,12 +3,14 @@ from __future__ import annotations
 from functools import partial
 
 from prism_core.di import cached_jit
-from ic_core.config import ICEngineConfig
+from prism_core.jax_safe import safe_index_1d
+from ic_core.config import ICGraphConfig, ICEngineConfig, DEFAULT_GRAPH_CONFIG
 from ic_core.engine import (
     DEFAULT_ENGINE_CONFIG,
     ic_apply_active_pairs,
     ic_reduce,
 )
+from ic_core.graph import ic_find_active_pairs, ic_compact_active_pairs
 
 
 @cached_jit
@@ -32,6 +34,11 @@ def apply_active_pairs_jit(cfg: ICEngineConfig | None = None):
     if cfg is None:
         cfg = DEFAULT_ENGINE_CONFIG
     return _apply_active_pairs_jit(cfg)
+
+
+def apply_active_pairs_jit_cfg(cfg: ICEngineConfig | None = None):
+    """Alias for apply_active_pairs_jit (config-first naming)."""
+    return apply_active_pairs_jit(cfg)
 
 
 @cached_jit
@@ -64,7 +71,70 @@ def reduce_jit(cfg: ICEngineConfig | None = None):
     return _reduce_jit(cfg)
 
 
+def reduce_jit_cfg(cfg: ICEngineConfig | None = None):
+    """Alias for reduce_jit (config-first naming)."""
+    return reduce_jit(cfg)
+
+
+@cached_jit
+def _find_active_pairs_jit(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+
+    def _impl(state):
+        return ic_find_active_pairs(
+            state,
+            safety_policy=cfg.safety_policy,
+            safe_index_fn=safe_index_fn,
+        )
+
+    return _impl
+
+
+def find_active_pairs_jit(cfg: ICGraphConfig | None = None):
+    """Return a jitted find_active_pairs entrypoint for fixed DI."""
+    if cfg is None:
+        cfg = DEFAULT_GRAPH_CONFIG
+    return _find_active_pairs_jit(cfg)
+
+
+def find_active_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
+    """Alias for find_active_pairs_jit (config-first naming)."""
+    return find_active_pairs_jit(cfg)
+
+
+@cached_jit
+def _compact_active_pairs_jit(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+
+    def _impl(state):
+        return ic_compact_active_pairs(
+            state,
+            safety_policy=cfg.safety_policy,
+            safe_index_fn=safe_index_fn,
+        )
+
+    return _impl
+
+
+def compact_active_pairs_jit(cfg: ICGraphConfig | None = None):
+    """Return a jitted compact_active_pairs entrypoint for fixed DI."""
+    if cfg is None:
+        cfg = DEFAULT_GRAPH_CONFIG
+    return _compact_active_pairs_jit(cfg)
+
+
+def compact_active_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
+    """Alias for compact_active_pairs_jit (config-first naming)."""
+    return compact_active_pairs_jit(cfg)
+
+
 __all__ = [
     "apply_active_pairs_jit",
+    "apply_active_pairs_jit_cfg",
     "reduce_jit",
+    "reduce_jit_cfg",
+    "find_active_pairs_jit",
+    "find_active_pairs_jit_cfg",
+    "compact_active_pairs_jit",
+    "compact_active_pairs_jit_cfg",
 ]
