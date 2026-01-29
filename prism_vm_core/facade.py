@@ -21,6 +21,12 @@ from prism_bsp.config import (
     Cnf2Flags,
     DEFAULT_CNF2_CONFIG,
     DEFAULT_CNF2_FLAGS,
+    ArenaInteractConfig,
+    DEFAULT_ARENA_INTERACT_CONFIG,
+    ArenaCycleConfig,
+    DEFAULT_ARENA_CYCLE_CONFIG,
+    IntrinsicConfig,
+    DEFAULT_INTRINSIC_CONFIG,
 )
 from prism_coord.config import CoordConfig, DEFAULT_COORD_CONFIG
 from prism_vm_core.protocols import EmitCandidatesFn, HostRaiseFn, InternFn
@@ -35,7 +41,7 @@ from prism_vm_core.ledger_keys import _pack_key
 from prism_core.permutation import _invert_perm
 from prism_ledger.intern import _lookup_node_id
 from prism_vm_core.hashes import _ledger_root_hash_host, _ledger_roots_hash_host
-from prism_vm_core.candidates import _candidate_indices
+from prism_vm_core.candidates import _candidate_indices, candidate_indices_cfg
 from prism_bsp.cnf2 import _scatter_compacted_ids
 from prism_vm_core.ontology import OP_ADD, OP_MUL, OP_NULL, OP_ZERO, HostBool
 from prism_vm_core.domains import _host_bool, _host_raise_if_bad
@@ -46,14 +52,21 @@ from prism_bsp.cnf2 import (
     compact_candidates as _compact_candidates,
     compact_candidates_with_index as _compact_candidates_with_index,
     intern_candidates as _intern_candidates,
+    emit_candidates_cfg as _emit_candidates_cfg,
+    compact_candidates_cfg as _compact_candidates_cfg,
+    compact_candidates_with_index_cfg as _compact_candidates_with_index_cfg,
+    scatter_compacted_ids_cfg as _scatter_compacted_ids_cfg,
+    intern_candidates_cfg as _intern_candidates_cfg,
     emit_candidates as _emit_candidates,
 )
 from prism_bsp.arena_step import (
     cycle as _cycle,
     cycle_core as _cycle_core,
     op_interact as _op_interact,
+    op_interact_cfg,
+    cycle_cfg,
 )
-from prism_bsp.intrinsic import cycle_intrinsic as _cycle_intrinsic
+from prism_bsp.intrinsic import cycle_intrinsic as _cycle_intrinsic, cycle_intrinsic_cfg
 from prism_bsp.space import (
     RANK_COLD,
     RANK_FREE as _RANK_FREE_EXPORT,
@@ -79,10 +92,13 @@ from prism_bsp.space import (
 )
 from prism_coord.coord import (
     cd_lift_binary,
+    cd_lift_binary_cfg,
     coord_norm,
     coord_norm_batch,
     coord_xor,
+    coord_xor_cfg,
     coord_xor_batch,
+    coord_xor_batch_cfg,
 )
 from prism_semantics.commit import (
     apply_q,
@@ -115,19 +131,37 @@ from prism_vm_core.gating import (
     _read_pytest_milestone,
     _servo_enabled,
 )
+from prism_vm_core.guards import (
+    GuardConfig,
+    DEFAULT_GUARD_CONFIG,
+    guards_enabled_cfg,
+    guard_max_cfg,
+    guard_slot0_perm_cfg,
+    guard_null_row_cfg,
+    guard_zero_row_cfg,
+    guard_zero_args_cfg,
+    guard_swizzle_args_cfg,
+)
 from prism_semantics.commit import commit_stratum as _commit_stratum_impl
 from prism_bsp.cnf2 import cycle_candidates as _cycle_candidates_impl
 from prism_vm_core.jit_entrypoints import (
     coord_norm_batch_jit,
     cycle_candidates_jit,
     cycle_intrinsic_jit,
+    cycle_intrinsic_jit_cfg,
     cycle_jit as _cycle_jit_factory,
+    cycle_jit_cfg,
     emit_candidates_jit,
+    emit_candidates_jit_cfg,
     compact_candidates_jit,
+    compact_candidates_jit_cfg,
     compact_candidates_with_index_jit,
+    compact_candidates_with_index_jit_cfg,
     intern_candidates_jit,
+    intern_candidates_jit_cfg,
     intern_nodes_jit,
     op_interact_jit,
+    op_interact_jit_cfg,
 )
 
 
@@ -139,6 +173,15 @@ _scatter_guard = _jax_safe.scatter_guard
 _scatter_guard_strict = _jax_safe.scatter_guard_strict
 _scatter_drop = _jax_safe.scatter_drop
 _scatter_strict = _jax_safe.scatter_strict
+GuardConfig = GuardConfig
+DEFAULT_GUARD_CONFIG = DEFAULT_GUARD_CONFIG
+guards_enabled_cfg = guards_enabled_cfg
+guard_max_cfg = guard_max_cfg
+guard_slot0_perm_cfg = guard_slot0_perm_cfg
+guard_null_row_cfg = guard_null_row_cfg
+guard_zero_row_cfg = guard_zero_row_cfg
+guard_zero_args_cfg = guard_zero_args_cfg
+guard_swizzle_args_cfg = guard_swizzle_args_cfg
 
 def safe_gather_1d(arr, idx, label="safe_gather_1d", *, guard=None):
     """Interface/Control wrapper for gather guards.
@@ -194,13 +237,19 @@ _lookup_node_id = _lookup_node_id
 _ledger_root_hash_host = _ledger_root_hash_host
 _ledger_roots_hash_host = _ledger_roots_hash_host
 _candidate_indices = _candidate_indices
+candidate_indices_cfg = candidate_indices_cfg
 _scatter_compacted_ids = _scatter_compacted_ids
+scatter_compacted_ids_cfg = _scatter_compacted_ids_cfg
 _cnf2_enabled = _cnf2_enabled_default
 _cnf2_slot1_enabled = _cnf2_slot1_enabled_default
 emit_candidates = _emit_candidates
+emit_candidates_cfg = _emit_candidates_cfg
 compact_candidates = _compact_candidates
+compact_candidates_cfg = _compact_candidates_cfg
 compact_candidates_with_index = _compact_candidates_with_index
+compact_candidates_with_index_cfg = _compact_candidates_with_index_cfg
 intern_candidates = _intern_candidates
+intern_candidates_cfg = _intern_candidates_cfg
 cycle = _cycle
 cycle_core = _cycle_core
 op_interact = _op_interact

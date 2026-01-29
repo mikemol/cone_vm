@@ -15,14 +15,49 @@ def make_cycle_intrinsic_jit(**kwargs):
     return pv.cycle_intrinsic_jit(**kwargs)
 
 
+def make_cycle_intrinsic_jit_cfg(**kwargs):
+    """Build a jitted intrinsic cycle entrypoint from a config."""
+    return pv.cycle_intrinsic_jit_cfg(**kwargs)
+
+
 def make_cycle_candidates_jit(**kwargs):
     """Build a jitted CNF-2 cycle entrypoint with fixed DI."""
     return pv.cycle_candidates_jit(**kwargs)
 
 
+def make_emit_candidates_jit_cfg(**kwargs):
+    """Build a jitted emit_candidates entrypoint from a config."""
+    return pv.emit_candidates_jit_cfg(**kwargs)
+
+
+def make_compact_candidates_jit_cfg(**kwargs):
+    """Build a jitted compact_candidates entrypoint from a config."""
+    return pv.compact_candidates_jit_cfg(**kwargs)
+
+
+def make_compact_candidates_with_index_jit_cfg(**kwargs):
+    """Build a jitted compact_candidates_with_index entrypoint from a config."""
+    return pv.compact_candidates_with_index_jit_cfg(**kwargs)
+
+
+def make_intern_candidates_jit_cfg(**kwargs):
+    """Build a jitted intern_candidates entrypoint from a config."""
+    return pv.intern_candidates_jit_cfg(**kwargs)
+
+
 def make_cycle_jit(**kwargs):
     """Build a jitted BSP arena cycle entrypoint with fixed DI."""
     return pv.cycle_jit(**kwargs)
+
+
+def make_cycle_jit_cfg(**kwargs):
+    """Build a jitted BSP arena cycle entrypoint from a config."""
+    return pv.cycle_jit_cfg(**kwargs)
+
+
+def make_op_interact_jit_cfg(**kwargs):
+    """Build a jitted op_interact entrypoint from a config."""
+    return pv.op_interact_jit_cfg(**kwargs)
 
 
 def tokenize(expr):

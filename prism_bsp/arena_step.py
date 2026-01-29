@@ -21,6 +21,12 @@ from prism_bsp.space import (
     op_sort_and_swizzle_servo_with_perm,
     op_sort_and_swizzle_with_perm,
 )
+from prism_bsp.config import (
+    ArenaInteractConfig,
+    ArenaCycleConfig,
+    DEFAULT_ARENA_INTERACT_CONFIG,
+    DEFAULT_ARENA_CYCLE_CONFIG,
+)
 
 
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
@@ -131,6 +137,21 @@ def op_interact(
         arg2=final_a2,
         count=new_count,
         oom=new_oom,
+    )
+
+
+def op_interact_cfg(
+    arena, *, cfg: ArenaInteractConfig = DEFAULT_ARENA_INTERACT_CONFIG
+):
+    """Interface/Control wrapper for op_interact with DI bundle."""
+    safe_gather_fn = cfg.safe_gather_fn or _jax_safe.safe_gather_1d
+    scatter_drop_fn = cfg.scatter_drop_fn or _jax_safe.scatter_drop
+    guard_max_fn = cfg.guard_max_fn or _guard_max
+    return op_interact(
+        arena,
+        safe_gather_fn=safe_gather_fn,
+        scatter_drop_fn=scatter_drop_fn,
+        guard_max_fn=guard_max_fn,
     )
 
 
@@ -266,11 +287,84 @@ def cycle(
         op_interact_fn=op_interact_fn,
     )
 
-
-__all__ = ["op_interact", "cycle", "cycle_core"]
+def cycle_cfg(
+    arena,
+    root_ptr,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    morton=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+    *,
+    cfg: ArenaCycleConfig = DEFAULT_ARENA_CYCLE_CONFIG,
+):
+    """Interface/Control wrapper for cycle_core with DI bundle."""
+    op_rank_fn = cfg.op_rank_fn or op_rank
+    servo_enabled_fn = cfg.servo_enabled_fn or _servo_enabled
+    servo_update_fn = cfg.servo_update_fn or _servo_update
+    op_morton_fn = cfg.op_morton_fn or op_morton
+    op_sort_and_swizzle_with_perm_fn = (
+        cfg.op_sort_and_swizzle_with_perm_fn
+        or op_sort_and_swizzle_with_perm
+    )
+    op_sort_and_swizzle_morton_with_perm_fn = (
+        cfg.op_sort_and_swizzle_morton_with_perm_fn
+        or op_sort_and_swizzle_morton_with_perm
+    )
+    op_sort_and_swizzle_blocked_with_perm_fn = (
+        cfg.op_sort_and_swizzle_blocked_with_perm_fn
+        or op_sort_and_swizzle_blocked_with_perm
+    )
+    op_sort_and_swizzle_hierarchical_with_perm_fn = (
+        cfg.op_sort_and_swizzle_hierarchical_with_perm_fn
+        or op_sort_and_swizzle_hierarchical_with_perm
+    )
+    op_sort_and_swizzle_servo_with_perm_fn = (
+        cfg.op_sort_and_swizzle_servo_with_perm_fn
+        or op_sort_and_swizzle_servo_with_perm
+    )
+    safe_gather_fn = cfg.safe_gather_fn or _jax_safe.safe_gather_1d
+    arena_root_hash_fn = cfg.arena_root_hash_fn or _arena_root_hash_host
+    damage_tile_size_fn = cfg.damage_tile_size_fn or _damage_tile_size
+    damage_metrics_update_fn = cfg.damage_metrics_update_fn or _damage_metrics_update
+    op_interact_fn = cfg.op_interact_fn
+    if op_interact_fn is None and cfg.interact_cfg is not None:
+        op_interact_fn = lambda a: op_interact_cfg(a, cfg=cfg.interact_cfg)
+    if op_interact_fn is None:
+        op_interact_fn = op_interact
+    return cycle_core(
+        arena,
+        root_ptr,
+        do_sort=do_sort,
+        use_morton=use_morton,
+        block_size=block_size,
+        morton=morton,
+        l2_block_size=l2_block_size,
+        l1_block_size=l1_block_size,
+        do_global=do_global,
+        op_rank_fn=op_rank_fn,
+        servo_enabled_fn=servo_enabled_fn,
+        servo_update_fn=servo_update_fn,
+        op_morton_fn=op_morton_fn,
+        op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_fn,
+        op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_fn,
+        op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_fn,
+        op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
+        op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
+        safe_gather_fn=safe_gather_fn,
+        arena_root_hash_fn=arena_root_hash_fn,
+        damage_tile_size_fn=damage_tile_size_fn,
+        damage_metrics_update_fn=damage_metrics_update_fn,
+        op_interact_fn=op_interact_fn,
+    )
 
 
 __all__ = [
     "op_interact",
+    "op_interact_cfg",
+    "cycle_core",
     "cycle",
+    "cycle_cfg",
 ]

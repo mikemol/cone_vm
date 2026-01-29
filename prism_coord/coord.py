@@ -5,7 +5,7 @@ from functools import lru_cache, partial
 
 from prism_ledger.intern import _coord_norm_id_jax, intern_nodes
 from prism_ledger.config import InternConfig
-from prism_coord.config import CoordConfig
+from prism_coord.config import CoordConfig, DEFAULT_COORD_CONFIG
 from prism_vm_core.domains import _host_int_value
 from prism_vm_core.ontology import OP_COORD_ONE, OP_COORD_PAIR, OP_COORD_ZERO
 from prism_vm_core.structures import NodeBatch
@@ -284,6 +284,33 @@ def coord_xor(
     return out_id, ledger
 
 
+def coord_xor_cfg(
+    ledger,
+    left_id,
+    right_id,
+    *,
+    cfg: CoordConfig = DEFAULT_COORD_CONFIG,
+    intern_cfg: InternConfig | None = None,
+    intern_fn: InternFn = intern_nodes,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    host_int_value_fn=_host_int_value,
+):
+    """Interface/Control wrapper for coord_xor with DI bundle."""
+    if cfg.intern_cfg is not None and intern_cfg is not None:
+        raise ValueError("Pass either cfg.intern_cfg or intern_cfg, not both.")
+    intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
+    if intern_cfg is not None and intern_fn is intern_nodes:
+        intern_fn = partial(intern_nodes, cfg=intern_cfg)
+    return coord_xor(
+        ledger,
+        left_id,
+        right_id,
+        intern_fn=intern_fn,
+        node_batch_fn=node_batch_fn,
+        host_int_value_fn=host_int_value_fn,
+    )
+
+
 def cd_lift_binary(
     ledger,
     op,
@@ -344,6 +371,35 @@ def cd_lift_binary(
         ),
     )
     return host_int_value_fn(ids[0]), ledger
+
+
+def cd_lift_binary_cfg(
+    ledger,
+    op,
+    left_id,
+    right_id,
+    *,
+    cfg: CoordConfig = DEFAULT_COORD_CONFIG,
+    intern_cfg: InternConfig | None = None,
+    intern_fn: InternFn = intern_nodes,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    host_int_value_fn=_host_int_value,
+):
+    """Interface/Control wrapper for cd_lift_binary with DI bundle."""
+    if cfg.intern_cfg is not None and intern_cfg is not None:
+        raise ValueError("Pass either cfg.intern_cfg or intern_cfg, not both.")
+    intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
+    if intern_cfg is not None and intern_fn is intern_nodes:
+        intern_fn = partial(intern_nodes, cfg=intern_cfg)
+    return cd_lift_binary(
+        ledger,
+        op,
+        left_id,
+        right_id,
+        intern_fn=intern_fn,
+        node_batch_fn=node_batch_fn,
+        host_int_value_fn=host_int_value_fn,
+    )
 
 
 def _coord_norm_batch_impl(
@@ -447,10 +503,43 @@ def coord_xor_batch(
     return jnp.array(out_ids, dtype=jnp.int32), ledger
 
 
+def coord_xor_batch_cfg(
+    ledger,
+    left_ids,
+    right_ids,
+    *,
+    cfg: CoordConfig = DEFAULT_COORD_CONFIG,
+    intern_cfg: InternConfig | None = None,
+    coord_xor_fn=coord_xor,
+    intern_fn: InternFn = intern_nodes,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    host_int_value_fn=_host_int_value,
+):
+    """Interface/Control wrapper for coord_xor_batch with DI bundle."""
+    if cfg.intern_cfg is not None and intern_cfg is not None:
+        raise ValueError("Pass either cfg.intern_cfg or intern_cfg, not both.")
+    intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
+    if intern_cfg is not None and intern_fn is intern_nodes:
+        intern_fn = partial(intern_nodes, cfg=intern_cfg)
+    return coord_xor_batch(
+        ledger,
+        left_ids,
+        right_ids,
+        coord_xor_fn=coord_xor_fn,
+        intern_fn=intern_fn,
+        intern_cfg=None,
+        node_batch_fn=node_batch_fn,
+        host_int_value_fn=host_int_value_fn,
+    )
+
+
 __all__ = [
     "coord_norm",
     "coord_norm_batch",
     "coord_xor",
     "coord_xor_batch",
     "cd_lift_binary",
+    "coord_xor_cfg",
+    "coord_xor_batch_cfg",
+    "cd_lift_binary_cfg",
 ]
