@@ -12,7 +12,16 @@ import jax.numpy as jnp
 from prism_core import jax_safe as _jax_safe
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
-from prism_bsp.config import Cnf2Config, Cnf2Flags
+from prism_bsp.config import (
+    Cnf2Config,
+    Cnf2Flags,
+    ArenaInteractConfig,
+    ArenaCycleConfig,
+    IntrinsicConfig,
+    DEFAULT_ARENA_INTERACT_CONFIG,
+    DEFAULT_ARENA_CYCLE_CONFIG,
+    DEFAULT_INTRINSIC_CONFIG,
+)
 from prism_vm_core.protocols import EmitCandidatesFn, HostRaiseFn, InternFn
 from prism_vm_core.structures import NodeBatch
 from prism_vm_core.candidates import _candidate_indices
@@ -100,13 +109,37 @@ def op_interact_jit(
     return _op_interact_jit(safe_gather_fn, scatter_drop_fn, guard_max_fn)
 
 
-def emit_candidates_jit():
+def op_interact_jit_cfg(
+    cfg: ArenaInteractConfig | None = None,
+):
+    """Return a jitted op_interact entrypoint for a fixed config."""
+    if cfg is None:
+        cfg = DEFAULT_ARENA_INTERACT_CONFIG
+    return op_interact_jit(
+        safe_gather_fn=cfg.safe_gather_fn or _jax_safe.safe_gather_1d,
+        scatter_drop_fn=cfg.scatter_drop_fn or _jax_safe.scatter_drop,
+        guard_max_fn=cfg.guard_max_fn,
+    )
+
+
+def emit_candidates_jit(emit_candidates_fn: EmitCandidatesFn | None = None):
     """Return a jitted emit_candidates entrypoint."""
+    if emit_candidates_fn is None:
+        emit_candidates_fn = _emit_candidates_default
+
     @jax.jit
     def _impl(ledger, frontier_ids):
-        return _emit_candidates_default(ledger, frontier_ids)
+        return emit_candidates_fn(ledger, frontier_ids)
 
     return _impl
+
+
+def emit_candidates_jit_cfg(cfg: Cnf2Config | None = None):
+    """Return a jitted emit_candidates entrypoint for a fixed config."""
+    emit_candidates_fn = None
+    if cfg is not None:
+        emit_candidates_fn = cfg.emit_candidates_fn
+    return emit_candidates_jit(emit_candidates_fn=emit_candidates_fn)
 
 
 def compact_candidates_jit(*, candidate_indices_fn=_candidate_indices):
@@ -120,6 +153,14 @@ def compact_candidates_jit(*, candidate_indices_fn=_candidate_indices):
     return _impl
 
 
+def compact_candidates_jit_cfg(cfg: Cnf2Config | None = None):
+    """Return a jitted compact_candidates entrypoint for a fixed config."""
+    candidate_indices_fn = _candidate_indices
+    if cfg is not None and cfg.candidate_indices_fn is not None:
+        candidate_indices_fn = cfg.candidate_indices_fn
+    return compact_candidates_jit(candidate_indices_fn=candidate_indices_fn)
+
+
 def compact_candidates_with_index_jit(*, candidate_indices_fn=_candidate_indices):
     """Return a jitted compact_candidates_with_index entrypoint for fixed DI."""
     @jax.jit
@@ -129,6 +170,14 @@ def compact_candidates_with_index_jit(*, candidate_indices_fn=_candidate_indices
         )
 
     return _impl
+
+
+def compact_candidates_with_index_jit_cfg(cfg: Cnf2Config | None = None):
+    """Return a jitted compact_candidates_with_index entrypoint for a fixed config."""
+    candidate_indices_fn = _candidate_indices
+    if cfg is not None and cfg.candidate_indices_fn is not None:
+        candidate_indices_fn = cfg.candidate_indices_fn
+    return compact_candidates_with_index_jit(candidate_indices_fn=candidate_indices_fn)
 
 
 def intern_candidates_jit(
@@ -156,6 +205,34 @@ def intern_candidates_jit(
         )
 
     return _impl
+
+
+def intern_candidates_jit_cfg(
+    cfg: Cnf2Config | None = None,
+    *,
+    compact_candidates_fn=_compact_candidates,
+    intern_fn: InternFn = _ledger_intern.intern_nodes,
+    intern_cfg: InternConfig | None = None,
+    node_batch_fn=None,
+):
+    """Return a jitted intern_candidates entrypoint for a fixed config."""
+    if cfg is not None:
+        if intern_cfg is None:
+            intern_cfg = cfg.intern_cfg
+        if intern_fn is _ledger_intern.intern_nodes and cfg.intern_fn is not None:
+            intern_fn = cfg.intern_fn
+        if node_batch_fn is None and cfg.node_batch_fn is not None:
+            node_batch_fn = cfg.node_batch_fn
+        if cfg.candidate_indices_fn is not None:
+            compact_candidates_fn = partial(
+                _compact_candidates, candidate_indices_fn=cfg.candidate_indices_fn
+            )
+    return intern_candidates_jit(
+        compact_candidates_fn=compact_candidates_fn,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        node_batch_fn=node_batch_fn,
+    )
 
 
 def cycle_candidates_jit(
@@ -344,6 +421,71 @@ def cycle_jit(
     )
 
 
+def cycle_jit_cfg(
+    *,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+    cfg: ArenaCycleConfig | None = None,
+    test_guards: bool = False,
+):
+    """Return a jitted cycle entrypoint for a fixed config."""
+    if cfg is None:
+        cfg = DEFAULT_ARENA_CYCLE_CONFIG
+    op_rank_fn = cfg.op_rank_fn or op_rank
+    servo_enabled_fn = cfg.servo_enabled_fn or _servo_enabled
+    servo_update_fn = cfg.servo_update_fn or _servo_update
+    op_morton_fn = cfg.op_morton_fn or op_morton
+    op_sort_and_swizzle_with_perm_fn = (
+        cfg.op_sort_and_swizzle_with_perm_fn or op_sort_and_swizzle_with_perm
+    )
+    op_sort_and_swizzle_morton_with_perm_fn = (
+        cfg.op_sort_and_swizzle_morton_with_perm_fn
+        or op_sort_and_swizzle_morton_with_perm
+    )
+    op_sort_and_swizzle_blocked_with_perm_fn = (
+        cfg.op_sort_and_swizzle_blocked_with_perm_fn
+        or op_sort_and_swizzle_blocked_with_perm
+    )
+    op_sort_and_swizzle_hierarchical_with_perm_fn = (
+        cfg.op_sort_and_swizzle_hierarchical_with_perm_fn
+        or op_sort_and_swizzle_hierarchical_with_perm
+    )
+    op_sort_and_swizzle_servo_with_perm_fn = (
+        cfg.op_sort_and_swizzle_servo_with_perm_fn
+        or op_sort_and_swizzle_servo_with_perm
+    )
+    safe_gather_fn = cfg.safe_gather_fn or _jax_safe.safe_gather_1d
+    op_interact_fn = cfg.op_interact_fn
+    if op_interact_fn is None and cfg.interact_cfg is not None:
+        op_interact_fn = op_interact_jit_cfg(cfg.interact_cfg)
+    if op_interact_fn is None:
+        op_interact_fn = _op_interact
+    return cycle_jit(
+        do_sort=do_sort,
+        use_morton=use_morton,
+        block_size=block_size,
+        l2_block_size=l2_block_size,
+        l1_block_size=l1_block_size,
+        do_global=do_global,
+        op_rank_fn=op_rank_fn,
+        servo_enabled_fn=servo_enabled_fn,
+        servo_update_fn=servo_update_fn,
+        op_morton_fn=op_morton_fn,
+        op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_fn,
+        op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_fn,
+        op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_fn,
+        op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
+        op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
+        safe_gather_fn=safe_gather_fn,
+        op_interact_fn=op_interact_fn,
+        test_guards=test_guards,
+    )
+
+
 def cycle_intrinsic_jit(
     *,
     intern_fn: InternFn | None = None,
@@ -360,6 +502,28 @@ def cycle_intrinsic_jit(
     return _cycle_intrinsic_jit_impl(intern_fn, node_batch_fn)
 
 
+def cycle_intrinsic_jit_cfg(
+    cfg: IntrinsicConfig | None = None,
+    *,
+    intern_fn: InternFn | None = None,
+    intern_cfg: InternConfig | None = None,
+    node_batch_fn=None,
+):
+    """Return a jitted intrinsic entrypoint for a fixed config."""
+    if cfg is None:
+        cfg = DEFAULT_INTRINSIC_CONFIG
+    intern_fn = cfg.intern_fn or intern_fn
+    node_batch_fn = cfg.node_batch_fn or node_batch_fn
+    if cfg.intern_cfg is not None and intern_cfg is not None:
+        raise ValueError("Pass either cfg.intern_cfg or intern_cfg, not both.")
+    intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
+    return cycle_intrinsic_jit(
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        node_batch_fn=node_batch_fn,
+    )
+
+
 def coord_norm_batch_jit(coord_norm_id_jax_fn=None):
     """Return a jitted coord_norm_batch entrypoint for fixed DI."""
     if coord_norm_id_jax_fn is None:
@@ -371,12 +535,19 @@ def coord_norm_batch_jit(coord_norm_id_jax_fn=None):
 __all__ = [
     "intern_nodes_jit",
     "op_interact_jit",
+    "op_interact_jit_cfg",
     "emit_candidates_jit",
+    "emit_candidates_jit_cfg",
     "compact_candidates_jit",
+    "compact_candidates_jit_cfg",
     "compact_candidates_with_index_jit",
+    "compact_candidates_with_index_jit_cfg",
     "intern_candidates_jit",
+    "intern_candidates_jit_cfg",
     "cycle_candidates_jit",
     "cycle_jit",
+    "cycle_jit_cfg",
     "cycle_intrinsic_jit",
+    "cycle_intrinsic_jit_cfg",
     "coord_norm_batch_jit",
 ]

@@ -9,6 +9,7 @@ from prism_vm_core.domains import _host_raise_if_bad
 from prism_vm_core.ontology import OP_ADD, OP_MUL, OP_SUC, OP_ZERO, ZERO_PTR
 from prism_vm_core.structures import NodeBatch
 from prism_vm_core.protocols import HostRaiseFn, InternFn, NodeBatchFn
+from prism_bsp.config import IntrinsicConfig, DEFAULT_INTRINSIC_CONFIG
 
 
 def _node_batch(op, a1, a2) -> NodeBatch:
@@ -162,6 +163,38 @@ def cycle_intrinsic(
     return ledger, frontier_ids
 
 
+def cycle_intrinsic_cfg(
+    ledger,
+    frontier_ids,
+    *,
+    cfg: IntrinsicConfig = DEFAULT_INTRINSIC_CONFIG,
+    intern_cfg: InternConfig | None = None,
+    intern_fn: InternFn = intern_nodes,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    host_raise_fn: HostRaiseFn = _host_raise_if_bad,
+):
+    """Interface/Control wrapper for intrinsic cycle with DI bundle."""
+    if cfg.intern_cfg is not None and intern_cfg is not None:
+        raise ValueError("Pass either cfg.intern_cfg or intern_cfg, not both.")
+    intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
+    intern_fn = cfg.intern_fn or intern_fn
+    node_batch_fn = cfg.node_batch_fn or node_batch_fn
+    host_raise_fn = cfg.host_raise_fn or host_raise_fn
+    return cycle_intrinsic(
+        ledger,
+        frontier_ids,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        node_batch_fn=node_batch_fn,
+        host_raise_fn=host_raise_fn,
+    )
+
+
 _cycle_intrinsic_jax = _cycle_intrinsic_impl
 
-__all__ = ["_cycle_intrinsic_impl", "_cycle_intrinsic_jax", "cycle_intrinsic"]
+__all__ = [
+    "_cycle_intrinsic_impl",
+    "_cycle_intrinsic_jax",
+    "cycle_intrinsic",
+    "cycle_intrinsic_cfg",
+]

@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from typing import Callable, Optional
+
 import jax
 import jax.numpy as jnp
 
@@ -12,6 +15,22 @@ def _guards_enabled():
     return _TEST_GUARDS and _HAS_DEBUG_CALLBACK
 
 
+@dataclass(frozen=True, slots=True)
+class GuardConfig:
+    """Guard DI bundle (host-side control surface)."""
+
+    guards_enabled_fn: Optional[Callable[[], bool]] = None
+    guard_max_fn: Optional[Callable[..., None]] = None
+    guard_slot0_perm_fn: Optional[Callable[..., None]] = None
+    guard_null_row_fn: Optional[Callable[..., None]] = None
+    guard_zero_row_fn: Optional[Callable[..., None]] = None
+    guard_zero_args_fn: Optional[Callable[..., None]] = None
+    guard_swizzle_args_fn: Optional[Callable[..., None]] = None
+
+
+DEFAULT_GUARD_CONFIG = GuardConfig()
+
+
 def _guard_max(value, max_value, label):
     if not _guards_enabled():
         return
@@ -24,6 +43,16 @@ def _guard_max(value, max_value, label):
             )
 
     jax.debug.callback(_raise, bad, value, max_value)
+
+
+def guards_enabled_cfg(*, cfg: GuardConfig = DEFAULT_GUARD_CONFIG):
+    fn = cfg.guards_enabled_fn or _guards_enabled
+    return bool(fn())
+
+
+def guard_max_cfg(value, max_value, label, *, cfg: GuardConfig = DEFAULT_GUARD_CONFIG):
+    fn = cfg.guard_max_fn or _guard_max
+    return fn(value, max_value, label)
 
 
 def _pop_token(tokens):
@@ -55,6 +84,11 @@ def _guard_slot0_perm(perm, inv_perm, label):
     jax.debug.callback(_raise, ok, p0, i0)
 
 
+def guard_slot0_perm_cfg(perm, inv_perm, label, *, cfg: GuardConfig = DEFAULT_GUARD_CONFIG):
+    fn = cfg.guard_slot0_perm_fn or _guard_slot0_perm
+    return fn(perm, inv_perm, label)
+
+
 def _guard_null_row(opcode, arg1, arg2, label):
     if not _guards_enabled():
         return
@@ -70,6 +104,11 @@ def _guard_null_row(opcode, arg1, arg2, label):
             )
 
     jax.debug.callback(_raise, ok, op0, a10, a20)
+
+
+def guard_null_row_cfg(opcode, arg1, arg2, label, *, cfg: GuardConfig = DEFAULT_GUARD_CONFIG):
+    fn = cfg.guard_null_row_fn or _guard_null_row
+    return fn(opcode, arg1, arg2, label)
 
 
 def _guard_zero_row(opcode, arg1, arg2, label):
@@ -89,6 +128,11 @@ def _guard_zero_row(opcode, arg1, arg2, label):
     jax.debug.callback(_raise, ok, op1, a11, a21)
 
 
+def guard_zero_row_cfg(opcode, arg1, arg2, label, *, cfg: GuardConfig = DEFAULT_GUARD_CONFIG):
+    fn = cfg.guard_zero_row_fn or _guard_zero_row
+    return fn(opcode, arg1, arg2, label)
+
+
 def _guard_zero_args(mask, arg1, arg2, label):
     if not _guards_enabled():
         return
@@ -101,6 +145,11 @@ def _guard_zero_args(mask, arg1, arg2, label):
             raise RuntimeError(f"guard failed: {label} expected zero args")
 
     jax.debug.callback(_raise, bad)
+
+
+def guard_zero_args_cfg(mask, arg1, arg2, label, *, cfg: GuardConfig = DEFAULT_GUARD_CONFIG):
+    fn = cfg.guard_zero_args_fn or _guard_zero_args
+    return fn(mask, arg1, arg2, label)
 
 
 def _guard_swizzle_args(arg1, arg2, live, count, label):
@@ -122,7 +171,16 @@ def _guard_swizzle_args(arg1, arg2, live, count, label):
     jax.debug.callback(_raise, bad, count_i)
 
 
+def guard_swizzle_args_cfg(
+    arg1, arg2, live, count, label, *, cfg: GuardConfig = DEFAULT_GUARD_CONFIG
+):
+    fn = cfg.guard_swizzle_args_fn or _guard_swizzle_args
+    return fn(arg1, arg2, live, count, label)
+
+
 __all__ = [
+    "GuardConfig",
+    "DEFAULT_GUARD_CONFIG",
     "_guards_enabled",
     "_guard_max",
     "_pop_token",
@@ -132,4 +190,11 @@ __all__ = [
     "_guard_zero_row",
     "_guard_zero_args",
     "_guard_swizzle_args",
+    "guards_enabled_cfg",
+    "guard_max_cfg",
+    "guard_slot0_perm_cfg",
+    "guard_null_row_cfg",
+    "guard_zero_row_cfg",
+    "guard_zero_args_cfg",
+    "guard_swizzle_args_cfg",
 ]

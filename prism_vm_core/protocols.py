@@ -4,7 +4,7 @@ from typing import Protocol, Tuple, runtime_checkable
 
 import jax.numpy as jnp
 
-from prism_vm_core.structures import CandidateBuffer, Ledger, NodeBatch, Stratum
+from prism_vm_core.structures import Arena, CandidateBuffer, Ledger, NodeBatch, Stratum
 
 
 @runtime_checkable
@@ -52,6 +52,72 @@ class CandidateIndicesFn(Protocol):
 @runtime_checkable
 class ScatterDropFn(Protocol):
     def __call__(self, arr, idx, updates, label: str):
+        ...
+
+
+@runtime_checkable
+class SafeGatherFn(Protocol):
+    def __call__(self, arr, idx, label: str):
+        ...
+
+
+@runtime_checkable
+class GuardMaxFn(Protocol):
+    def __call__(self, value, max_value, label: str) -> None:
+        ...
+
+
+@runtime_checkable
+class OpRankFn(Protocol):
+    def __call__(self, arena: Arena):
+        ...
+
+
+@runtime_checkable
+class ServoEnabledFn(Protocol):
+    def __call__(self) -> bool:
+        ...
+
+
+@runtime_checkable
+class ServoUpdateFn(Protocol):
+    def __call__(self, arena: Arena) -> Arena:
+        ...
+
+
+@runtime_checkable
+class OpMortonFn(Protocol):
+    def __call__(self, arena: Arena):
+        ...
+
+
+@runtime_checkable
+class OpSortWithPermFn(Protocol):
+    def __call__(self, arena: Arena, *args, **kwargs) -> Tuple[Arena, jnp.ndarray]:
+        ...
+
+
+@runtime_checkable
+class ArenaRootHashFn(Protocol):
+    def __call__(self, arena: Arena, root_ptr):
+        ...
+
+
+@runtime_checkable
+class DamageTileSizeFn(Protocol):
+    def __call__(self, block_size, l2_block_size, l1_block_size):
+        ...
+
+
+@runtime_checkable
+class DamageMetricsUpdateFn(Protocol):
+    def __call__(self, arena: Arena, tile_size) -> None:
+        ...
+
+
+@runtime_checkable
+class OpInteractFn(Protocol):
+    def __call__(self, arena: Arena) -> Arena:
         ...
 
 
@@ -114,6 +180,17 @@ __all__ = [
     "CoordXorBatchFn",
     "CandidateIndicesFn",
     "ScatterDropFn",
+    "SafeGatherFn",
+    "GuardMaxFn",
+    "OpRankFn",
+    "ServoEnabledFn",
+    "ServoUpdateFn",
+    "OpMortonFn",
+    "OpSortWithPermFn",
+    "ArenaRootHashFn",
+    "DamageTileSizeFn",
+    "DamageMetricsUpdateFn",
+    "OpInteractFn",
     "GuardsEnabledFn",
     "HostIntValueFn",
     "HostBoolValueFn",

@@ -127,6 +127,19 @@ def emit_candidates(ledger, frontier_ids):
     return CandidateBuffer(enabled=enabled, opcode=opcode, arg1=arg1, arg2=arg2)
 
 
+def emit_candidates_cfg(
+    ledger,
+    frontier_ids,
+    *,
+    cfg: Cnf2Config | None = None,
+    emit_candidates_fn: EmitCandidatesFn = emit_candidates,
+):
+    """Interface/Control wrapper for emit_candidates with DI bundle."""
+    if cfg is not None and cfg.emit_candidates_fn is not None:
+        emit_candidates_fn = cfg.emit_candidates_fn
+    return emit_candidates_fn(ledger, frontier_ids)
+
+
 def compact_candidates(
     candidates, *, candidate_indices_fn=_candidate_indices
 ):
@@ -141,6 +154,16 @@ def compact_candidates(
         arg2=candidates.arg2[safe_idx],
     )
     return compacted, count
+
+
+def compact_candidates_cfg(
+    candidates, *, cfg: Cnf2Config | None = None
+):
+    """Interface/Control wrapper for compact_candidates with DI bundle."""
+    candidate_indices_fn = _candidate_indices
+    if cfg is not None and cfg.candidate_indices_fn is not None:
+        candidate_indices_fn = cfg.candidate_indices_fn
+    return compact_candidates(candidates, candidate_indices_fn=candidate_indices_fn)
 
 
 def compact_candidates_with_index(
@@ -158,6 +181,18 @@ def compact_candidates_with_index(
     return compacted, count, idx
 
 
+def compact_candidates_with_index_cfg(
+    candidates, *, cfg: Cnf2Config | None = None
+):
+    """Interface/Control wrapper for compact_candidates_with_index with DI bundle."""
+    candidate_indices_fn = _candidate_indices
+    if cfg is not None and cfg.candidate_indices_fn is not None:
+        candidate_indices_fn = cfg.candidate_indices_fn
+    return compact_candidates_with_index(
+        candidates, candidate_indices_fn=candidate_indices_fn
+    )
+
+
 def _scatter_compacted_ids(
     comp_idx,
     ids_compact,
@@ -172,6 +207,27 @@ def _scatter_compacted_ids(
     ids_full = jnp.zeros(size, dtype=ids_compact.dtype)
     return scatter_drop_fn(
         ids_full, scatter_idx, scatter_ids, "scatter_compacted_ids"
+    )
+
+
+def scatter_compacted_ids_cfg(
+    comp_idx,
+    ids_compact,
+    count,
+    size,
+    *,
+    cfg: Cnf2Config | None = None,
+):
+    """Interface/Control wrapper for _scatter_compacted_ids with DI bundle."""
+    scatter_drop_fn = _scatter_drop
+    if cfg is not None and cfg.scatter_drop_fn is not None:
+        scatter_drop_fn = cfg.scatter_drop_fn
+    return _scatter_compacted_ids(
+        comp_idx,
+        ids_compact,
+        count,
+        size,
+        scatter_drop_fn=scatter_drop_fn,
     )
 
 
@@ -194,6 +250,36 @@ def intern_candidates(
     ids, new_ledger = intern_fn(ledger, node_batch_fn(ops, a1, a2))
     return ids, new_ledger, count
 
+
+def intern_candidates_cfg(
+    ledger,
+    candidates,
+    *,
+    cfg: Cnf2Config | None = None,
+    compact_candidates_fn=compact_candidates,
+    intern_fn: InternFn = intern_nodes,
+    intern_cfg: InternConfig | None = None,
+    node_batch_fn: NodeBatchFn = _node_batch,
+):
+    """Interface/Control wrapper for intern_candidates with DI bundle."""
+    if cfg is not None:
+        intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
+        if cfg.intern_fn is not None and intern_fn is intern_nodes:
+            intern_fn = cfg.intern_fn
+        if cfg.node_batch_fn is not None and node_batch_fn is _node_batch:
+            node_batch_fn = cfg.node_batch_fn
+        if cfg.candidate_indices_fn is not None:
+            compact_candidates_fn = partial(
+                compact_candidates, candidate_indices_fn=cfg.candidate_indices_fn
+            )
+    return intern_candidates(
+        ledger,
+        candidates,
+        compact_candidates_fn=compact_candidates_fn,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        node_batch_fn=node_batch_fn,
+    )
 
 def cycle_candidates(
     ledger,
@@ -522,8 +608,13 @@ def cycle_candidates(
 
 __all__ = [
     "emit_candidates",
+    "emit_candidates_cfg",
     "compact_candidates",
+    "compact_candidates_cfg",
     "compact_candidates_with_index",
+    "compact_candidates_with_index_cfg",
+    "scatter_compacted_ids_cfg",
     "intern_candidates",
+    "intern_candidates_cfg",
     "cycle_candidates",
 ]
