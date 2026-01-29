@@ -51,10 +51,29 @@ def cached_jit(factory: Callable[..., Callable], *, static_argnames=None, static
     return _cached
 
 
+def call_with_optional_kw(fn: Callable[..., T], name: str, value, *args, **kwargs) -> T:
+    """Call fn with an optional keyword if it is accepted.
+
+    This is a host-side helper to keep DI-compatible call sites tolerant of
+    callables that have not yet adopted a new keyword parameter.
+    """
+    if value is None:
+        return fn(*args, **kwargs)
+    call_kwargs = dict(kwargs)
+    call_kwargs[name] = value
+    try:
+        return fn(*args, **call_kwargs)
+    except TypeError as exc:
+        if name in str(exc):
+            return fn(*args, **kwargs)
+        raise
+
+
 __all__ = [
     "resolve",
     "wrap_policy",
     "wrap_index_policy",
     "cached_factory",
     "cached_jit",
+    "call_with_optional_kw",
 ]
