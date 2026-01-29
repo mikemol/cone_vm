@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.di import wrap_policy, wrap_index_policy
+from prism_core.di import call_with_optional_kwargs, wrap_policy, wrap_index_policy
 from prism_core.safety import SafetyPolicy, DEFAULT_SAFETY_POLICY, oob_mask
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -186,11 +186,14 @@ def op_sort_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_with_perm with guard cfg."""
-    return op_sort_and_swizzle_with_perm(
+    return call_with_optional_kwargs(
+        op_sort_and_swizzle_with_perm,
+        {
+            "safe_gather_policy": safe_gather_policy,
+            "guard_cfg": guard_cfg,
+        },
         arena,
         safe_gather_fn=safe_gather_fn,
-        safe_gather_policy=safe_gather_policy,
-        guard_cfg=guard_cfg,
     )
 
 
@@ -204,13 +207,16 @@ def op_sort_blocked_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_blocked_with_perm with guard cfg."""
-    return op_sort_and_swizzle_blocked_with_perm(
+    return call_with_optional_kwargs(
+        op_sort_and_swizzle_blocked_with_perm,
+        {
+            "safe_gather_policy": safe_gather_policy,
+            "guard_cfg": guard_cfg,
+        },
         arena,
         block_size,
         morton=morton,
         safe_gather_fn=safe_gather_fn,
-        safe_gather_policy=safe_gather_policy,
-        guard_cfg=guard_cfg,
     )
 
 
@@ -226,15 +232,18 @@ def op_sort_hierarchical_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_hierarchical_with_perm with guard cfg."""
-    return op_sort_and_swizzle_hierarchical_with_perm(
+    return call_with_optional_kwargs(
+        op_sort_and_swizzle_hierarchical_with_perm,
+        {
+            "safe_gather_policy": safe_gather_policy,
+            "guard_cfg": guard_cfg,
+        },
         arena,
         l2_block_size,
         l1_block_size,
         morton=morton,
         do_global=do_global,
         safe_gather_fn=safe_gather_fn,
-        safe_gather_policy=safe_gather_policy,
-        guard_cfg=guard_cfg,
     )
 
 
@@ -247,12 +256,15 @@ def op_sort_morton_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_morton_with_perm with guard cfg."""
-    return op_sort_and_swizzle_morton_with_perm(
+    return call_with_optional_kwargs(
+        op_sort_and_swizzle_morton_with_perm,
+        {
+            "safe_gather_policy": safe_gather_policy,
+            "guard_cfg": guard_cfg,
+        },
         arena,
         morton,
         safe_gather_fn=safe_gather_fn,
-        safe_gather_policy=safe_gather_policy,
-        guard_cfg=guard_cfg,
     )
 
 
@@ -266,13 +278,16 @@ def op_sort_servo_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_servo_with_perm with guard cfg."""
-    return op_sort_and_swizzle_servo_with_perm(
+    return call_with_optional_kwargs(
+        op_sort_and_swizzle_servo_with_perm,
+        {
+            "safe_gather_policy": safe_gather_policy,
+            "guard_cfg": guard_cfg,
+        },
         arena,
         morton,
         servo_mask,
         safe_gather_fn=safe_gather_fn,
-        safe_gather_policy=safe_gather_policy,
-        guard_cfg=guard_cfg,
     )
 
 
