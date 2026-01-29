@@ -45,6 +45,12 @@ class ICPtr:
         return int(self.i)
 
 
+def _require_ptr_domain(ptr, label: str, expected_type):
+    if not isinstance(ptr, expected_type):
+        raise TypeError(f"{label} expected {expected_type.__name__}")
+    return ptr
+
+
 def _node_id(value) -> ICNodeId:
     if isinstance(value, ICNodeId):
         return value
@@ -70,21 +76,15 @@ def _ic_ptr(value) -> ICPtr:
 
 
 def _require_node_id(ptr: ICNodeId, label: str) -> ICNodeId:
-    if not isinstance(ptr, ICNodeId):
-        raise TypeError(f"{label} expected ICNodeId")
-    return ptr
+    return _require_ptr_domain(ptr, label, ICNodeId)
 
 
 def _require_port_id(ptr: ICPortId, label: str) -> ICPortId:
-    if not isinstance(ptr, ICPortId):
-        raise TypeError(f"{label} expected ICPortId")
-    return ptr
+    return _require_ptr_domain(ptr, label, ICPortId)
 
 
 def _require_ic_ptr(ptr: ICPtr, label: str) -> ICPtr:
-    if not isinstance(ptr, ICPtr):
-        raise TypeError(f"{label} expected ICPtr")
-    return ptr
+    return _require_ptr_domain(ptr, label, ICPtr)
 
 
 __all__ = [
@@ -99,6 +99,7 @@ __all__ = [
     "_require_node_id",
     "_require_port_id",
     "_require_ic_ptr",
+    "_require_ptr_domain",
     "_host_int",
     "_host_bool",
     "_host_int_value",

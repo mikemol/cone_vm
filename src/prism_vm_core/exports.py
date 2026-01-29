@@ -132,6 +132,7 @@ __all__ = [
     "_require_arena_ptr",
     "_require_ledger_id",
     "_require_manifest_ptr",
+    "_require_ptr_domain",
     "Stratum",
     "StagingContext",
     "hyperstrata_precedes",
