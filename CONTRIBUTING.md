@@ -30,6 +30,13 @@ mise exec -- python scripts/policy_check.py --workflows
 CI also runs `scripts/policy_check.py --workflows --posture`, which checks the
 GitHub Actions settings for this repository.
 
+## GPU tests and sandboxed environments
+Some tests rely on CUDA/JAX GPU backends. If you are running in a sandboxed
+environment, GPU access may require explicit sandbox escalation/privileged
+execution. Without GPU access, CUDA backend init can fail. Do not mask these
+failures; rerun with GPU access enabled, or explicitly select a CPU-only path
+when that is the intent of the test run.
+
 ## Agda proofs
 Agda checks run in a pinned container image. See `agda/README.md` for details.
 Local run:

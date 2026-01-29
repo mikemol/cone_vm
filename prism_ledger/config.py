@@ -35,7 +35,7 @@ class InternConfig:
         )
 
 
-DEFAULT_INTERN_CONFIG = InternConfig.from_env()
+DEFAULT_INTERN_CONFIG = InternConfig()
 
 
 __all__ = ["InternConfig", "DEFAULT_INTERN_CONFIG"]
