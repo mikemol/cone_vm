@@ -35,6 +35,8 @@ __all__ = [
     "MAX_COORD_STEPS",
     "InternConfig",
     "DEFAULT_INTERN_CONFIG",
+    "AllocConfig",
+    "DEFAULT_ALLOC_CONFIG",
     "Cnf2Flags",
     "DEFAULT_CNF2_FLAGS",
     "Cnf2Config",
