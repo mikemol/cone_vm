@@ -1,4 +1,12 @@
-from ic_core.engine import ICRewriteStats, ic_apply_active_pairs, ic_reduce
+from ic_core.config import ICEngineConfig, ICRuleConfig
+from ic_core.engine import (
+    DEFAULT_ENGINE_CONFIG,
+    ICRewriteStats,
+    ic_apply_active_pairs,
+    ic_apply_active_pairs_cfg,
+    ic_reduce,
+    ic_reduce_cfg,
+)
 from ic_core.graph import (
     ICState,
     PORT_AUX_LEFT,
@@ -24,6 +32,7 @@ from ic_core.graph import (
     ic_wire_star_jax,
 )
 from ic_core.rules import (
+    DEFAULT_RULE_CONFIG,
     RULE_ALLOC_ANNIHILATE,
     RULE_ALLOC_COMMUTE,
     RULE_ALLOC_ERASE,
@@ -39,6 +48,7 @@ from ic_core.rules import (
     ic_rule_for_types,
     ic_select_template,
 )
+from ic_core.jit_entrypoints import apply_active_pairs_jit, reduce_jit
 
 __all__ = [
     "TYPE_FREE",
@@ -58,6 +68,10 @@ __all__ = [
     "RULE_TABLE",
     "ICState",
     "ICRewriteStats",
+    "ICRuleConfig",
+    "ICEngineConfig",
+    "DEFAULT_RULE_CONFIG",
+    "DEFAULT_ENGINE_CONFIG",
     "ic_alloc_jax",
     "encode_port",
     "decode_port",
@@ -77,7 +91,11 @@ __all__ = [
     "ic_apply_erase",
     "ic_apply_commute",
     "ic_apply_template",
+    "ic_apply_active_pairs_cfg",
     "ic_apply_active_pairs",
+    "apply_active_pairs_jit",
+    "ic_reduce_cfg",
     "ic_reduce",
+    "reduce_jit",
     "ic_alloc",
 ]
