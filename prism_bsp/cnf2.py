@@ -144,7 +144,10 @@ def compact_candidates(
     candidates, *, candidate_indices_fn=_candidate_indices
 ):
     enabled = candidates.enabled.astype(jnp.int32)
-    idx, valid, count = candidate_indices_fn(enabled)
+    result = candidate_indices_fn(enabled)
+    idx = result.idx if hasattr(result, "idx") else result[0]
+    valid = result.valid if hasattr(result, "valid") else result[1]
+    count = result.count if hasattr(result, "count") else result[2]
     safe_idx = jnp.where(valid, idx, 0)
 
     compacted = CandidateBuffer(
@@ -170,7 +173,10 @@ def compact_candidates_with_index(
     candidates, *, candidate_indices_fn=_candidate_indices
 ):
     enabled = candidates.enabled.astype(jnp.int32)
-    idx, valid, count = candidate_indices_fn(enabled)
+    result = candidate_indices_fn(enabled)
+    idx = result.idx if hasattr(result, "idx") else result[0]
+    valid = result.valid if hasattr(result, "valid") else result[1]
+    count = result.count if hasattr(result, "count") else result[2]
     safe_idx = jnp.where(valid, idx, 0)
     compacted = CandidateBuffer(
         enabled=valid.astype(jnp.int32),
@@ -428,7 +434,16 @@ def cycle_candidates(
     # strict strata while canonicalizing coord-add payloads.
     coord_ids = jnp.zeros_like(rewrite_ids)
     coord_enabled = is_coord_add.astype(jnp.int32)
-    coord_idx, coord_valid, coord_count = candidate_indices_fn(coord_enabled)
+    coord_result = candidate_indices_fn(coord_enabled)
+    coord_idx = (
+        coord_result.idx if hasattr(coord_result, "idx") else coord_result[0]
+    )
+    coord_valid = (
+        coord_result.valid if hasattr(coord_result, "valid") else coord_result[1]
+    )
+    coord_count = (
+        coord_result.count if hasattr(coord_result, "count") else coord_result[2]
+    )
     coord_count_i = host_int_value_fn(coord_count)
     if coord_count_i > 0:
         coord_idx_safe = jnp.where(coord_valid, coord_idx, 0)

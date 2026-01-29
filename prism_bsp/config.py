@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from prism_coord.config import CoordConfig
+from prism_core.safety import SafetyPolicy
 from prism_ledger.config import InternConfig
 from prism_vm_core.protocols import (
     ApplyQFn,
@@ -85,6 +86,7 @@ class ArenaInteractConfig:
     """Arena interact DI bundle."""
 
     safe_gather_fn: SafeGatherFn | None = None
+    safe_gather_policy: SafetyPolicy | None = None
     scatter_drop_fn: ScatterDropFn | None = None
     guard_max_fn: GuardMaxFn | None = None
 
@@ -106,6 +108,7 @@ class ArenaCycleConfig:
     op_sort_and_swizzle_hierarchical_with_perm_fn: OpSortWithPermFn | None = None
     op_sort_and_swizzle_servo_with_perm_fn: OpSortWithPermFn | None = None
     safe_gather_fn: SafeGatherFn | None = None
+    safe_gather_policy: SafetyPolicy | None = None
     arena_root_hash_fn: ArenaRootHashFn | None = None
     damage_tile_size_fn: DamageTileSizeFn | None = None
     damage_metrics_update_fn: DamageMetricsUpdateFn | None = None

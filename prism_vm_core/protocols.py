@@ -157,6 +157,7 @@ class CommitStratumFn(Protocol):
         validate_mode: str = "strict",
         *,
         intern_fn: InternFn | None = None,
+        safe_gather_policy=None,
     ):
         ...
 
