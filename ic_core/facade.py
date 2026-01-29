@@ -7,6 +7,19 @@ erased by q; device kernels remain in ic_core.engine / ic_core.rules.
 from __future__ import annotations
 
 from ic_core.config import ICEngineConfig, ICRuleConfig
+from ic_core.protocols import (
+    AllocPlanFn,
+    ApplyAnnFn,
+    ApplyCommuteFn,
+    ApplyEraseFn,
+    ApplyTemplateFn,
+    ApplyTemplatePlannedFn,
+    CompactPairsFn,
+    DecodePortFn,
+    HaltedFn,
+    RuleForTypesFn,
+    ScanCorruptFn,
+)
 from ic_core.engine import (
     DEFAULT_ENGINE_CONFIG,
     ICRewriteStats,
@@ -97,6 +110,17 @@ __all__ = [
     "ICRewriteStats",
     "ICRuleConfig",
     "ICEngineConfig",
+    "CompactPairsFn",
+    "DecodePortFn",
+    "AllocPlanFn",
+    "ApplyTemplatePlannedFn",
+    "HaltedFn",
+    "ScanCorruptFn",
+    "RuleForTypesFn",
+    "ApplyAnnFn",
+    "ApplyEraseFn",
+    "ApplyCommuteFn",
+    "ApplyTemplateFn",
     "DEFAULT_RULE_CONFIG",
     "DEFAULT_ENGINE_CONFIG",
     "ic_alloc_jax",

@@ -1,32 +1,45 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+
+from ic_core.protocols import (
+    AllocPlanFn,
+    ApplyAnnFn,
+    ApplyCommuteFn,
+    ApplyEraseFn,
+    ApplyTemplateFn,
+    ApplyTemplatePlannedFn,
+    CompactPairsFn,
+    DecodePortFn,
+    HaltedFn,
+    RuleForTypesFn,
+    ScanCorruptFn,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class ICRuleConfig:
     """Rule-level DI bundle for IC rewrite templates."""
 
-    rule_for_types_fn: Callable
-    apply_annihilate_fn: Callable
-    apply_erase_fn: Callable
-    apply_commute_fn: Callable
-    apply_template_fn: Callable
-    alloc_plan_fn: Callable
-    apply_template_planned_fn: Callable
+    rule_for_types_fn: RuleForTypesFn
+    apply_annihilate_fn: ApplyAnnFn
+    apply_erase_fn: ApplyEraseFn
+    apply_commute_fn: ApplyCommuteFn
+    apply_template_fn: ApplyTemplateFn
+    alloc_plan_fn: AllocPlanFn
+    apply_template_planned_fn: ApplyTemplatePlannedFn
 
 
 @dataclass(frozen=True, slots=True)
 class ICEngineConfig:
     """Engine-level DI bundle for IC reduction."""
 
-    compact_pairs_fn: Callable
-    decode_port_fn: Callable
-    alloc_plan_fn: Callable
-    apply_template_planned_fn: Callable
-    halted_fn: Callable
-    scan_corrupt_fn: Callable
+    compact_pairs_fn: CompactPairsFn
+    decode_port_fn: DecodePortFn
+    alloc_plan_fn: AllocPlanFn
+    apply_template_planned_fn: ApplyTemplatePlannedFn
+    halted_fn: HaltedFn
+    scan_corrupt_fn: ScanCorruptFn
 
 
 __all__ = ["ICRuleConfig", "ICEngineConfig"]
