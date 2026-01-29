@@ -241,6 +241,23 @@ def safe_gather_1d(
     )
 
 
+def safe_index_1d(
+    idx,
+    size,
+    label="safe_index_1d",
+    *,
+    guard=None,
+    policy: SafetyPolicy | None = None,
+):
+    """Interface/Control wrapper for safe_index_1d.
+
+    Axis: Interface/Control. Commutes with q. Erased by q.
+    """
+    if guard is None:
+        guard = _GATHER_GUARD
+    return _jax_safe.safe_index_1d(idx, size, label, guard=guard, policy=policy)
+
+
 def node_batch(op, a1, a2) -> NodeBatch:
     """Interface/Control wrapper for batch shape checks.
 
