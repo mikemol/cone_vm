@@ -160,6 +160,7 @@ __all__ = [
     "compact_candidates_cfg",
     "compact_candidates_with_index",
     "compact_candidates_with_index_cfg",
+    "DEFAULT_COMPACT_CONFIG",
     "intern_candidates",
     "intern_candidates_cfg",
     "validate_stratum_no_within_refs_jax",

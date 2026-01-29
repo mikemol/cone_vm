@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from prism_coord.config import CoordConfig
+from prism_core.compact import CompactConfig
 from prism_core.safety import SafetyPolicy
 from prism_ledger.config import InternConfig
 from prism_vm_core.protocols import (
@@ -65,6 +66,7 @@ class Cnf2Config:
     coord_xor_batch_fn: CoordXorBatchFn | None = None
     emit_candidates_fn: EmitCandidatesFn | None = None
     candidate_indices_fn: CandidateIndicesFn | None = None
+    compact_cfg: CompactConfig | None = None
     scatter_drop_fn: ScatterDropFn | None = None
     commit_stratum_fn: CommitStratumFn | None = None
     apply_q_fn: ApplyQFn | None = None
