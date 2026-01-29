@@ -7,6 +7,8 @@ from prism_core import jax_safe as _jax_safe
 from prism_core.guards import (
     GuardConfig,
     guard_gather_index_cfg as _guard_gather_index_cfg,
+    safe_gather_1d_cfg as _safe_gather_1d_cfg,
+    safe_gather_1d_ok_cfg as _safe_gather_1d_ok_cfg,
 )
 from prism_vm_core.ontology import OP_NULL, OP_ZERO
 
@@ -54,6 +56,34 @@ def guard_gather_index_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     return _guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
+
+
+def safe_gather_1d_cfg(
+    arr,
+    idx,
+    label="safe_gather_1d",
+    *,
+    guard=None,
+    policy=None,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+):
+    return _safe_gather_1d_cfg(
+        arr, idx, label, guard=guard, policy=policy, cfg=cfg
+    )
+
+
+def safe_gather_1d_ok_cfg(
+    arr,
+    idx,
+    label="safe_gather_1d_ok",
+    *,
+    guard=None,
+    policy=None,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+):
+    return _safe_gather_1d_ok_cfg(
+        arr, idx, label, guard=guard, policy=policy, cfg=cfg
+    )
 
 
 def _pop_token(tokens):
@@ -194,6 +224,8 @@ __all__ = [
     "guards_enabled_cfg",
     "guard_max_cfg",
     "guard_gather_index_cfg",
+    "safe_gather_1d_cfg",
+    "safe_gather_1d_ok_cfg",
     "guard_slot0_perm_cfg",
     "guard_null_row_cfg",
     "guard_zero_row_cfg",

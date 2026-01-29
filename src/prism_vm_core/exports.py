@@ -85,6 +85,8 @@ __all__ = [
     "_gpu_metrics_device_index",
     "safe_gather_1d",
     "safe_gather_1d_ok",
+    "safe_gather_1d_cfg",
+    "safe_gather_1d_ok_cfg",
     "safe_index_1d",
     "safe_index_1d_cfg",
     "coord_norm_probe_reset",

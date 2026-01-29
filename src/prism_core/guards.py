@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+import jax.numpy as jnp
+
 from prism_core import jax_safe as _jax_safe
 
 
@@ -52,6 +54,40 @@ def safe_index_1d_cfg(
     return _jax_safe.safe_index_1d(idx, size, label, guard=False, policy=policy)
 
 
+def safe_gather_1d_cfg(
+    arr,
+    idx,
+    label="safe_gather_1d",
+    *,
+    guard=None,
+    policy=None,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+):
+    """Guard-configured wrapper for safe_gather_1d (shared)."""
+    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
+    guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
+    return _jax_safe.safe_gather_1d(
+        arr, idx, label, guard=False, policy=policy
+    )
+
+
+def safe_gather_1d_ok_cfg(
+    arr,
+    idx,
+    label="safe_gather_1d_ok",
+    *,
+    guard=None,
+    policy=None,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+):
+    """Guard-configured wrapper for safe_gather_1d_ok (shared)."""
+    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
+    guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
+    return _jax_safe.safe_gather_1d_ok(
+        arr, idx, label, guard=False, policy=policy
+    )
+
+
 def make_safe_index_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
@@ -73,5 +109,7 @@ __all__ = [
     "DEFAULT_GUARD_CONFIG",
     "guard_gather_index_cfg",
     "safe_index_1d_cfg",
+    "safe_gather_1d_cfg",
+    "safe_gather_1d_ok_cfg",
     "make_safe_index_fn",
 ]

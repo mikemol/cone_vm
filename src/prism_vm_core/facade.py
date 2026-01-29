@@ -268,6 +268,41 @@ def safe_gather_1d_ok(
     )
 
 
+def safe_gather_1d_cfg(
+    arr,
+    idx,
+    label="safe_gather_1d",
+    *,
+    guard=None,
+    policy: SafetyPolicy | None = None,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+    return_ok: bool = False,
+):
+    """Interface/Control wrapper for safe_gather_1d with guard config."""
+    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
+    guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
+    return _jax_safe.safe_gather_1d(
+        arr, idx, label, guard=False, policy=policy, return_ok=return_ok
+    )
+
+
+def safe_gather_1d_ok_cfg(
+    arr,
+    idx,
+    label="safe_gather_1d_ok",
+    *,
+    guard=None,
+    policy: SafetyPolicy | None = None,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+):
+    """Interface/Control wrapper for safe_gather_1d_ok with guard config."""
+    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
+    guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
+    return _jax_safe.safe_gather_1d_ok(
+        arr, idx, label, guard=False, policy=policy
+    )
+
+
 def safe_index_1d(
     idx,
     size,
