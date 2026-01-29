@@ -6,6 +6,7 @@ from jax import lax
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.safety import SafetyPolicy, oob_mask
+from prism_core.di import wrap_policy
 from prism_ledger.intern import intern_nodes
 from prism_vm_core.constants import _PREFIX_SCAN_CHUNK
 from prism_vm_core.domains import (
@@ -252,14 +253,7 @@ def commit_stratum(
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
     q_prev: QMap = prior_q or identity_q_fn
-    if safe_gather_policy is not None:
-        policy = safe_gather_policy
-        base_safe_gather_fn = safe_gather_fn
-
-        def _safe_gather(arr, idx, label):
-            return base_safe_gather_fn(arr, idx, label, policy=policy)
-
-        safe_gather_fn = _safe_gather
+    safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
     # SYNC: host int() pulls device scalar for host-side control flow (m1).
     count = host_int_value_fn(jnp.maximum(stratum.count, 0))
     if count == 0:
