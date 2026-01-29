@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jax import jit, lax
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.di import wrap_policy
+from prism_core.di import call_with_optional_kw, wrap_policy
 from prism_core.guards import make_safe_gather_fn
 from prism_metrics.metrics import _damage_metrics_update, _damage_tile_size
 from prism_vm_core.domains import _host_int_value
@@ -206,12 +206,14 @@ def cycle_core(
             arena = servo_update_fn(arena)
             morton_arr = morton if morton is not None else op_morton_fn(arena)
             servo_mask = arena.servo[0]
-            arena, inv_perm = op_sort_and_swizzle_servo_with_perm_fn(
+            arena, inv_perm = call_with_optional_kw(
+                op_sort_and_swizzle_servo_with_perm_fn,
+                "guard_cfg",
+                guard_cfg,
                 arena,
                 morton_arr,
                 servo_mask,
                 safe_gather_fn=safe_gather_fn,
-                guard_cfg=guard_cfg,
             )
         else:
             if use_morton or morton is not None:
@@ -221,35 +223,43 @@ def cycle_core(
                     l2_block_size = l1_block_size
                 if l1_block_size is None:
                     l1_block_size = l2_block_size
-                arena, inv_perm = op_sort_and_swizzle_hierarchical_with_perm_fn(
+                arena, inv_perm = call_with_optional_kw(
+                    op_sort_and_swizzle_hierarchical_with_perm_fn,
+                    "guard_cfg",
+                    guard_cfg,
                     arena,
                     l2_block_size,
                     l1_block_size,
                     morton=morton_arr,
                     do_global=do_global,
                     safe_gather_fn=safe_gather_fn,
-                    guard_cfg=guard_cfg,
                 )
             elif block_size is not None:
-                arena, inv_perm = op_sort_and_swizzle_blocked_with_perm_fn(
+                arena, inv_perm = call_with_optional_kw(
+                    op_sort_and_swizzle_blocked_with_perm_fn,
+                    "guard_cfg",
+                    guard_cfg,
                     arena,
                     block_size,
                     morton=morton_arr,
                     safe_gather_fn=safe_gather_fn,
-                    guard_cfg=guard_cfg,
                 )
             elif morton_arr is not None:
-                arena, inv_perm = op_sort_and_swizzle_morton_with_perm_fn(
+                arena, inv_perm = call_with_optional_kw(
+                    op_sort_and_swizzle_morton_with_perm_fn,
+                    "guard_cfg",
+                    guard_cfg,
                     arena,
                     morton_arr,
                     safe_gather_fn=safe_gather_fn,
-                    guard_cfg=guard_cfg,
                 )
             else:
-                arena, inv_perm = op_sort_and_swizzle_with_perm_fn(
+                arena, inv_perm = call_with_optional_kw(
+                    op_sort_and_swizzle_with_perm_fn,
+                    "guard_cfg",
+                    guard_cfg,
                     arena,
                     safe_gather_fn=safe_gather_fn,
-                    guard_cfg=guard_cfg,
                 )
         # Root remap is a pointer gather; guard in test mode.
         root_idx = jnp.where(root_arr != 0, root_arr, jnp.int32(0))
