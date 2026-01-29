@@ -10,6 +10,11 @@ from dataclasses import replace
 
 from prism_core.safety import SafetyPolicy
 from prism_core.jax_safe import safe_index_1d
+from ic_core.guards import (
+    ICGuardConfig,
+    DEFAULT_IC_GUARD_CONFIG,
+    safe_index_1d_cfg,
+)
 
 from ic_core.config import ICEngineConfig, ICGraphConfig, ICRuleConfig
 from ic_core.domains import (
@@ -140,6 +145,24 @@ def graph_config_with_index_fn(
 ) -> ICGraphConfig:
     """Return a graph config with safe_index_fn set."""
     return replace(cfg, safe_index_fn=safe_index_fn)
+
+
+def graph_config_with_guard(
+    *,
+    safety_policy: SafetyPolicy | None = None,
+    guard_cfg: ICGuardConfig = DEFAULT_IC_GUARD_CONFIG,
+    cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+) -> ICGraphConfig:
+    """Return a graph config using safe_index_1d_cfg with guard config."""
+    def _safe_index(idx, size, label, *, policy=None):
+        return safe_index_1d_cfg(
+            idx, size, label, policy=policy, cfg=guard_cfg
+        )
+
+    cfg = replace(cfg, safe_index_fn=_safe_index)
+    if safety_policy is not None:
+        cfg = replace(cfg, safety_policy=safety_policy)
+    return cfg
 
 
 def ic_wire_jax_cfg(
@@ -353,6 +376,11 @@ __all__ = [
     "DEFAULT_ENGINE_CONFIG",
     "DEFAULT_GRAPH_CONFIG",
     "graph_config_with_policy",
+    "graph_config_with_index_fn",
+    "graph_config_with_guard",
+    "ICGuardConfig",
+    "DEFAULT_IC_GUARD_CONFIG",
+    "safe_index_1d_cfg",
     "graph_config_with_index_fn",
     "ICNodeId",
     "ICPortId",
