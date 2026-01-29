@@ -14,6 +14,7 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.di import wrap_policy
 from prism_core.safety import SafetyPolicy, DEFAULT_SAFETY_POLICY, oob_mask
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -502,14 +503,7 @@ def commit_stratum(
     """
     if intern_fn is None:
         intern_fn = intern_nodes
-    safe_gather_fn = safe_gather_1d
-    if safe_gather_policy is not None:
-        policy = safe_gather_policy
-
-        def _safe_gather(arr, idx, label):
-            return safe_gather_fn(arr, idx, label, policy=policy)
-
-        safe_gather_fn = _safe_gather
+    safe_gather_fn = wrap_policy(safe_gather_1d, safe_gather_policy)
     return _commit_stratum_impl(
         ledger,
         stratum,
