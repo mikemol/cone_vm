@@ -119,6 +119,44 @@ def engine_config_from_rules(
     )
 
 
+def apply_active_pairs_jit_from_rules(
+    rule_cfg: ICRuleConfig,
+    *,
+    compact_pairs_fn=ic_compact_active_pairs,
+    decode_port_fn=decode_port,
+    halted_fn=_halted,
+    scan_corrupt_fn=_scan_corrupt_ports,
+):
+    """Return jitted apply_active_pairs using a rule config."""
+    cfg = engine_config_from_rules(
+        rule_cfg,
+        compact_pairs_fn=compact_pairs_fn,
+        decode_port_fn=decode_port_fn,
+        halted_fn=halted_fn,
+        scan_corrupt_fn=scan_corrupt_fn,
+    )
+    return apply_active_pairs_jit(cfg)
+
+
+def reduce_jit_from_rules(
+    rule_cfg: ICRuleConfig,
+    *,
+    compact_pairs_fn=ic_compact_active_pairs,
+    decode_port_fn=decode_port,
+    halted_fn=_halted,
+    scan_corrupt_fn=_scan_corrupt_ports,
+):
+    """Return jitted reduce using a rule config."""
+    cfg = engine_config_from_rules(
+        rule_cfg,
+        compact_pairs_fn=compact_pairs_fn,
+        decode_port_fn=decode_port_fn,
+        halted_fn=halted_fn,
+        scan_corrupt_fn=scan_corrupt_fn,
+    )
+    return reduce_jit(cfg)
+
+
 __all__ = [
     "TYPE_FREE",
     "TYPE_ERA",
@@ -184,6 +222,8 @@ __all__ = [
     "ic_apply_active_pairs_cfg",
     "ic_reduce_cfg",
     "engine_config_from_rules",
+    "apply_active_pairs_jit_from_rules",
+    "reduce_jit_from_rules",
     "apply_active_pairs_jit",
     "reduce_jit",
     "ic_alloc",
