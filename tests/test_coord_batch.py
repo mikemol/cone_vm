@@ -15,8 +15,6 @@ def test_coord_xor_batch_uses_single_intern_call(monkeypatch):
         calls["n"] += 1
         return real_intern(*args, **kwargs)
 
-    monkeypatch.setattr(pv, "intern_nodes", counted_intern)
-
     ledger = pv.init_ledger()
     z0, ledger = pv._coord_leaf_id(ledger, pv.OP_COORD_ZERO)
     z1, ledger = pv._coord_leaf_id(ledger, pv.OP_COORD_ONE)
@@ -26,7 +24,9 @@ def test_coord_xor_batch_uses_single_intern_call(monkeypatch):
     left = jnp.array([z0, z1] * (n // 2), dtype=jnp.int32)
     right = jnp.array([z1, z0] * (n // 2), dtype=jnp.int32)
 
-    out_ids, ledger2 = pv.coord_xor_batch(ledger, left, right)
+    out_ids, ledger2 = pv.coord_xor_batch(
+        ledger, left, right, intern_fn=counted_intern
+    )
     ledger2.count.block_until_ready()
     assert out_ids.shape[0] == n
     assert calls["n"] <= 4

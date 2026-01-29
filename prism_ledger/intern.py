@@ -1,11 +1,10 @@
-import os
-
 import jax
 import jax.numpy as jnp
 from jax import lax
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.permutation import _invert_perm
+from prism_ledger.config import DEFAULT_INTERN_CONFIG, InternConfig
 from prism_metrics.probes import (
     _coord_norm_probe_assert,
     _coord_norm_probe_enabled,
@@ -33,25 +32,18 @@ from prism_vm_core.structures import Ledger, NodeBatch
 
 _scatter_drop = _jax_safe.scatter_drop
 
-OP_BUCKETS_FULL_RANGE = os.environ.get(
-    "PRISM_OP_BUCKETS_FULL_RANGE", ""
-).strip().lower() in ("1", "true", "yes", "on")
-FORCE_SPAWN_CLIP = os.environ.get(
-    "PRISM_FORCE_SPAWN_CLIP", ""
-).strip().lower() in ("1", "true", "yes", "on")
-
-
-def _coord_norm_id_jax_core(ledger, coord_id):
+def _coord_norm_id_jax_core(ledger, coord_id, *, lookup_node_id_fn=None):
     # CDᵣ + Normalize𝚌 (core, no probe)
     # NOTE: repeated lookups per step are an m1/m4 tradeoff; batching is
     # tracked in IMPLEMENTATION_PLAN.md.
-    leaf_zero_id, leaf_zero_found = _lookup_node_id(
+    lookup_node_id_fn = lookup_node_id_fn or _lookup_node_id
+    leaf_zero_id, leaf_zero_found = lookup_node_id_fn(
         ledger,
         jnp.int32(OP_COORD_ZERO),
         jnp.int32(0),
         jnp.int32(0),
     )
-    leaf_one_id, leaf_one_found = _lookup_node_id(
+    leaf_one_id, leaf_one_found = lookup_node_id_fn(
         ledger,
         jnp.int32(OP_COORD_ONE),
         jnp.int32(0),
@@ -83,7 +75,7 @@ def _coord_norm_id_jax_core(ledger, coord_id):
             (right_op == OP_COORD_ONE) & leaf_one_found, leaf_one_id, right
         )
 
-        pair_id, pair_found = _lookup_node_id(
+        pair_id, pair_found = lookup_node_id_fn(
             ledger, jnp.int32(OP_COORD_PAIR), left, right
         )
         cid = jnp.where(is_pair & pair_found, pair_id, cid)
@@ -92,20 +84,36 @@ def _coord_norm_id_jax_core(ledger, coord_id):
     return lax.fori_loop(0, MAX_COORD_STEPS, body, coord_id)
 
 
-def _coord_norm_id_jax(ledger, coord_id):
+def _coord_norm_id_jax(
+    ledger,
+    coord_id,
+    *,
+    coord_norm_id_core_fn=None,
+    lookup_node_id_fn=None,
+    guards_enabled_fn=_guards_enabled,
+    probe_tick_fn=_coord_norm_probe_tick,
+):
     # CDᵣ + Normalize𝚌
     # Debug-only probe to detect normalization scope; see tests/test_coord_norm_probe.py.
-    if _guards_enabled():
-        jax.debug.callback(_coord_norm_probe_tick, jnp.int32(1), ordered=True)
-    return _coord_norm_id_jax_core(ledger, coord_id)
+    if guards_enabled_fn():
+        jax.debug.callback(probe_tick_fn, jnp.int32(1), ordered=True)
+    coord_norm_id_core_fn = coord_norm_id_core_fn or _coord_norm_id_jax_core
+    return coord_norm_id_core_fn(
+        ledger, coord_id, lookup_node_id_fn=lookup_node_id_fn
+    )
 
 
-def _coord_norm_id_jax_noprobe(ledger, coord_id):
-    return _coord_norm_id_jax_core(ledger, coord_id)
+def _coord_norm_id_jax_noprobe(
+    ledger, coord_id, *, coord_norm_id_core_fn=None, lookup_node_id_fn=None
+):
+    coord_norm_id_core_fn = coord_norm_id_core_fn or _coord_norm_id_jax_core
+    return coord_norm_id_core_fn(
+        ledger, coord_id, lookup_node_id_fn=lookup_node_id_fn
+    )
 
 
-def _lookup_node_id(ledger, op, a1, a2):
-    k0, k1, k2, k3, k4 = _pack_key(op, a1, a2)
+def _lookup_node_id(ledger, op, a1, a2, *, pack_key_fn=_pack_key):
+    k0, k1, k2, k3, k4 = pack_key_fn(op, a1, a2)
     L_b0 = ledger.keys_b0_sorted
     L_b1 = ledger.keys_b1_sorted
     L_b2 = ledger.keys_b2_sorted
@@ -196,11 +204,15 @@ def _lookup_node_id(ledger, op, a1, a2):
     )
 
 
-def _key_safe_normalize_nodes(ops, a1, a2):
+def _key_safe_normalize_nodes(
+    ops, a1, a2, *, guard_zero_args_fn=_guard_zero_args
+):
     is_null = ops == OP_NULL
     is_coord_leaf = (ops == OP_COORD_ZERO) | (ops == OP_COORD_ONE)
     zero_mask = is_null | is_coord_leaf
-    _guard_zero_args(is_coord_leaf, a1, a2, "key_safe_normalize.coord_leaf_args")
+    guard_zero_args_fn(
+        is_coord_leaf, a1, a2, "key_safe_normalize.coord_leaf_args"
+    )
     a1 = jnp.where(zero_mask, jnp.int32(0), a1)
     a2 = jnp.where(zero_mask, jnp.int32(0), a2)
     # NOTE: OP_COORD_PAIR is treated as ordered; no commutative swap here.
@@ -211,7 +223,25 @@ def _key_safe_normalize_nodes(ops, a1, a2):
     return ops, a1_swapped, a2_swapped
 
 
-def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
+def _intern_nodes_impl_core(
+    ledger,
+    proposed_ops,
+    proposed_a1,
+    proposed_a2,
+    *,
+    cfg: InternConfig,
+    key_safe_normalize_fn=_key_safe_normalize_nodes,
+    pack_key_fn=_pack_key,
+    candidate_indices_fn=_candidate_indices,
+    guard_max_fn=_guard_max,
+    guards_enabled_fn=_guards_enabled,
+    coord_norm_id_jax_fn=_coord_norm_id_jax,
+    coord_norm_id_jax_noprobe_fn=_coord_norm_id_jax_noprobe,
+    coord_norm_probe_enabled_fn=_coord_norm_probe_enabled,
+    coord_norm_probe_reset_cb_fn=_coord_norm_probe_reset_cb,
+    coord_norm_probe_assert_fn=_coord_norm_probe_assert,
+    scatter_drop_fn=_scatter_drop,
+):
     max_key = jnp.uint8(0xFF)
     # Interning pipeline (vectorized):
     # - Key-safe normalization only (coord pairs); no semantic rewrites.
@@ -229,20 +259,20 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     is_coord_pair = proposed_ops == OP_COORD_PAIR
 
     has_coord = jnp.any(is_coord_pair)
-    if _guards_enabled() and _coord_norm_probe_enabled():
-        jax.debug.callback(_coord_norm_probe_reset_cb, jnp.int32(0), ordered=True)
+    if guards_enabled_fn() and coord_norm_probe_enabled_fn():
+        jax.debug.callback(coord_norm_probe_reset_cb_fn, jnp.int32(0), ordered=True)
     # CD_r/CD_a: normalize coord pairs before packing keys for stable lookup.
 
     def _norm(args):
         proposed_a1, proposed_a2 = args
         coord_enabled = is_coord_pair.astype(jnp.int32)
-        coord_idx, coord_valid, coord_count = _candidate_indices(coord_enabled)
+        coord_idx, coord_valid, coord_count = candidate_indices_fn(coord_enabled)
 
         def _norm_body(i, state):
             a1_arr, a2_arr = state
             idx = coord_idx[i]
-            a1_norm = _coord_norm_id_jax(ledger, a1_arr[idx])
-            a2_norm = _coord_norm_id_jax_noprobe(ledger, a2_arr[idx])
+            a1_norm = coord_norm_id_jax_fn(ledger, a1_arr[idx])
+            a2_norm = coord_norm_id_jax_noprobe_fn(ledger, a2_arr[idx])
             a1_arr = a1_arr.at[idx].set(a1_norm)
             a2_arr = a2_arr.at[idx].set(a2_norm)
             return a1_arr, a2_arr
@@ -258,12 +288,12 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     proposed_a1, proposed_a2 = lax.cond(
         has_coord, _norm, _no_norm, (proposed_a1, proposed_a2)
     )
-    if _guards_enabled() and _coord_norm_probe_enabled():
-        jax.debug.callback(_coord_norm_probe_assert, has_coord, ordered=True)
+    if guards_enabled_fn() and coord_norm_probe_enabled_fn():
+        jax.debug.callback(coord_norm_probe_assert_fn, has_coord, ordered=True)
 
     # Key-safety: Normalize𝚌 before packing.
     # Sort proposals by packed key so duplicates collapse deterministically.
-    P_b0, P_b1, P_b2, P_b3, P_b4 = _pack_key(
+    P_b0, P_b1, P_b2, P_b3, P_b4 = pack_key_fn(
         proposed_ops, proposed_a1, proposed_a2
     )
     perm = jnp.lexsort((P_b4, P_b3, P_b2, P_b1, P_b0)).astype(jnp.int32)
@@ -310,7 +340,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     max_count = jnp.int32(MAX_COUNT)
     available = jnp.maximum(max_count - count, 0)
     available = jnp.where(base_oom | base_corrupt, jnp.int32(0), available)
-    if OP_BUCKETS_FULL_RANGE:
+    if cfg.op_buckets_full_range:
         op_start = jnp.zeros(256, dtype=jnp.int32)
         op_end = jnp.full((256,), count, dtype=jnp.int32)
     else:
@@ -405,7 +435,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     overflow = (count + requested_new) > max_count
     # NOTE: overflow relies on requested_new being accurate; add a secondary
     # guard on num_new if is_new logic changes (see IMPLEMENTATION_PLAN.md).
-    if FORCE_SPAWN_CLIP and _jax_safe.TEST_GUARDS:
+    if cfg.force_spawn_clip and _jax_safe.TEST_GUARDS:
         # Test-only hook: force a spawn/available mismatch to exercise guardrails.
         available = jnp.maximum(requested_new - jnp.int32(1), 0)
 
@@ -444,7 +474,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         out_b4 = jnp.full_like(old_b4, max_key)
         out_ids = jnp.zeros_like(old_ids)
         total = old_count + new_items
-        _guard_max(total, jnp.int32(old_b0.shape[0]), "merge.total")
+        guard_max_fn(total, jnp.int32(old_b0.shape[0]), "merge.total")
 
         def body(k, state):
             i, j, b0, b1, b2, b3, b4, ids = state
@@ -540,7 +570,7 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
         out_b4 = jnp.full_like(old_b4, max_key)
         out_ids = jnp.zeros_like(old_ids)
         total = old_count + new_items
-        _guard_max(total, jnp.int32(old_b0.shape[0]), "merge.total")
+        guard_max_fn(total, jnp.int32(old_b0.shape[0]), "merge.total")
 
         op_values = jnp.arange(256, dtype=jnp.uint8)
         new_op_start = jnp.searchsorted(new_b0, op_values, side="left").astype(
@@ -683,19 +713,19 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
                 valid_w, write_start + offsets, jnp.int32(new_opcode.shape[0])
             )
 
-            new_opcode = _scatter_drop(
+            new_opcode = scatter_drop_fn(
                 new_opcode,
                 safe_w,
                 jnp.where(valid_w, s_ops, new_opcode[0]),
                 "intern_nodes.new_opcode",
             )
-            new_arg1 = _scatter_drop(
+            new_arg1 = scatter_drop_fn(
                 new_arg1,
                 safe_w,
                 jnp.where(valid_w, s_a1, new_arg1[0]),
                 "intern_nodes.new_arg1",
             )
-            new_arg2 = _scatter_drop(
+            new_arg2 = scatter_drop_fn(
                 new_arg2,
                 safe_w,
                 jnp.where(valid_w, s_a2, new_arg2[0]),
@@ -705,8 +735,8 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
             new_count = ledger.count + num_new
             new_oom = base_oom
             new_corrupt = base_corrupt
-            _guard_max(new_count, max_count, "ledger.count")
-            _guard_max(
+            guard_max_fn(new_count, max_count, "ledger.count")
+            guard_max_fn(
                 new_count,
                 jnp.int32(new_opcode.shape[0]),
                 "ledger.backing_array_length",
@@ -722,37 +752,37 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
             new_entry_b4_sorted = jnp.full_like(s_b4, max_key)
             new_entry_ids_sorted = jnp.zeros(new_entry_len, dtype=jnp.int32)
 
-            new_entry_b0_sorted = _scatter_drop(
+            new_entry_b0_sorted = scatter_drop_fn(
                 new_entry_b0_sorted,
                 safe_new,
                 jnp.where(valid_new, s_b0, new_entry_b0_sorted[0]),
                 "intern_nodes.new_entry_b0",
             )
-            new_entry_b1_sorted = _scatter_drop(
+            new_entry_b1_sorted = scatter_drop_fn(
                 new_entry_b1_sorted,
                 safe_new,
                 jnp.where(valid_new, s_b1, new_entry_b1_sorted[0]),
                 "intern_nodes.new_entry_b1",
             )
-            new_entry_b2_sorted = _scatter_drop(
+            new_entry_b2_sorted = scatter_drop_fn(
                 new_entry_b2_sorted,
                 safe_new,
                 jnp.where(valid_new, s_b2, new_entry_b2_sorted[0]),
                 "intern_nodes.new_entry_b2",
             )
-            new_entry_b3_sorted = _scatter_drop(
+            new_entry_b3_sorted = scatter_drop_fn(
                 new_entry_b3_sorted,
                 safe_new,
                 jnp.where(valid_new, s_b3, new_entry_b3_sorted[0]),
                 "intern_nodes.new_entry_b3",
             )
-            new_entry_b4_sorted = _scatter_drop(
+            new_entry_b4_sorted = scatter_drop_fn(
                 new_entry_b4_sorted,
                 safe_new,
                 jnp.where(valid_new, s_b4, new_entry_b4_sorted[0]),
                 "intern_nodes.new_entry_b4",
             )
-            new_entry_ids_sorted = _scatter_drop(
+            new_entry_ids_sorted = scatter_drop_fn(
                 new_entry_ids_sorted,
                 safe_new,
                 jnp.where(valid_new, new_ids_for_sorted, new_entry_ids_sorted[0]),
@@ -807,18 +837,40 @@ def _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2):
     return lax.cond(overflow, _overflow, _allocate, operand=None)
 
 
-def _intern_nodes_impl(ledger, batch: NodeBatch):
+def _intern_nodes_impl(
+    ledger,
+    batch: NodeBatch,
+    *,
+    cfg: InternConfig,
+    intern_core_fn=_intern_nodes_impl_core,
+    key_safe_normalize_fn=_key_safe_normalize_nodes,
+    guard_zero_args_fn=_guard_zero_args,
+    checked_pack_key_fn=_checked_pack_key,
+    pack_key_fn=_pack_key,
+    candidate_indices_fn=_candidate_indices,
+    guard_max_fn=_guard_max,
+    guards_enabled_fn=_guards_enabled,
+    coord_norm_id_jax_fn=_coord_norm_id_jax,
+    coord_norm_id_jax_noprobe_fn=_coord_norm_id_jax_noprobe,
+    coord_norm_probe_enabled_fn=_coord_norm_probe_enabled,
+    coord_norm_probe_reset_cb_fn=_coord_norm_probe_reset_cb,
+    coord_norm_probe_assert_fn=_coord_norm_probe_assert,
+    scatter_drop_fn=_scatter_drop,
+):
     # Canonical_i: full key equality; only key-safe normalization belongs here.
     proposed_ops, proposed_a1, proposed_a2 = batch
     coord_leaf_mask = (proposed_ops == OP_COORD_ZERO) | (proposed_ops == OP_COORD_ONE)
     coord_leaf_nonzero = jnp.any(
         coord_leaf_mask & ((proposed_a1 != 0) | (proposed_a2 != 0))
     )
-    proposed_ops, proposed_a1, proposed_a2 = _key_safe_normalize_nodes(
-        proposed_ops, proposed_a1, proposed_a2
+    proposed_ops, proposed_a1, proposed_a2 = key_safe_normalize_fn(
+        proposed_ops,
+        proposed_a1,
+        proposed_a2,
+        guard_zero_args_fn=guard_zero_args_fn,
     )
     is_null = proposed_ops == OP_NULL
-    bad_key, _ = _checked_pack_key(
+    bad_key, _ = checked_pack_key_fn(
         proposed_ops, proposed_a1, proposed_a2, ledger.count
     )
     bounds_corrupt = bad_key | coord_leaf_nonzero
@@ -830,14 +882,54 @@ def _intern_nodes_impl(ledger, batch: NodeBatch):
         return zero_ids, new_ledger
 
     def _do(_):
-        return _intern_nodes_impl_core(ledger, proposed_ops, proposed_a1, proposed_a2)
+        return intern_core_fn(
+            ledger,
+            proposed_ops,
+            proposed_a1,
+            proposed_a2,
+            cfg=cfg,
+            key_safe_normalize_fn=key_safe_normalize_fn,
+            pack_key_fn=pack_key_fn,
+            candidate_indices_fn=candidate_indices_fn,
+            guard_max_fn=guard_max_fn,
+            guards_enabled_fn=guards_enabled_fn,
+            coord_norm_id_jax_fn=coord_norm_id_jax_fn,
+            coord_norm_id_jax_noprobe_fn=coord_norm_id_jax_noprobe_fn,
+            coord_norm_probe_enabled_fn=coord_norm_probe_enabled_fn,
+            coord_norm_probe_reset_cb_fn=coord_norm_probe_reset_cb_fn,
+            coord_norm_probe_assert_fn=coord_norm_probe_assert_fn,
+            scatter_drop_fn=scatter_drop_fn,
+        )
 
     ids, new_ledger = lax.cond(bounds_corrupt, _corrupt_return, _do, operand=None)
     ids = jnp.where(is_null, jnp.int32(0), ids)
     return ids, new_ledger
 
 
-def intern_nodes(ledger, batch_or_ops, a1=None, a2=None):
+def intern_nodes(
+    ledger,
+    batch_or_ops,
+    a1=None,
+    a2=None,
+    *,
+    cfg: InternConfig = DEFAULT_INTERN_CONFIG,
+    intern_impl_fn=_intern_nodes_impl,
+    lookup_node_id_fn=_lookup_node_id,
+    key_safe_normalize_fn=_key_safe_normalize_nodes,
+    guard_zero_args_fn=_guard_zero_args,
+    checked_pack_key_fn=_checked_pack_key,
+    guard_zero_row_fn=_guard_zero_row,
+    pack_key_fn=_pack_key,
+    candidate_indices_fn=_candidate_indices,
+    guard_max_fn=_guard_max,
+    guards_enabled_fn=_guards_enabled,
+    coord_norm_id_jax_fn=_coord_norm_id_jax,
+    coord_norm_id_jax_noprobe_fn=_coord_norm_id_jax_noprobe,
+    coord_norm_probe_enabled_fn=_coord_norm_probe_enabled,
+    coord_norm_probe_reset_cb_fn=_coord_norm_probe_reset_cb,
+    coord_norm_probe_assert_fn=_coord_norm_probe_assert,
+    scatter_drop_fn=_scatter_drop,
+):
     """
     Batch-intern a list of proposed (op,a1,a2) nodes into the canonical Ledger.
     Canonical identity is via full key-byte equality (Canonicalᵢ).
@@ -870,14 +962,19 @@ def intern_nodes(ledger, batch_or_ops, a1=None, a2=None):
     # See IMPLEMENTATION_PLAN.md (m1 guardrails).
     def _lookup_existing(_):
         ops, a1, a2 = batch
-        ops, a1, a2 = _key_safe_normalize_nodes(ops, a1, a2)
-        bad_key, _ = _checked_pack_key(ops, a1, a2, ledger.count)
+        ops, a1, a2 = key_safe_normalize_fn(
+            ops,
+            a1,
+            a2,
+            guard_zero_args_fn=guard_zero_args_fn,
+        )
+        bad_key, _ = checked_pack_key_fn(ops, a1, a2, ledger.count)
         ops = jnp.where(bad_key, jnp.int32(0), ops)
         a1 = jnp.where(bad_key, jnp.int32(0), a1)
         a2 = jnp.where(bad_key, jnp.int32(0), a2)
 
         def _lookup_one(op, a1_val, a2_val):
-            return _lookup_node_id(ledger, op, a1_val, a2_val)
+            return lookup_node_id_fn(ledger, op, a1_val, a2_val)
 
         ids, found = jax.vmap(_lookup_one)(ops, a1, a2)
         ids = jnp.where(found & (~bad_key), ids, jnp.int32(0))
@@ -885,10 +982,27 @@ def intern_nodes(ledger, batch_or_ops, a1=None, a2=None):
         return ids, ledger
 
     def _do(_):
-        return _intern_nodes_impl(ledger, batch)
+        return intern_impl_fn(
+            ledger,
+            batch,
+            cfg=cfg,
+            key_safe_normalize_fn=key_safe_normalize_fn,
+            guard_zero_args_fn=guard_zero_args_fn,
+            checked_pack_key_fn=checked_pack_key_fn,
+            pack_key_fn=pack_key_fn,
+            candidate_indices_fn=candidate_indices_fn,
+            guard_max_fn=guard_max_fn,
+            guards_enabled_fn=guards_enabled_fn,
+            coord_norm_id_jax_fn=coord_norm_id_jax_fn,
+            coord_norm_id_jax_noprobe_fn=coord_norm_id_jax_noprobe_fn,
+            coord_norm_probe_enabled_fn=coord_norm_probe_enabled_fn,
+            coord_norm_probe_reset_cb_fn=coord_norm_probe_reset_cb_fn,
+            coord_norm_probe_assert_fn=coord_norm_probe_assert_fn,
+            scatter_drop_fn=scatter_drop_fn,
+        )
 
     ids, new_ledger = lax.cond(stop, _lookup_existing, _do, operand=None)
-    _guard_zero_row(
+    guard_zero_row_fn(
         new_ledger.opcode, new_ledger.arg1, new_ledger.arg2, "intern_nodes.row1"
     )
     return ids, new_ledger
@@ -898,5 +1012,7 @@ __all__ = [
     "_coord_norm_id_jax",
     "_coord_norm_id_jax_noprobe",
     "_lookup_node_id",
+    "InternConfig",
+    "DEFAULT_INTERN_CONFIG",
     "intern_nodes",
 ]

@@ -20,9 +20,27 @@ class ICRewriteStats(NamedTuple):
     template_counts: jnp.ndarray
 
 
-@jax.jit
-def ic_apply_active_pairs(state: ICState) -> Tuple[ICState, ICRewriteStats]:
-    state = _scan_corrupt_ports(state)
+@jax.jit(
+    static_argnames=(
+        "compact_pairs_fn",
+        "decode_port_fn",
+        "alloc_plan_fn",
+        "apply_template_planned_fn",
+        "halted_fn",
+        "scan_corrupt_fn",
+    )
+)
+def ic_apply_active_pairs(
+    state: ICState,
+    *,
+    compact_pairs_fn=ic_compact_active_pairs,
+    decode_port_fn=decode_port,
+    alloc_plan_fn=_alloc_plan,
+    apply_template_planned_fn=_apply_template_planned,
+    halted_fn=_halted,
+    scan_corrupt_fn=_scan_corrupt_ports,
+) -> Tuple[ICState, ICRewriteStats]:
+    state = scan_corrupt_fn(state)
     zero_stats = ICRewriteStats(
         active_pairs=jnp.uint32(0),
         alloc_nodes=jnp.uint32(0),
@@ -34,15 +52,17 @@ def ic_apply_active_pairs(state: ICState) -> Tuple[ICState, ICRewriteStats]:
         return s, zero_stats
 
     def _run(s):
-        pairs, count, _ = ic_compact_active_pairs(s)
+        pairs, count, _ = compact_pairs_fn(s)
         count_i = count.astype(jnp.int32)
 
         def body(i, carry):
             s_in, alloc, freed, tmpl_counts, tmpl_ids, alloc_counts, alloc_ids = carry
             node_a = pairs[i]
-            node_b = decode_port(s_in.ports[node_a, PORT_PRINCIPAL])[0]
+            node_b = decode_port_fn(s_in.ports[node_a, PORT_PRINCIPAL])[0]
             tmpl = tmpl_ids[i]
-            s2 = _apply_template_planned(s_in, node_a, node_b, tmpl, alloc_ids[i])
+            s2 = apply_template_planned_fn(
+                s_in, node_a, node_b, tmpl, alloc_ids[i]
+            )
             ok = (~s_in.oom) & (~s_in.corrupt) & (~s2.oom) & (~s2.corrupt)
             tmpl_i = tmpl.astype(jnp.int32)
             tmpl_counts = tmpl_counts.at[tmpl_i].add(ok.astype(jnp.uint32))
@@ -61,7 +81,9 @@ def ic_apply_active_pairs(state: ICState) -> Tuple[ICState, ICRewriteStats]:
             )
 
         def _apply(s_in):
-            s2, tmpl_ids, alloc_counts, alloc_ids, _ = _alloc_plan(s_in, pairs, count)
+            s2, tmpl_ids, alloc_counts, alloc_ids, _ = alloc_plan_fn(
+                s_in, pairs, count
+            )
 
             def _run_plan(s_plan):
                 init = (
@@ -95,14 +117,18 @@ def ic_apply_active_pairs(state: ICState) -> Tuple[ICState, ICRewriteStats]:
             count_i == 0, lambda s_in: (s_in, zero_stats), _apply, s
         )
 
-    return jax.lax.cond(_halted(state), _halt, _run, state)
+    return jax.lax.cond(halted_fn(state), _halt, _run, state)
 
 
-@jax.jit
+@jax.jit(static_argnames=("apply_active_pairs_fn", "scan_corrupt_fn"))
 def ic_reduce(
-    state: ICState, max_steps: int
+    state: ICState,
+    max_steps: int,
+    *,
+    apply_active_pairs_fn=ic_apply_active_pairs,
+    scan_corrupt_fn=_scan_corrupt_ports,
 ) -> Tuple[ICState, ICRewriteStats, jnp.ndarray]:
-    state = _scan_corrupt_ports(state)
+    state = scan_corrupt_fn(state)
     max_steps_i = jnp.int32(max_steps)
     zero_stats = ICRewriteStats(
         active_pairs=jnp.uint32(0),
@@ -122,7 +148,7 @@ def ic_reduce(
 
     def body(carry):
         s, stats, steps, _ = carry
-        s2, batch = ic_apply_active_pairs(s)
+        s2, batch = apply_active_pairs_fn(s)
         stats = ICRewriteStats(
             active_pairs=stats.active_pairs + batch.active_pairs,
             alloc_nodes=stats.alloc_nodes + batch.alloc_nodes,

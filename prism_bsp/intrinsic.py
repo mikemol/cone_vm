@@ -1,19 +1,27 @@
 import jax
 import jax.numpy as jnp
-from jax import jit, lax
+from jax import lax
+from functools import lru_cache, partial
 
 from prism_ledger.intern import intern_nodes
+from prism_ledger.config import InternConfig
 from prism_vm_core.domains import _host_raise_if_bad
 from prism_vm_core.ontology import OP_ADD, OP_MUL, OP_SUC, OP_ZERO, ZERO_PTR
 from prism_vm_core.structures import NodeBatch
+from prism_vm_core.protocols import HostRaiseFn, InternFn, NodeBatchFn
 
 
 def _node_batch(op, a1, a2) -> NodeBatch:
     return NodeBatch(op=op, a1=a1, a2=a2)
 
 
-@jit
-def _cycle_intrinsic_jax(ledger, frontier_ids):
+def _cycle_intrinsic_impl(
+    ledger,
+    frontier_ids,
+    *,
+    intern_fn=intern_nodes,
+    node_batch_fn=_node_batch,
+):
     # m1 evaluator: intrinsic rewrite steps on Ledger (CNF-2 gated off).
     # See IMPLEMENTATION_PLAN.md (m1 intrinsic evaluator).
     def _skip(_):
@@ -72,8 +80,8 @@ def _cycle_intrinsic_jax(ledger, frontier_ids):
         l1_a1 = jnp.where(is_mul_suc, val_x, l1_a1)
         l1_a2 = jnp.where(is_mul_suc, val_y, l1_a2)
 
-        l1_ids, ledger_local = intern_nodes(
-            ledger_local, _node_batch(l1_ops, l1_a1, l1_a2)
+        l1_ids, ledger_local = intern_fn(
+            ledger_local, node_batch_fn(l1_ops, l1_a1, l1_a2)
         )
 
         l2_ops = jnp.zeros_like(t_ops)
@@ -85,8 +93,8 @@ def _cycle_intrinsic_jax(ledger, frontier_ids):
         l2_a1 = jnp.where(is_mul_suc, val_y, l2_a1)
         l2_a2 = jnp.where(is_mul_suc, l1_ids, l2_a2)
 
-        l2_ids, ledger_local = intern_nodes(
-            ledger_local, _node_batch(l2_ops, l2_a1, l2_a2)
+        l2_ids, ledger_local = intern_fn(
+            ledger_local, node_batch_fn(l2_ops, l2_a1, l2_a2)
         )
 
         base_next = base_ids
@@ -108,7 +116,7 @@ def _cycle_intrinsic_jax(ledger, frontier_ids):
             ops = jnp.where(to_wrap, jnp.int32(OP_SUC), jnp.int32(0))
             a1 = jnp.where(to_wrap, child, jnp.int32(0))
             a2 = jnp.zeros_like(a1)
-            new_ids, led = intern_nodes(led, _node_batch(ops, a1, a2))
+            new_ids, led = intern_fn(led, node_batch_fn(ops, a1, a2))
             child = jnp.where(to_wrap, new_ids, child)
             depth = depth - to_wrap.astype(jnp.int32)
             return depth, child, led
@@ -121,11 +129,39 @@ def _cycle_intrinsic_jax(ledger, frontier_ids):
     return lax.cond(ledger.corrupt, _skip, _do, operand=None)
 
 
-def cycle_intrinsic(ledger, frontier_ids):
+@lru_cache
+def _cycle_intrinsic_jit(intern_fn: InternFn, node_batch_fn: NodeBatchFn):
+    @jax.jit
+    def _impl(ledger, frontier_ids):
+        return _cycle_intrinsic_impl(
+            ledger,
+            frontier_ids,
+            intern_fn=intern_fn,
+            node_batch_fn=node_batch_fn,
+        )
+
+    return _impl
+
+
+def cycle_intrinsic(
+    ledger,
+    frontier_ids,
+    *,
+    intern_fn: InternFn = intern_nodes,
+    intern_cfg: InternConfig | None = None,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    host_raise_fn: HostRaiseFn = _host_raise_if_bad,
+):
     # BSPᵗ: temporal superstep / barrier semantics.
-    ledger, frontier_ids = _cycle_intrinsic_jax(ledger, frontier_ids)
-    _host_raise_if_bad(ledger, "Ledger capacity exceeded during cycle")
+    if intern_cfg is not None and intern_fn is intern_nodes:
+        intern_fn = partial(intern_nodes, cfg=intern_cfg)
+    ledger, frontier_ids = _cycle_intrinsic_jit(intern_fn, node_batch_fn)(
+        ledger, frontier_ids
+    )
+    host_raise_fn(ledger, "Ledger capacity exceeded during cycle")
     return ledger, frontier_ids
 
 
-__all__ = ["_cycle_intrinsic_jax", "cycle_intrinsic"]
+_cycle_intrinsic_jax = _cycle_intrinsic_impl
+
+__all__ = ["_cycle_intrinsic_impl", "_cycle_intrinsic_jax", "cycle_intrinsic"]
