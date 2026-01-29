@@ -71,6 +71,8 @@ __all__ = [
     "guards_enabled_cfg",
     "guard_max_cfg",
     "guard_gather_index_cfg",
+    "make_safe_gather_fn",
+    "make_safe_index_fn",
     "guard_slot0_perm_cfg",
     "guard_null_row_cfg",
     "guard_zero_row_cfg",
