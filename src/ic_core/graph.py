@@ -385,36 +385,53 @@ def ic_wire_star_jax(
     )
 
 
-@jax.jit
-def ic_find_active_pairs(state: ICState) -> Tuple[jnp.ndarray, jnp.ndarray]:
+@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
+def ic_find_active_pairs(
+    state: ICState,
+    *,
+    safety_policy: SafetyPolicy | None = None,
+    safe_index_fn=safe_index_1d,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Return indices of nodes in active principal-principal pairs."""
+    if safety_policy is None:
+        safety_policy = DEFAULT_SAFETY_POLICY
     ports = state.ports
     n = ports.shape[0]
+    n_u = jnp.uint32(n)
     idx = jnp.arange(n, dtype=jnp.uint32)
     ptr = ports[:, 0]
     is_connected = ptr != jnp.uint32(0)
     tgt_node, tgt_port = decode_port(ptr)
     is_principal = tgt_port == PORT_PRINCIPAL
-    in_bounds = tgt_node < jnp.uint32(n)
-    safe_tgt = jnp.where(is_connected & is_principal & in_bounds, tgt_node, jnp.uint32(0))
+    tgt_safe, ok = safe_index_fn(
+        tgt_node, n_u, "ic_find_active_pairs.tgt", policy=safety_policy
+    )
+    safe_tgt = jnp.where(
+        is_connected & is_principal & ok, tgt_safe, jnp.uint32(0)
+    )
     back = ports[safe_tgt, 0]
     back_node, back_port = decode_port(back)
     mutual = (back_node == idx) & (back_port == PORT_PRINCIPAL)
-    active = is_connected & is_principal & in_bounds & mutual & (idx < tgt_node)
-    pairs = jnp.nonzero(active, size=n, fill_value=0)[0]
-    return pairs.astype(jnp.uint32), active
+    active = is_connected & is_principal & ok & mutual & (idx < tgt_node)
+    pairs = _compact_mask(active).idx
+    return pairs, active
 
 
 def _compact_mask(mask: jnp.ndarray) -> CompactResult:
     return compact_mask(mask, index_dtype=jnp.uint32, count_dtype=jnp.uint32)
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
 def ic_compact_active_pairs(
     state: ICState,
+    *,
+    safety_policy: SafetyPolicy | None = None,
+    safe_index_fn=safe_index_1d,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Return compacted active pair indices and a count."""
-    _, active = ic_find_active_pairs(state)
+    _, active = ic_find_active_pairs(
+        state, safety_policy=safety_policy, safe_index_fn=safe_index_fn
+    )
     idx, valid, count = _compact_mask(active)
     compacted = jnp.where(valid, idx, jnp.uint32(0))
     return compacted, count, active

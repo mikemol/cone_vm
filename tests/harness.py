@@ -3,6 +3,7 @@ import re
 import jax.numpy as jnp
 
 import prism_vm as pv
+import ic_vm as ic
 
 TOKEN_RE = re.compile(r"\(|\)|[a-z]+")
 STATUS_CONVERGED = "converged"
@@ -58,6 +59,46 @@ def make_cycle_jit_cfg(**kwargs):
 def make_op_interact_jit_cfg(**kwargs):
     """Build a jitted op_interact entrypoint from a config."""
     return pv.op_interact_jit_cfg(**kwargs)
+
+
+def make_ic_apply_active_pairs_jit(**kwargs):
+    """Build a jitted IC apply_active_pairs entrypoint with fixed DI."""
+    return ic.apply_active_pairs_jit(**kwargs)
+
+
+def make_ic_apply_active_pairs_jit_cfg(**kwargs):
+    """Build a jitted IC apply_active_pairs entrypoint from a config."""
+    return ic.apply_active_pairs_jit_cfg(**kwargs)
+
+
+def make_ic_reduce_jit(**kwargs):
+    """Build a jitted IC reduce entrypoint with fixed DI."""
+    return ic.reduce_jit(**kwargs)
+
+
+def make_ic_reduce_jit_cfg(**kwargs):
+    """Build a jitted IC reduce entrypoint from a config."""
+    return ic.reduce_jit_cfg(**kwargs)
+
+
+def make_ic_find_active_pairs_jit(**kwargs):
+    """Build a jitted IC active-pair finder entrypoint with fixed DI."""
+    return ic.find_active_pairs_jit(**kwargs)
+
+
+def make_ic_find_active_pairs_jit_cfg(**kwargs):
+    """Build a jitted IC active-pair finder entrypoint from a config."""
+    return ic.find_active_pairs_jit_cfg(**kwargs)
+
+
+def make_ic_compact_active_pairs_jit(**kwargs):
+    """Build a jitted IC compact active-pairs entrypoint with fixed DI."""
+    return ic.compact_active_pairs_jit(**kwargs)
+
+
+def make_ic_compact_active_pairs_jit_cfg(**kwargs):
+    """Build a jitted IC compact active-pairs entrypoint from a config."""
+    return ic.compact_active_pairs_jit_cfg(**kwargs)
 
 
 def tokenize(expr):

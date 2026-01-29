@@ -289,6 +289,30 @@ def ic_wire_star_jax_cfg(
     )
 
 
+def ic_find_active_pairs_cfg(
+    state: ICState, *, cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    """Interface/Control wrapper for active pair detection with DI bundle."""
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    return ic_find_active_pairs(
+        state,
+        safety_policy=cfg.safety_policy,
+        safe_index_fn=safe_index_fn,
+    )
+
+
+def ic_compact_active_pairs_cfg(
+    state: ICState, *, cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Interface/Control wrapper for compact active pairs with DI bundle."""
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    return ic_compact_active_pairs(
+        state,
+        safety_policy=cfg.safety_policy,
+        safe_index_fn=safe_index_fn,
+    )
+
+
 def engine_config_from_rules(
     rule_cfg: ICRuleConfig,
     *,
@@ -424,7 +448,9 @@ __all__ = [
     "ic_wire_ptr_pairs_jax_cfg",
     "ic_wire_star_jax_cfg",
     "ic_find_active_pairs",
+    "ic_find_active_pairs_cfg",
     "ic_compact_active_pairs",
+    "ic_compact_active_pairs_cfg",
     "ic_rule_for_types",
     "ic_rule_for_types_cfg",
     "ic_select_template",
