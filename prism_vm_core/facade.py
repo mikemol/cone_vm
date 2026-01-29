@@ -73,7 +73,10 @@ from prism_bsp.space import (
     RANK_FREE as _RANK_FREE_EXPORT,
     RANK_HOT,
     RANK_WARM,
+    _blind_spectral_probe,
     _servo_update,
+    _servo_mask_from_k,
+    _servo_mask_to_k,
     _blocked_perm,
     op_morton,
     op_rank,
@@ -92,6 +95,8 @@ from prism_bsp.space import (
     swizzle_2to1_host,
 )
 from prism_coord.coord import (
+    _coord_leaf_id,
+    _coord_promote_leaf,
     cd_lift_binary,
     cd_lift_binary_cfg,
     coord_norm,
