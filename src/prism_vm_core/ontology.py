@@ -62,24 +62,7 @@ class ArenaPtr:
         return int(self.i)
 
 
-# Host-only scalar markers for sync boundaries.
-@dataclass(frozen=True)
-class HostInt:
-    v: int
-
-    def __int__(self) -> int:
-        return int(self.v)
-
-    def __index__(self) -> int:
-        return int(self.v)
-
-
-@dataclass(frozen=True)
-class HostBool:
-    v: bool
-
-    def __bool__(self) -> bool:
-        return bool(self.v)
+from prism_core.host import HostBool, HostInt
 
 
 @dataclass(frozen=True)
