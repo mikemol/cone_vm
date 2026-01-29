@@ -2,6 +2,7 @@
   "include": ["prism_vm.py", "typecheck"],
   "exclude": ["**/__pycache__"],
   "pythonVersion": "3.14",
+  "extraPaths": ["src"],
   "typeCheckingMode": "basic",
   "reportMissingTypeStubs": "none",
   "reportMissingParameterType": "none",
