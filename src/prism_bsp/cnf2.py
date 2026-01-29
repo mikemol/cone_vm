@@ -621,13 +621,17 @@ def cycle_candidates(
             safe_gather_policy=safe_gather_policy,
         )
     next_frontier = _provisional_ids(next_frontier)
+    meta = getattr(q_map, "_prism_meta", None)
+    post_ids = None
+    ok = None
+    if meta is not None and meta.safe_gather_policy is not None:
+        post_ids, ok = apply_q_fn(q_map, next_frontier, return_ok=True)
+        corrupt = oob_any(ok, policy=meta.safe_gather_policy)
+        ledger2 = ledger2._replace(corrupt=ledger2.corrupt | corrupt)
     if _TEST_GUARDS:
         pre_hash = ledger_roots_hash_host_fn(ledger2, next_frontier.a)
-        post_ids, ok = apply_q_fn(q_map, next_frontier, return_ok=True)
-        meta = getattr(q_map, "_prism_meta", None)
-        if meta is not None and meta.safe_gather_policy is not None:
-            corrupt = oob_any(ok, policy=meta.safe_gather_policy)
-            ledger2 = ledger2._replace(corrupt=ledger2.corrupt | corrupt)
+        if post_ids is None:
+            post_ids, ok = apply_q_fn(q_map, next_frontier, return_ok=True)
         post_ids = post_ids.a
         post_hash = ledger_roots_hash_host_fn(ledger2, post_ids)
         if pre_hash != post_hash:
