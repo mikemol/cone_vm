@@ -355,22 +355,6 @@ def cycle_cfg(
         cfg.op_sort_and_swizzle_servo_with_perm_fn
         or op_sort_and_swizzle_servo_with_perm
     )
-    if cfg.guard_cfg is not None:
-        op_sort_and_swizzle_with_perm_fn = partial(
-            op_sort_and_swizzle_with_perm_fn, guard_cfg=cfg.guard_cfg
-        )
-        op_sort_and_swizzle_morton_with_perm_fn = partial(
-            op_sort_and_swizzle_morton_with_perm_fn, guard_cfg=cfg.guard_cfg
-        )
-        op_sort_and_swizzle_blocked_with_perm_fn = partial(
-            op_sort_and_swizzle_blocked_with_perm_fn, guard_cfg=cfg.guard_cfg
-        )
-        op_sort_and_swizzle_hierarchical_with_perm_fn = partial(
-            op_sort_and_swizzle_hierarchical_with_perm_fn, guard_cfg=cfg.guard_cfg
-        )
-        op_sort_and_swizzle_servo_with_perm_fn = partial(
-            op_sort_and_swizzle_servo_with_perm_fn, guard_cfg=cfg.guard_cfg
-        )
     safe_gather_fn = cfg.safe_gather_fn or _jax_safe.safe_gather_1d
     if cfg.guard_cfg is not None:
         safe_gather_fn = make_safe_gather_fn(
