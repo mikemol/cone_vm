@@ -10,7 +10,14 @@ from prism_core import jax_safe as _jax_safe
 class GuardConfig:
     """Shared guard DI bundle (host-side control surface)."""
 
+    guards_enabled_fn: Optional[Callable[[], bool]] = None
+    guard_max_fn: Optional[Callable[..., None]] = None
     guard_gather_index_fn: Optional[Callable[..., None]] = None
+    guard_slot0_perm_fn: Optional[Callable[..., None]] = None
+    guard_null_row_fn: Optional[Callable[..., None]] = None
+    guard_zero_row_fn: Optional[Callable[..., None]] = None
+    guard_zero_args_fn: Optional[Callable[..., None]] = None
+    guard_swizzle_args_fn: Optional[Callable[..., None]] = None
 
 
 DEFAULT_GUARD_CONFIG = GuardConfig()

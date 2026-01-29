@@ -170,7 +170,7 @@ class CommitStratumFn(Protocol):
 
 @runtime_checkable
 class ApplyQFn(Protocol):
-    def __call__(self, q, ids):
+    def __call__(self, q, ids, *, return_ok: bool = False):
         ...
 
 
