@@ -5,11 +5,22 @@ These helpers assume a state object with fields:
 and a `_replace` method (e.g. NamedTuple).
 """
 
+from dataclasses import dataclass
 from functools import partial
 from typing import Tuple
 
 import jax
 import jax.numpy as jnp
+
+
+@dataclass(frozen=True, slots=True)
+class AllocConfig:
+    """Allocator DI bundle (shared)."""
+
+    set_oom_on_fail: bool = False
+
+
+DEFAULT_ALLOC_CONFIG = AllocConfig()
 
 
 def alloc_raw(state, count: int) -> Tuple[object, jnp.ndarray, jnp.ndarray]:
@@ -97,6 +108,16 @@ def alloc_jax(state, count: jnp.ndarray, node_type: jnp.uint8, set_oom_on_fail: 
     do_init = ok & (c > 0)
     state2 = jax.lax.cond(do_init, _do_init, lambda s: s, state2)
     return state2, ids4, ok
+
+
+def alloc_jax_cfg(state, count: jnp.ndarray, node_type: jnp.uint8, *, cfg: AllocConfig = DEFAULT_ALLOC_CONFIG):
+    """alloc_jax wrapper for a fixed AllocConfig."""
+    return alloc_jax(
+        state,
+        count,
+        node_type,
+        set_oom_on_fail=cfg.set_oom_on_fail,
+    )
 
 
 def alloc2(state):
@@ -209,10 +230,13 @@ def free_nodes(state, nodes: jnp.ndarray):
 
 
 __all__ = [
+    "AllocConfig",
+    "DEFAULT_ALLOC_CONFIG",
     "alloc_raw",
     "alloc_pad",
     "init_nodes_jax",
     "alloc_jax",
+    "alloc_jax_cfg",
     "alloc2",
     "alloc4",
     "free2",

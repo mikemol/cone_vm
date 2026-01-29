@@ -51,6 +51,7 @@ def _init_nodes(state: ICState, nodes: jnp.ndarray, node_type: jnp.uint8) -> ICS
 
 # Allocator aliases (shared implementation in prism_core.alloc).
 ic_alloc_jax = _alloc.alloc_jax
+ic_alloc_jax_cfg = _alloc.alloc_jax_cfg
 _alloc2 = _alloc.alloc2
 _alloc4 = _alloc.alloc4
 _free2 = _alloc.free2
@@ -429,6 +430,7 @@ __all__ = [
     "PORT_AUX_RIGHT",
     "ICState",
     "ic_alloc_jax",
+    "ic_alloc_jax_cfg",
     "encode_port",
     "decode_port",
     "ic_init",

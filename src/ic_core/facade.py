@@ -17,7 +17,7 @@ from ic_core.guards import (
 )
 from prism_core.guards import make_safe_index_fn
 
-from ic_core.config import ICEngineConfig, ICGraphConfig, ICRuleConfig
+from ic_core.config import ICEngineConfig, ICGraphConfig, ICRuleConfig, DEFAULT_GRAPH_CONFIG
 from ic_core.domains import (
     HostBool,
     HostInt,
@@ -69,6 +69,7 @@ from ic_core.graph import (
     encode_port,
     ic_alloc,
     ic_alloc_jax,
+    ic_alloc_jax_cfg,
     ic_compact_active_pairs,
     ic_find_active_pairs,
     ic_init,
@@ -80,7 +81,16 @@ from ic_core.graph import (
     ic_wire_ptrs_jax,
     ic_wire_star_jax,
 )
-from ic_core.jit_entrypoints import apply_active_pairs_jit, reduce_jit
+from ic_core.jit_entrypoints import (
+    apply_active_pairs_jit,
+    apply_active_pairs_jit_cfg,
+    reduce_jit,
+    reduce_jit_cfg,
+    find_active_pairs_jit,
+    find_active_pairs_jit_cfg,
+    compact_active_pairs_jit,
+    compact_active_pairs_jit_cfg,
+)
 from ic_core.rules import (
     DEFAULT_RULE_CONFIG,
     RULE_ALLOC_ANNIHILATE,
@@ -107,7 +117,6 @@ from ic_core.rules import (
     ic_select_template_cfg,
 )
 
-DEFAULT_GRAPH_CONFIG = ICGraphConfig()
 
 
 def ic_apply_active_pairs(
@@ -394,6 +403,7 @@ __all__ = [
     "_host_int_value",
     "_host_bool_value",
     "ic_alloc_jax",
+    "ic_alloc_jax_cfg",
     "encode_port",
     "decode_port",
     "ic_init",
@@ -434,6 +444,12 @@ __all__ = [
     "apply_active_pairs_jit_from_rules",
     "reduce_jit_from_rules",
     "apply_active_pairs_jit",
+    "apply_active_pairs_jit_cfg",
     "reduce_jit",
+    "reduce_jit_cfg",
+    "find_active_pairs_jit",
+    "find_active_pairs_jit_cfg",
+    "compact_active_pairs_jit",
+    "compact_active_pairs_jit_cfg",
     "ic_alloc",
 ]

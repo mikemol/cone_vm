@@ -28,6 +28,9 @@ class ICGraphConfig:
     safe_index_fn: SafeIndexFn | None = None
 
 
+DEFAULT_GRAPH_CONFIG = ICGraphConfig()
+
+
 @dataclass(frozen=True, slots=True)
 class ICRuleConfig:
     """Rule-level DI bundle for IC rewrite templates."""
@@ -53,4 +56,9 @@ class ICEngineConfig:
     scan_corrupt_fn: ScanCorruptFn
 
 
-__all__ = ["ICRuleConfig", "ICEngineConfig", "ICGraphConfig"]
+__all__ = [
+    "ICRuleConfig",
+    "ICEngineConfig",
+    "ICGraphConfig",
+    "DEFAULT_GRAPH_CONFIG",
+]
