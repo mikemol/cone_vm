@@ -1,9 +1,11 @@
+from dataclasses import dataclass
+
 import jax
 import jax.numpy as jnp
 from jax import lax
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.safety import SafetyPolicy
+from prism_core.safety import SafetyPolicy, oob_mask
 from prism_ledger.intern import intern_nodes
 from prism_vm_core.constants import _PREFIX_SCAN_CHUNK
 from prism_vm_core.domains import (
@@ -133,9 +135,41 @@ def _identity_q(ids, *, committed_ids_fn=_committed_ids):
     return committed_ids_fn(ids.a)
 
 
-def apply_q(q: QMap, ids, *, provisional_ids_fn=_provisional_ids):
+@dataclass(frozen=True)
+class QMapMeta:
+    stratum: Stratum
+    canon_len: jnp.ndarray
+    safe_gather_policy: SafetyPolicy | None
+
+
+def _q_map_ok(ids, meta: QMapMeta):
+    ids_arr = ids.a
+    start = jnp.asarray(meta.stratum.start, dtype=jnp.int32)
+    count = jnp.asarray(meta.stratum.count, dtype=jnp.int32)
+    in_range = (ids_arr >= start) & (ids_arr < start + count)
+    idx = jnp.where(in_range, ids_arr - start, jnp.int32(0))
+    ok_idx = idx < meta.canon_len
+    return jnp.where(in_range, ok_idx, True)
+
+
+def apply_q(
+    q: QMap,
+    ids,
+    *,
+    provisional_ids_fn=_provisional_ids,
+    return_ok: bool = False,
+):
     # Collapseʰ: homomorphic projection q.
-    return q(provisional_ids_fn(ids))
+    ids_in = provisional_ids_fn(ids)
+    out = q(ids_in)
+    if not return_ok:
+        return out
+    meta = getattr(q, "_prism_meta", None)
+    if meta is None:
+        ok = jnp.ones_like(out.a, dtype=jnp.bool_)
+        return out, ok
+    ok = _q_map_ok(ids_in, meta)
+    return out, ok
 
 
 def _apply_stratum_q(
@@ -147,6 +181,8 @@ def _apply_stratum_q(
     safe_gather_fn=safe_gather_1d,
     guards_enabled_fn=_guards_enabled,
     provisional_ids_fn=_provisional_ids,
+    return_ok: bool = False,
+    oob_policy: SafetyPolicy | None = None,
 ):
     expected = jnp.maximum(jnp.asarray(stratum.count, dtype=jnp.int32), 0)
     actual = jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32)
@@ -166,8 +202,17 @@ def _apply_stratum_q(
     count = expected
     in_range = (ids.a >= start) & (ids.a < start + count)
     idx = jnp.where(in_range, ids.a - start, jnp.int32(0))
+    canon_len = jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32)
+    ok_idx = idx < canon_len
+    ok = jnp.where(in_range, ok_idx, True)
     mapped = safe_gather_fn(canon_ids.a, idx, label)
-    return provisional_ids_fn(jnp.where(in_range, mapped, ids.a))
+    out = provisional_ids_fn(jnp.where(in_range, mapped, ids.a))
+    if not return_ok:
+        return out
+    if oob_policy is None:
+        oob_policy = SafetyPolicy()
+    corrupt = jnp.any(oob_mask(ok, policy=oob_policy))
+    return out, ok, corrupt
 
 
 def commit_stratum(
@@ -241,6 +286,13 @@ def commit_stratum(
             provisional_ids_fn=provisional_ids_fn,
         )
         return q_prev(mapped)
+
+    q_meta = QMapMeta(
+        stratum=stratum,
+        canon_len=jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32),
+        safe_gather_policy=safe_gather_policy,
+    )
+    setattr(q_map, "_prism_meta", q_meta)
 
     host_raise_fn(ledger, "Ledger capacity exceeded during commit_stratum")
     return ledger, canon_ids, q_map
