@@ -1,12 +1,12 @@
-from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
-from prism_bsp.config import (
+from prism_vm_core.facade import (
+    InternConfig,
+    DEFAULT_INTERN_CONFIG,
     Cnf2Config,
     Cnf2Flags,
     DEFAULT_CNF2_CONFIG,
     DEFAULT_CNF2_FLAGS,
-)
-from prism_coord.config import CoordConfig, DEFAULT_COORD_CONFIG
-from prism_vm_core.facade import (
+    CoordConfig,
+    DEFAULT_COORD_CONFIG,
     _HAS_DEBUG_CALLBACK,
     _SCATTER_GUARD,
     _TEST_GUARDS,

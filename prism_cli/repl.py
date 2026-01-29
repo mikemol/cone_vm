@@ -20,8 +20,7 @@ from prism_metrics.metrics import (
     damage_metrics_reset,
 )
 from prism_semantics.commit import apply_q
-from prism_vm_core.constants import LEDGER_CAPACITY
-from prism_vm_core.domains import (
+from prism_vm_core.types import (
     _arena_ptr,
     _committed_ids,
     _host_bool_value,
@@ -32,30 +31,29 @@ from prism_vm_core.domains import (
     _require_arena_ptr,
     _require_ledger_id,
     _require_manifest_ptr,
-)
-from prism_vm_core.facade import (
-    _key_order_commutative_host,
-    init_arena,
-    init_ledger,
-    init_manifest,
-    intern_nodes,
-    node_batch,
-    cycle_candidates,
-)
-from prism_vm_core.gating import _cnf2_enabled, _normalize_bsp_mode
-from prism_vm_core.guards import _expect_token, _pop_token
-from prism_vm_core.ontology import (
+    ArenaPtr,
+    LedgerId,
+    ManifestPtr,
     OP_ADD,
     OP_MUL,
     OP_NAMES,
     OP_SUC,
     OP_ZERO,
-    ArenaPtr,
-    LedgerId,
-    ManifestPtr,
     ZERO_PTR,
+    NodeBatch,
 )
-from prism_vm_core.structures import NodeBatch
+from prism_vm_core.facade import (
+    _key_order_commutative_host,
+    _cnf2_enabled,
+    _normalize_bsp_mode,
+    cycle_candidates,
+    init_arena,
+    init_ledger,
+    init_manifest,
+    intern_nodes,
+    node_batch,
+)
+from prism_vm_core.guards import _expect_token, _pop_token
 
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
 
