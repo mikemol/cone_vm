@@ -4,6 +4,7 @@ from jax import lax
 from functools import partial
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.safety import SafetyPolicy
 from prism_coord.coord import coord_xor_batch
 from prism_ledger.intern import intern_nodes
 from prism_ledger.config import InternConfig
@@ -294,6 +295,7 @@ def cycle_candidates(
     validate_mode: str = "strict",
     *,
     cfg: Cnf2Config | None = None,
+    safe_gather_policy: SafetyPolicy | None = None,
     intern_fn: InternFn = intern_nodes,
     intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -324,6 +326,8 @@ def cycle_candidates(
         intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
         if cfg.coord_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
             coord_xor_batch_fn = partial(coord_xor_batch, cfg=cfg.coord_cfg)
+        if safe_gather_policy is None and cfg.safe_gather_policy is not None:
+            safe_gather_policy = cfg.safe_gather_policy
         intern_fn = _maybe_override(intern_fn, intern_nodes, cfg.intern_fn)
         node_batch_fn = _maybe_override(node_batch_fn, _node_batch, cfg.node_batch_fn)
         coord_xor_batch_fn = _maybe_override(
@@ -589,6 +593,7 @@ def cycle_candidates(
         validate=validate,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
+        safe_gather_policy=safe_gather_policy,
     )
     ledger2, _, q_map = commit_stratum_fn(
         ledger2,
@@ -597,6 +602,7 @@ def cycle_candidates(
         validate=validate,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
+        safe_gather_policy=safe_gather_policy,
     )
     # Wrapper strata are micro-strata in s=2; commit in order for hyperstrata visibility.
     for start_i, count_i in wrap_strata:
@@ -610,6 +616,7 @@ def cycle_candidates(
             validate=validate,
             validate_mode=validate_mode,
             intern_fn=intern_fn,
+            safe_gather_policy=safe_gather_policy,
         )
     next_frontier = _provisional_ids(next_frontier)
     if _TEST_GUARDS:

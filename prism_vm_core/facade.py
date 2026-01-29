@@ -485,6 +485,7 @@ def cycle_candidates(
     intern_cfg: InternConfig | None = None,
     emit_candidates_fn: EmitCandidatesFn | None = None,
     host_raise_if_bad_fn: HostRaiseFn | None = None,
+    safe_gather_policy: SafetyPolicy | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
     cnf2_enabled_fn=None,
@@ -504,6 +505,8 @@ def cycle_candidates(
     if cnf2_cfg is not None:
         if intern_cfg is None:
             intern_cfg = cnf2_cfg.intern_cfg
+        if safe_gather_policy is None and cnf2_cfg.safe_gather_policy is not None:
+            safe_gather_policy = cnf2_cfg.safe_gather_policy
         if intern_fn is None and cnf2_cfg.intern_fn is not None:
             intern_fn = cnf2_cfg.intern_fn
         if emit_candidates_fn is None and cnf2_cfg.emit_candidates_fn is not None:
@@ -550,6 +553,7 @@ def cycle_candidates(
         validate_stratum=validate_stratum,
         validate_mode=validate_mode,
         cfg=cnf2_cfg,
+        safe_gather_policy=safe_gather_policy,
         intern_fn=intern_fn,
         intern_cfg=intern_cfg,
         emit_candidates_fn=emit_candidates_fn,
