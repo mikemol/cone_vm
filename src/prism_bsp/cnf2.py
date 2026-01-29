@@ -4,6 +4,7 @@ from jax import lax
 from functools import partial
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.compact import scatter_compacted_ids
 from prism_core.safety import SafetyPolicy
 from prism_coord.coord import coord_xor_batch
 from prism_ledger.intern import intern_nodes
@@ -208,12 +209,13 @@ def _scatter_compacted_ids(
     *,
     scatter_drop_fn=_scatter_drop,
 ):
-    valid = jnp.arange(size, dtype=jnp.int32) < count
-    scatter_idx = jnp.where(valid, comp_idx, jnp.int32(size))
-    scatter_ids = jnp.where(valid, ids_compact, jnp.int32(0))
-    ids_full = jnp.zeros(size, dtype=ids_compact.dtype)
-    return scatter_drop_fn(
-        ids_full, scatter_idx, scatter_ids, "scatter_compacted_ids"
+    return scatter_compacted_ids(
+        comp_idx,
+        ids_compact,
+        count,
+        size,
+        scatter_drop_fn=scatter_drop_fn,
+        index_dtype=jnp.int32,
     )
 
 
