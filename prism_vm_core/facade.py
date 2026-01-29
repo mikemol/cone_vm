@@ -170,6 +170,7 @@ from prism_vm_core.guards import (
     DEFAULT_GUARD_CONFIG,
     guards_enabled_cfg,
     guard_max_cfg,
+    guard_gather_index_cfg,
     guard_slot0_perm_cfg,
     guard_null_row_cfg,
     guard_zero_row_cfg,
@@ -214,6 +215,7 @@ GuardConfig = GuardConfig
 DEFAULT_GUARD_CONFIG = DEFAULT_GUARD_CONFIG
 guards_enabled_cfg = guards_enabled_cfg
 guard_max_cfg = guard_max_cfg
+guard_gather_index_cfg = guard_gather_index_cfg
 guard_slot0_perm_cfg = guard_slot0_perm_cfg
 guard_null_row_cfg = guard_null_row_cfg
 guard_zero_row_cfg = guard_zero_row_cfg
@@ -257,6 +259,19 @@ def safe_index_1d(
         guard = _GATHER_GUARD
     return _jax_safe.safe_index_1d(idx, size, label, guard=guard, policy=policy)
 
+
+def safe_index_1d_cfg(
+    idx,
+    size,
+    label="safe_index_1d",
+    *,
+    guard=None,
+    policy: SafetyPolicy | None = None,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+):
+    """Interface/Control wrapper for safe_index_1d with guard config."""
+    guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
+    return _jax_safe.safe_index_1d(idx, size, label, guard=False, policy=policy)
 
 def node_batch(op, a1, a2) -> NodeBatch:
     """Interface/Control wrapper for batch shape checks.

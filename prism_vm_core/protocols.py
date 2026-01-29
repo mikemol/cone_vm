@@ -63,6 +63,12 @@ class SafeGatherFn(Protocol):
 
 
 @runtime_checkable
+class SafeIndexFn(Protocol):
+    def __call__(self, idx, size, label: str, *, policy=None):
+        ...
+
+
+@runtime_checkable
 class GuardMaxFn(Protocol):
     def __call__(self, value, max_value, label: str) -> None:
         ...
@@ -183,6 +189,7 @@ __all__ = [
     "CandidateIndicesFn",
     "ScatterDropFn",
     "SafeGatherFn",
+    "SafeIndexFn",
     "GuardMaxFn",
     "OpRankFn",
     "ServoEnabledFn",
