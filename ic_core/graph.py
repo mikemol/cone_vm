@@ -187,8 +187,8 @@ def ic_wire_pairs_jax(
         n_nodes = s.ports.shape[0]
         na_i = jnp.asarray(node_a_u, dtype=jnp.int32)
         nb_i = jnp.asarray(node_b_u, dtype=jnp.int32)
-        na_safe, _ = safe_index_1d(na_i, n_nodes, "ic_wire_pairs_jax.na")
-        nb_safe, _ = safe_index_1d(nb_i, n_nodes, "ic_wire_pairs_jax.nb")
+        na_safe, ok_a = safe_index_1d(na_i, n_nodes, "ic_wire_pairs_jax.na")
+        nb_safe, ok_b = safe_index_1d(nb_i, n_nodes, "ic_wire_pairs_jax.nb")
         na = na_safe.astype(jnp.uint32)
         nb = nb_safe.astype(jnp.uint32)
         pa = port_a_u & jnp.uint32(0x3)
@@ -196,7 +196,10 @@ def ic_wire_pairs_jax(
 
         ptr_a = encode_port(na, pa)
         ptr_b = encode_port(nb, pb)
-        do = (ptr_a != jnp.uint32(0)) & (ptr_b != jnp.uint32(0))
+        ok = ok_a & ok_b
+        do = (ptr_a != jnp.uint32(0)) & (ptr_b != jnp.uint32(0)) & ok
+        bad_port = (pa == jnp.uint32(3)) | (pb == jnp.uint32(3))
+        corrupt = jnp.any(~ok) | jnp.any(do & bad_port)
 
         safe_node = jnp.uint32(0)
         safe_port = jnp.uint32(0)
@@ -210,7 +213,7 @@ def ic_wire_pairs_jax(
         val_b = jnp.where(do, ptr_a, ports[safe_node, safe_port])
         ports = ports.at[na_s, pa_s].set(val_a, mode="drop")
         ports = ports.at[nb_s, pb_s].set(val_b, mode="drop")
-        return s._replace(ports=ports)
+        return s._replace(ports=ports, corrupt=s.corrupt | corrupt)
 
     return jax.lax.cond(_halted(state), lambda s: s, _do, state)
 
@@ -228,14 +231,21 @@ def ic_wire_ptr_pairs_jax(state: ICState, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray
         nb, pb = decode_port(ptr_b_u)
 
         n_nodes = s.ports.shape[0]
-        n_nodes_u = jnp.uint32(n_nodes)
-        na = jnp.minimum(na, n_nodes_u - jnp.uint32(1))
-        nb = jnp.minimum(nb, n_nodes_u - jnp.uint32(1))
+        na_i = jnp.asarray(na, dtype=jnp.int32)
+        nb_i = jnp.asarray(nb, dtype=jnp.int32)
+        na_safe, ok_a = safe_index_1d(na_i, n_nodes, "ic_wire_ptr_pairs_jax.na")
+        nb_safe, ok_b = safe_index_1d(nb_i, n_nodes, "ic_wire_ptr_pairs_jax.nb")
+        na = na_safe.astype(jnp.uint32)
+        nb = nb_safe.astype(jnp.uint32)
         pa = pa & jnp.uint32(0x3)
         pb = pb & jnp.uint32(0x3)
 
         safe_node = jnp.uint32(0)
         safe_port = jnp.uint32(0)
+        ok = ok_a & ok_b
+        do = do & ok
+        bad_port = (pa == jnp.uint32(3)) | (pb == jnp.uint32(3))
+        corrupt = jnp.any(~ok) | jnp.any(do & bad_port)
         na_s = jnp.where(do, na, safe_node)
         pa_s = jnp.where(do, pa, safe_port)
         nb_s = jnp.where(do, nb, safe_node)
@@ -246,7 +256,7 @@ def ic_wire_ptr_pairs_jax(state: ICState, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray
         val_b = jnp.where(do, ptr_a_u, ports[safe_node, safe_port])
         ports = ports.at[na_s, pa_s].set(val_a, mode="drop")
         ports = ports.at[nb_s, pb_s].set(val_b, mode="drop")
-        return s._replace(ports=ports)
+        return s._replace(ports=ports, corrupt=s.corrupt | corrupt)
 
     return jax.lax.cond(_halted(state), lambda s: s, _do, state)
 
