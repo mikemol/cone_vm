@@ -15,6 +15,7 @@ from ic_core.guards import (
     DEFAULT_IC_GUARD_CONFIG,
     safe_index_1d_cfg,
 )
+from prism_core.guards import make_safe_index_fn
 
 from ic_core.config import ICEngineConfig, ICGraphConfig, ICRuleConfig
 from ic_core.domains import (
@@ -154,12 +155,7 @@ def graph_config_with_guard(
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICGraphConfig:
     """Return a graph config using safe_index_1d_cfg with guard config."""
-    def _safe_index(idx, size, label, *, policy=None):
-        return safe_index_1d_cfg(
-            idx, size, label, policy=policy, cfg=guard_cfg
-        )
-
-    cfg = replace(cfg, safe_index_fn=_safe_index)
+    cfg = replace(cfg, safe_index_fn=make_safe_index_fn(cfg=guard_cfg))
     if safety_policy is not None:
         cfg = replace(cfg, safety_policy=safety_policy)
     return cfg

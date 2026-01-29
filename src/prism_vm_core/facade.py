@@ -14,7 +14,7 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.di import wrap_policy
+from prism_core.di import wrap_policy, wrap_index_policy
 from prism_core.safety import SafetyPolicy, DEFAULT_SAFETY_POLICY, oob_mask
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -263,7 +263,8 @@ def safe_index_1d(
     """
     if guard is None:
         guard = _GATHER_GUARD
-    return _jax_safe.safe_index_1d(idx, size, label, guard=guard, policy=policy)
+    safe_index_fn = wrap_index_policy(_jax_safe.safe_index_1d, policy)
+    return safe_index_fn(idx, size, label, guard=guard)
 
 
 def safe_index_1d_cfg(
@@ -277,7 +278,8 @@ def safe_index_1d_cfg(
 ):
     """Interface/Control wrapper for safe_index_1d with guard config."""
     guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
-    return _jax_safe.safe_index_1d(idx, size, label, guard=False, policy=policy)
+    safe_index_fn = wrap_index_policy(_jax_safe.safe_index_1d, policy)
+    return safe_index_fn(idx, size, label, guard=False)
 
 def node_batch(op, a1, a2) -> NodeBatch:
     """Interface/Control wrapper for batch shape checks.
