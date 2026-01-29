@@ -49,9 +49,22 @@ def safe_index_1d_cfg(
     return _jax_safe.safe_index_1d(idx, size, label, guard=False, policy=policy)
 
 
+def make_safe_index_fn(
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+    policy=None,
+):
+    """Return a SafeIndexFn wired to the provided GuardConfig."""
+    def _safe_index(idx, size, label, *, policy=policy):
+        return safe_index_1d_cfg(idx, size, label, policy=policy, cfg=cfg)
+
+    return _safe_index
+
+
 __all__ = [
     "GuardConfig",
     "DEFAULT_GUARD_CONFIG",
     "guard_gather_index_cfg",
     "safe_index_1d_cfg",
+    "make_safe_index_fn",
 ]

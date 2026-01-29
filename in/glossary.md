@@ -216,6 +216,10 @@ SafetyPolicy specifies how out-of-bounds indices are handled in
 **Normative Rule:** Any non-default SafetyPolicy must be explicit at the
 facade/config boundary. Silent overrides are invalid.
 
+**Implementation Note:** Use policy-wrapping helpers (`wrap_policy`,
+`wrap_index_policy`) to bind SafetyPolicy into safe-gather/index DI without
+monkeypatching.
+
 **Test Obligations:**
 
 - (m1) `tests/test_gather_guard.py`

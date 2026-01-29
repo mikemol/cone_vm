@@ -17,10 +17,23 @@ def wrap_policy(safe_gather_fn, policy):
     if policy is None:
         return safe_gather_fn
 
-    def _safe_gather(arr, idx, label):
-        return safe_gather_fn(arr, idx, label, policy=policy)
+    def _safe_gather(arr, idx, label, **kwargs):
+        kwargs["policy"] = policy
+        return safe_gather_fn(arr, idx, label, **kwargs)
 
     return _safe_gather
+
+
+def wrap_index_policy(safe_index_fn, policy):
+    """Wrap a safe_index_fn with a fixed SafetyPolicy (if provided)."""
+    if policy is None:
+        return safe_index_fn
+
+    def _safe_index(idx, size, label, **kwargs):
+        kwargs["policy"] = policy
+        return safe_index_fn(idx, size, label, **kwargs)
+
+    return _safe_index
 
 
 def cached_factory(factory: Callable[..., T]) -> Callable[..., T]:
@@ -38,4 +51,10 @@ def cached_jit(factory: Callable[..., Callable], *, static_argnames=None, static
     return _cached
 
 
-__all__ = ["resolve", "wrap_policy", "cached_factory", "cached_jit"]
+__all__ = [
+    "resolve",
+    "wrap_policy",
+    "wrap_index_policy",
+    "cached_factory",
+    "cached_jit",
+]
