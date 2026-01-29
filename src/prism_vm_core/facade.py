@@ -138,6 +138,15 @@ def arena_interact_config_with_policy(
     return replace(cfg, safe_gather_policy=safety_policy)
 
 
+def arena_interact_config_with_guard(
+    guard_cfg: GuardConfig | None,
+    *,
+    cfg: ArenaInteractConfig = DEFAULT_ARENA_INTERACT_CONFIG,
+) -> ArenaInteractConfig:
+    """Return an ArenaInteractConfig with guard_cfg set."""
+    return replace(cfg, guard_cfg=guard_cfg)
+
+
 def arena_cycle_config_with_policy(
     safety_policy: SafetyPolicy | None,
     *,
@@ -151,6 +160,21 @@ def arena_cycle_config_with_policy(
             interact_cfg = DEFAULT_ARENA_INTERACT_CONFIG
         interact_cfg = replace(interact_cfg, safe_gather_policy=safety_policy)
     return replace(cfg, safe_gather_policy=safety_policy, interact_cfg=interact_cfg)
+
+
+def arena_cycle_config_with_guard(
+    guard_cfg: GuardConfig | None,
+    *,
+    cfg: ArenaCycleConfig = DEFAULT_ARENA_CYCLE_CONFIG,
+    include_interact: bool = True,
+) -> ArenaCycleConfig:
+    """Return an ArenaCycleConfig with guard_cfg set (and optionally its interact_cfg)."""
+    interact_cfg = cfg.interact_cfg
+    if include_interact:
+        if interact_cfg is None:
+            interact_cfg = DEFAULT_ARENA_INTERACT_CONFIG
+        interact_cfg = replace(interact_cfg, guard_cfg=guard_cfg)
+    return replace(cfg, guard_cfg=guard_cfg, interact_cfg=interact_cfg)
 
 
 def cnf2_config_with_policy(
