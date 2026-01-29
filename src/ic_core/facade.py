@@ -10,6 +10,7 @@ from dataclasses import replace
 
 from prism_core.safety import SafetyPolicy
 from prism_core.jax_safe import safe_index_1d
+from prism_core.alloc import AllocConfig, DEFAULT_ALLOC_CONFIG
 from ic_core.guards import (
     ICGuardConfig,
     DEFAULT_IC_GUARD_CONFIG,
@@ -366,6 +367,8 @@ __all__ = [
     "ICRuleConfig",
     "ICEngineConfig",
     "ICGraphConfig",
+    "AllocConfig",
+    "DEFAULT_ALLOC_CONFIG",
     "CompactPairsFn",
     "DecodePortFn",
     "AllocPlanFn",
