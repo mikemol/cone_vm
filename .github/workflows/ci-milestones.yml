@@ -13,6 +13,16 @@ on:
       - "tests/**"
       - "scripts/**"
       - "prism_vm.py"
+      - "ic_vm.py"
+      - "ic_core/**"
+      - "prism_core/**"
+      - "prism_vm_core/**"
+      - "prism_bsp/**"
+      - "prism_coord/**"
+      - "prism_ledger/**"
+      - "prism_semantics/**"
+      - "prism_metrics/**"
+      - "prism_cli/**"
       - "typecheck/**"
 
 permissions:
