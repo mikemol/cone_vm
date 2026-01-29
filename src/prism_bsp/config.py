@@ -72,6 +72,7 @@ class Cnf2Config:
     apply_q_fn: ApplyQFn | None = None
     identity_q_fn: IdentityQFn | None = None
     safe_gather_ok_fn: SafeGatherOkFn | None = None
+    guard_cfg: GuardConfig | None = None
     host_bool_value_fn: HostBoolValueFn | None = None
     host_int_value_fn: HostIntValueFn | None = None
     guards_enabled_fn: GuardsEnabledFn | None = None

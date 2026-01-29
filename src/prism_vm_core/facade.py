@@ -184,6 +184,15 @@ def cnf2_config_with_policy(
 ) -> Cnf2Config:
     """Return a Cnf2Config with safe_gather_policy set."""
     return replace(cfg, safe_gather_policy=safety_policy)
+
+
+def cnf2_config_with_guard(
+    guard_cfg: GuardConfig | None,
+    *,
+    cfg: Cnf2Config = DEFAULT_CNF2_CONFIG,
+) -> Cnf2Config:
+    """Return a Cnf2Config with guard_cfg set."""
+    return replace(cfg, guard_cfg=guard_cfg)
 from prism_vm_core.gating import (
     _cnf2_enabled as _cnf2_enabled_default,
     _cnf2_slot1_enabled as _cnf2_slot1_enabled_default,

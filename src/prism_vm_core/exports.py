@@ -50,6 +50,7 @@ __all__ = [
     "arena_cycle_config_with_policy",
     "arena_cycle_config_with_guard",
     "cnf2_config_with_policy",
+    "cnf2_config_with_guard",
     "IntrinsicConfig",
     "DEFAULT_INTRINSIC_CONFIG",
     "CoordConfig",
