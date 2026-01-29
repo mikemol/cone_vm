@@ -5,6 +5,7 @@ from typing import Protocol, Tuple, runtime_checkable
 import jax.numpy as jnp
 
 from prism_core.compact import CompactResult
+from prism_core.protocols import SafeGatherFn, SafeGatherOkFn, SafeIndexFn
 from prism_vm_core.structures import Arena, CandidateBuffer, Ledger, NodeBatch, Stratum
 
 
@@ -51,26 +52,6 @@ class CandidateIndicesFn(Protocol):
 @runtime_checkable
 class ScatterDropFn(Protocol):
     def __call__(self, arr, idx, updates, label: str):
-        ...
-
-
-@runtime_checkable
-class SafeGatherFn(Protocol):
-    def __call__(
-        self, arr, idx, label: str, *, policy=None, return_ok: bool = False
-    ):
-        ...
-
-
-@runtime_checkable
-class SafeGatherOkFn(Protocol):
-    def __call__(self, arr, idx, label: str, *, policy=None):
-        ...
-
-
-@runtime_checkable
-class SafeIndexFn(Protocol):
-    def __call__(self, idx, size, label: str, *, policy=None):
         ...
 
 
