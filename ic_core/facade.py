@@ -6,7 +6,11 @@ erased by q; device kernels remain in ic_core.engine / ic_core.rules.
 
 from __future__ import annotations
 
-from ic_core.config import ICEngineConfig, ICRuleConfig
+from dataclasses import replace
+
+from prism_core.safety import SafetyPolicy
+
+from ic_core.config import ICEngineConfig, ICGraphConfig, ICRuleConfig
 from ic_core.domains import (
     HostBool,
     HostInt,
@@ -96,6 +100,8 @@ from ic_core.rules import (
     ic_select_template_cfg,
 )
 
+DEFAULT_GRAPH_CONFIG = ICGraphConfig()
+
 
 def ic_apply_active_pairs(
     state: ICState, *, cfg: ICEngineConfig = DEFAULT_ENGINE_CONFIG
@@ -115,6 +121,119 @@ def ic_reduce(
     Axis: Interface/Control. Commutes with q. Erased by q.
     """
     return ic_reduce_cfg(state, max_steps, cfg=cfg)
+
+
+def graph_config_with_policy(
+    safety_policy: SafetyPolicy | None,
+    *,
+    cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+) -> ICGraphConfig:
+    """Return a graph config with safety_policy set."""
+    return replace(cfg, safety_policy=safety_policy)
+
+
+def ic_wire_jax_cfg(
+    state: ICState,
+    node_a: jnp.ndarray,
+    port_a: jnp.ndarray,
+    node_b: jnp.ndarray,
+    port_b: jnp.ndarray,
+    *,
+    cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+) -> ICState:
+    """Interface/Control wrapper for ic_wire_jax with safety policy."""
+    return ic_wire_jax(
+        state,
+        node_a,
+        port_a,
+        node_b,
+        port_b,
+        safety_policy=cfg.safety_policy,
+    )
+
+
+def ic_wire_jax_safe_cfg(
+    state: ICState,
+    node_a: jnp.ndarray,
+    port_a: jnp.ndarray,
+    node_b: jnp.ndarray,
+    port_b: jnp.ndarray,
+    *,
+    cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+) -> ICState:
+    """Interface/Control wrapper for ic_wire_jax_safe with safety policy."""
+    return ic_wire_jax_safe(
+        state,
+        node_a,
+        port_a,
+        node_b,
+        port_b,
+        safety_policy=cfg.safety_policy,
+    )
+
+
+def ic_wire_ptrs_jax_cfg(
+    state: ICState,
+    ptr_a: jnp.ndarray,
+    ptr_b: jnp.ndarray,
+    *,
+    cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+) -> ICState:
+    """Interface/Control wrapper for ic_wire_ptrs_jax with safety policy."""
+    return ic_wire_ptrs_jax(state, ptr_a, ptr_b, safety_policy=cfg.safety_policy)
+
+
+def ic_wire_pairs_jax_cfg(
+    state: ICState,
+    node_a: jnp.ndarray,
+    port_a: jnp.ndarray,
+    node_b: jnp.ndarray,
+    port_b: jnp.ndarray,
+    *,
+    cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+) -> ICState:
+    """Interface/Control wrapper for ic_wire_pairs_jax with safety policy."""
+    return ic_wire_pairs_jax(
+        state,
+        node_a,
+        port_a,
+        node_b,
+        port_b,
+        safety_policy=cfg.safety_policy,
+    )
+
+
+def ic_wire_ptr_pairs_jax_cfg(
+    state: ICState,
+    ptr_a: jnp.ndarray,
+    ptr_b: jnp.ndarray,
+    *,
+    cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+) -> ICState:
+    """Interface/Control wrapper for ic_wire_ptr_pairs_jax with safety policy."""
+    return ic_wire_ptr_pairs_jax(
+        state, ptr_a, ptr_b, safety_policy=cfg.safety_policy
+    )
+
+
+def ic_wire_star_jax_cfg(
+    state: ICState,
+    center_node: jnp.ndarray,
+    center_port: jnp.ndarray,
+    leaf_nodes: jnp.ndarray,
+    leaf_ports: jnp.ndarray,
+    *,
+    cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+) -> ICState:
+    """Interface/Control wrapper for ic_wire_star_jax with safety policy."""
+    return ic_wire_star_jax(
+        state,
+        center_node,
+        center_port,
+        leaf_nodes,
+        leaf_ports,
+        safety_policy=cfg.safety_policy,
+    )
 
 
 def engine_config_from_rules(
@@ -194,6 +313,7 @@ __all__ = [
     "ICRewriteStats",
     "ICRuleConfig",
     "ICEngineConfig",
+    "ICGraphConfig",
     "CompactPairsFn",
     "DecodePortFn",
     "AllocPlanFn",
@@ -207,6 +327,8 @@ __all__ = [
     "ApplyTemplateFn",
     "DEFAULT_RULE_CONFIG",
     "DEFAULT_ENGINE_CONFIG",
+    "DEFAULT_GRAPH_CONFIG",
+    "graph_config_with_policy",
     "ICNodeId",
     "ICPortId",
     "ICPtr",
@@ -233,6 +355,12 @@ __all__ = [
     "ic_wire_pairs_jax",
     "ic_wire_ptr_pairs_jax",
     "ic_wire_star_jax",
+    "ic_wire_jax_cfg",
+    "ic_wire_jax_safe_cfg",
+    "ic_wire_ptrs_jax_cfg",
+    "ic_wire_pairs_jax_cfg",
+    "ic_wire_ptr_pairs_jax_cfg",
+    "ic_wire_star_jax_cfg",
     "ic_find_active_pairs",
     "ic_compact_active_pairs",
     "ic_rule_for_types",
