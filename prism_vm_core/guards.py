@@ -21,6 +21,7 @@ class GuardConfig:
 
     guards_enabled_fn: Optional[Callable[[], bool]] = None
     guard_max_fn: Optional[Callable[..., None]] = None
+    guard_gather_index_fn: Optional[Callable[..., None]] = None
     guard_slot0_perm_fn: Optional[Callable[..., None]] = None
     guard_null_row_fn: Optional[Callable[..., None]] = None
     guard_zero_row_fn: Optional[Callable[..., None]] = None
@@ -53,6 +54,18 @@ def guards_enabled_cfg(*, cfg: GuardConfig = DEFAULT_GUARD_CONFIG):
 def guard_max_cfg(value, max_value, label, *, cfg: GuardConfig = DEFAULT_GUARD_CONFIG):
     fn = cfg.guard_max_fn or _guard_max
     return fn(value, max_value, label)
+
+
+def guard_gather_index_cfg(
+    idx,
+    size,
+    label,
+    *,
+    guard=None,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+):
+    fn = cfg.guard_gather_index_fn or _jax_safe.guard_gather_index
+    return fn(idx, size, label, guard=guard)
 
 
 def _pop_token(tokens):
@@ -192,6 +205,7 @@ __all__ = [
     "_guard_swizzle_args",
     "guards_enabled_cfg",
     "guard_max_cfg",
+    "guard_gather_index_cfg",
     "guard_slot0_perm_cfg",
     "guard_null_row_cfg",
     "guard_zero_row_cfg",
