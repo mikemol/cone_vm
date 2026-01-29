@@ -56,6 +56,18 @@ def ic_rule_for_types(
     return rule_table[a, b]
 
 
+def ic_rule_for_types_cfg(
+    type_a: jnp.ndarray,
+    type_b: jnp.ndarray,
+    *,
+    cfg: ICRuleConfig | None = None,
+) -> jnp.ndarray:
+    """Interface/Control wrapper for rule lookup with DI bundle."""
+    if cfg is None:
+        cfg = DEFAULT_RULE_CONFIG
+    return cfg.rule_for_types_fn(type_a, type_b)
+
+
 def ic_select_template(
     state: ICState,
     node_a: int,
@@ -66,6 +78,21 @@ def ic_select_template(
     type_a = state.node_type[node_a]
     type_b = state.node_type[node_b]
     return rule_for_types_fn(type_a, type_b)[1]
+
+
+def ic_select_template_cfg(
+    state: ICState,
+    node_a: int,
+    node_b: int,
+    *,
+    cfg: ICRuleConfig | None = None,
+) -> jnp.ndarray:
+    """Interface/Control wrapper for template selection with DI bundle."""
+    if cfg is None:
+        cfg = DEFAULT_RULE_CONFIG
+    type_a = state.node_type[node_a]
+    type_b = state.node_type[node_b]
+    return cfg.rule_for_types_fn(type_a, type_b)[1]
 
 
 def ic_apply_annihilate(
@@ -88,6 +115,19 @@ def ic_apply_annihilate(
     node_type = node_type.at[node_a].set(TYPE_FREE)
     node_type = node_type.at[node_b].set(TYPE_FREE)
     return state._replace(ports=ports, node_type=node_type)
+
+
+def ic_apply_annihilate_cfg(
+    state: ICState,
+    node_a: jnp.ndarray,
+    node_b: jnp.ndarray,
+    *,
+    cfg: ICRuleConfig | None = None,
+) -> ICState:
+    """Interface/Control wrapper for annihilate with DI bundle."""
+    if cfg is None:
+        cfg = DEFAULT_RULE_CONFIG
+    return cfg.apply_annihilate_fn(state, node_a, node_b)
 
 
 def ic_apply_erase(
@@ -128,6 +168,32 @@ def ic_apply_erase(
         return free2_fn(s, jnp.stack([era, target]).astype(jnp.uint32))
 
     return jax.lax.cond(state2.oom | state2.corrupt, lambda s: s, _do, state2)
+
+
+def ic_apply_commute_cfg(
+    state: ICState,
+    node_a: jnp.ndarray,
+    node_b: jnp.ndarray,
+    *,
+    cfg: ICRuleConfig | None = None,
+) -> ICState:
+    """Interface/Control wrapper for commute with DI bundle."""
+    if cfg is None:
+        cfg = DEFAULT_RULE_CONFIG
+    return cfg.apply_commute_fn(state, node_a, node_b)
+
+
+def ic_apply_erase_cfg(
+    state: ICState,
+    node_a: jnp.ndarray,
+    node_b: jnp.ndarray,
+    *,
+    cfg: ICRuleConfig | None = None,
+) -> ICState:
+    """Interface/Control wrapper for erase with DI bundle."""
+    if cfg is None:
+        cfg = DEFAULT_RULE_CONFIG
+    return cfg.apply_erase_fn(state, node_a, node_b)
 
 
 def _ic_apply_erase_with_ids(
@@ -344,6 +410,37 @@ def ic_apply_template(
     return jax.lax.cond(state.oom | state.corrupt, _noop, _apply, state)
 
 
+def ic_apply_template_planned_cfg(
+    state: ICState,
+    node_a: jnp.ndarray,
+    node_b: jnp.ndarray,
+    template_id: jnp.ndarray,
+    alloc_ids: jnp.ndarray,
+    *,
+    cfg: ICRuleConfig | None = None,
+):
+    """Interface/Control wrapper for planned template apply with DI bundle."""
+    if cfg is None:
+        cfg = DEFAULT_RULE_CONFIG
+    return cfg.apply_template_planned_fn(
+        state, node_a, node_b, template_id, alloc_ids
+    )
+
+
+def ic_apply_template_cfg(
+    state: ICState,
+    node_a: jnp.ndarray,
+    node_b: jnp.ndarray,
+    template_id: jnp.ndarray,
+    *,
+    cfg: ICRuleConfig | None = None,
+) -> ICState:
+    """Interface/Control wrapper for apply_template with DI bundle."""
+    if cfg is None:
+        cfg = DEFAULT_RULE_CONFIG
+    return cfg.apply_template_fn(state, node_a, node_b, template_id)
+
+
 def _alloc_plan(
     state: ICState,
     pairs: jnp.ndarray,
@@ -418,9 +515,22 @@ def _alloc_plan(
             lambda _: alloc_ids,
             operand=None,
         )
-    return state2, template_ids, alloc_counts, alloc_ids, valid
+        return state2, template_ids, alloc_counts, alloc_ids, valid
 
     return jax.lax.cond(halted_fn(state), _halt, _run, state)
+
+
+def ic_alloc_plan_cfg(
+    state: ICState,
+    pairs: jnp.ndarray,
+    count: jnp.ndarray,
+    *,
+    cfg: ICRuleConfig | None = None,
+):
+    """Interface/Control wrapper for alloc plan with DI bundle."""
+    if cfg is None:
+        cfg = DEFAULT_RULE_CONFIG
+    return cfg.alloc_plan_fn(state, pairs, count)
 
 
 def _apply_template_planned(
@@ -475,12 +585,20 @@ __all__ = [
     "TEMPLATE_COMMUTE",
     "RULE_TABLE",
     "ic_rule_for_types",
+    "ic_rule_for_types_cfg",
     "ic_select_template",
+    "ic_select_template_cfg",
     "ic_apply_annihilate",
+    "ic_apply_annihilate_cfg",
     "ic_apply_erase",
+    "ic_apply_erase_cfg",
     "ic_apply_commute",
+    "ic_apply_commute_cfg",
     "ic_apply_template",
+    "ic_apply_template_cfg",
     "_alloc_plan",
+    "ic_alloc_plan_cfg",
     "_apply_template_planned",
+    "ic_apply_template_planned_cfg",
     "DEFAULT_RULE_CONFIG",
 ]
