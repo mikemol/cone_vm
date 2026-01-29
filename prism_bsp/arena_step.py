@@ -145,6 +145,13 @@ def op_interact_cfg(
 ):
     """Interface/Control wrapper for op_interact with DI bundle."""
     safe_gather_fn = cfg.safe_gather_fn or _jax_safe.safe_gather_1d
+    if cfg.safe_gather_policy is not None:
+        policy = cfg.safe_gather_policy
+
+        def _safe_gather(arr, idx, label):
+            return safe_gather_fn(arr, idx, label, policy=policy)
+
+        safe_gather_fn = _safe_gather
     scatter_drop_fn = cfg.scatter_drop_fn or _jax_safe.scatter_drop
     guard_max_fn = cfg.guard_max_fn or _guard_max
     return op_interact(
@@ -196,7 +203,7 @@ def cycle_core(
             morton_arr = morton if morton is not None else op_morton_fn(arena)
             servo_mask = arena.servo[0]
             arena, inv_perm = op_sort_and_swizzle_servo_with_perm_fn(
-                arena, morton_arr, servo_mask
+                arena, morton_arr, servo_mask, safe_gather_fn=safe_gather_fn
             )
         else:
             if use_morton or morton is not None:
@@ -212,17 +219,20 @@ def cycle_core(
                     l1_block_size,
                     morton=morton_arr,
                     do_global=do_global,
+                    safe_gather_fn=safe_gather_fn,
                 )
             elif block_size is not None:
                 arena, inv_perm = op_sort_and_swizzle_blocked_with_perm_fn(
-                    arena, block_size, morton=morton_arr
+                    arena, block_size, morton=morton_arr, safe_gather_fn=safe_gather_fn
                 )
             elif morton_arr is not None:
                 arena, inv_perm = op_sort_and_swizzle_morton_with_perm_fn(
-                    arena, morton_arr
+                    arena, morton_arr, safe_gather_fn=safe_gather_fn
                 )
             else:
-                arena, inv_perm = op_sort_and_swizzle_with_perm_fn(arena)
+                arena, inv_perm = op_sort_and_swizzle_with_perm_fn(
+                    arena, safe_gather_fn=safe_gather_fn
+                )
         # Root remap is a pointer gather; guard in test mode.
         root_idx = jnp.where(root_arr != 0, root_arr, jnp.int32(0))
         root_g = safe_gather_fn(inv_perm, root_idx, "cycle.root_remap")
@@ -326,6 +336,13 @@ def cycle_cfg(
         or op_sort_and_swizzle_servo_with_perm
     )
     safe_gather_fn = cfg.safe_gather_fn or _jax_safe.safe_gather_1d
+    if cfg.safe_gather_policy is not None:
+        policy = cfg.safe_gather_policy
+
+        def _safe_gather(arr, idx, label):
+            return safe_gather_fn(arr, idx, label, policy=policy)
+
+        safe_gather_fn = _safe_gather
     arena_root_hash_fn = cfg.arena_root_hash_fn or _arena_root_hash_host
     damage_tile_size_fn = cfg.damage_tile_size_fn or _damage_tile_size
     damage_metrics_update_fn = cfg.damage_metrics_update_fn or _damage_metrics_update
@@ -333,7 +350,15 @@ def cycle_cfg(
     if op_interact_fn is None and cfg.interact_cfg is not None:
         op_interact_fn = lambda a: op_interact_cfg(a, cfg=cfg.interact_cfg)
     if op_interact_fn is None:
-        op_interact_fn = op_interact
+        if cfg.safe_gather_policy is not None:
+            policy = cfg.safe_gather_policy
+
+            def _safe_gather(arr, idx, label):
+                return safe_gather_fn(arr, idx, label, policy=policy)
+
+            op_interact_fn = lambda a: op_interact(a, safe_gather_fn=_safe_gather)
+        else:
+            op_interact_fn = op_interact
     return cycle_core(
         arena,
         root_ptr,

@@ -422,6 +422,8 @@ def commit_stratum(
     validate: bool = False,
     validate_mode: str = "strict",
     intern_fn: InternFn | None = None,
+    *,
+    safe_gather_policy: SafetyPolicy | None = None,
 ):
     """Interface/Control wrapper for commit_stratum injection.
 
@@ -430,6 +432,14 @@ def commit_stratum(
     """
     if intern_fn is None:
         intern_fn = intern_nodes
+    safe_gather_fn = safe_gather_1d
+    if safe_gather_policy is not None:
+        policy = safe_gather_policy
+
+        def _safe_gather(arr, idx, label):
+            return safe_gather_fn(arr, idx, label, policy=policy)
+
+        safe_gather_fn = _safe_gather
     return _commit_stratum_impl(
         ledger,
         stratum,
@@ -437,6 +447,7 @@ def commit_stratum(
         validate=validate,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
+        safe_gather_fn=safe_gather_fn,
     )
 
 
