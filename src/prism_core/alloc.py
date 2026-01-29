@@ -142,6 +142,11 @@ def alloc2(state):
     return jax.lax.cond(ok, _do, _fail, state)
 
 
+def alloc2_cfg(state, *, cfg: AllocConfig = DEFAULT_ALLOC_CONFIG):
+    """alloc2 wrapper for a fixed AllocConfig."""
+    return alloc2(state)
+
+
 def alloc4(state):
     top = state.free_top.astype(jnp.int32)
     ok = (top >= 4) & (~state.oom) & (~state.corrupt)
@@ -162,6 +167,11 @@ def alloc4(state):
         return s2, jnp.zeros((4,), dtype=jnp.uint32)
 
     return jax.lax.cond(ok, _do, _fail, state)
+
+
+def alloc4_cfg(state, *, cfg: AllocConfig = DEFAULT_ALLOC_CONFIG):
+    """alloc4 wrapper for a fixed AllocConfig."""
+    return alloc4(state)
 
 
 def free2(state, nodes: jnp.ndarray):
@@ -185,6 +195,11 @@ def free2(state, nodes: jnp.ndarray):
         return jax.lax.cond(s.corrupt, _keep, _corrupt, s)
 
     return jax.lax.cond(ok & (~state.oom) & (~state.corrupt), _do, _fail, state)
+
+
+def free2_cfg(state, nodes: jnp.ndarray, *, cfg: AllocConfig = DEFAULT_ALLOC_CONFIG):
+    """free2 wrapper for a fixed AllocConfig."""
+    return free2(state, nodes)
 
 
 def host_flag(value: jnp.ndarray) -> bool:
@@ -238,8 +253,11 @@ __all__ = [
     "alloc_jax",
     "alloc_jax_cfg",
     "alloc2",
+    "alloc2_cfg",
     "alloc4",
+    "alloc4_cfg",
     "free2",
+    "free2_cfg",
     "host_flag",
     "alloc_nodes",
     "alloc_host",

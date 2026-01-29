@@ -7,10 +7,17 @@ erased by q; device kernels remain in ic_core.engine / ic_core.rules.
 from __future__ import annotations
 
 from dataclasses import replace
+from functools import partial
 
 from prism_core.safety import SafetyPolicy
 from prism_core.jax_safe import safe_index_1d
-from prism_core.alloc import AllocConfig, DEFAULT_ALLOC_CONFIG
+from prism_core.alloc import (
+    AllocConfig,
+    DEFAULT_ALLOC_CONFIG,
+    alloc2_cfg,
+    alloc4_cfg,
+    free2_cfg,
+)
 from ic_core.guards import (
     ICGuardConfig,
     DEFAULT_IC_GUARD_CONFIG,
@@ -169,6 +176,41 @@ def graph_config_with_guard(
     if safety_policy is not None:
         cfg = replace(cfg, safety_policy=safety_policy)
     return cfg
+
+
+def rule_config_with_alloc(
+    alloc_cfg: AllocConfig | None,
+    *,
+    cfg: ICRuleConfig = DEFAULT_RULE_CONFIG,
+) -> ICRuleConfig:
+    """Return a rule config with allocator helpers wired from AllocConfig."""
+    if alloc_cfg is None:
+        return cfg
+    alloc2_fn = partial(alloc2_cfg, cfg=alloc_cfg)
+    alloc4_fn = partial(alloc4_cfg, cfg=alloc_cfg)
+    free2_fn = partial(free2_cfg, cfg=alloc_cfg)
+    apply_erase_fn = partial(
+        ic_apply_erase,
+        alloc2_fn=alloc2_fn,
+        free2_fn=free2_fn,
+    )
+    apply_commute_fn = partial(
+        ic_apply_commute,
+        alloc4_fn=alloc4_fn,
+        free2_fn=free2_fn,
+    )
+    apply_template_fn = partial(
+        ic_apply_template,
+        apply_annihilate_fn=cfg.apply_annihilate_fn,
+        apply_erase_fn=apply_erase_fn,
+        apply_commute_fn=apply_commute_fn,
+    )
+    return replace(
+        cfg,
+        apply_erase_fn=apply_erase_fn,
+        apply_commute_fn=apply_commute_fn,
+        apply_template_fn=apply_template_fn,
+    )
 
 
 def ic_wire_jax_cfg(
@@ -410,6 +452,7 @@ __all__ = [
     "graph_config_with_policy",
     "graph_config_with_index_fn",
     "graph_config_with_guard",
+    "rule_config_with_alloc",
     "ICGuardConfig",
     "DEFAULT_IC_GUARD_CONFIG",
     "safe_index_1d_cfg",
