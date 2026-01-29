@@ -676,6 +676,10 @@ denote(q(P)) is undefined iff CORRUPT
 > raw encoded pointers. Any host wrapper conversion is a boundary crossing and
 > must be explicit.
 
+**Implementation note:** host pointer checks should use the shared
+`_require_ptr_domain` helper (and domain-specific wrappers that delegate to it)
+so IC/Prism enforce the same boundary contract.
+
 ### Test Obligations
 
 - (m2) `tests/test_type_runtime.py::test_candidate_indices_runtime_typecheck_accepts_int32`
