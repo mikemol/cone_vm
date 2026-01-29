@@ -145,6 +145,15 @@ def arena_cycle_config_with_policy(
             interact_cfg = DEFAULT_ARENA_INTERACT_CONFIG
         interact_cfg = replace(interact_cfg, safe_gather_policy=safety_policy)
     return replace(cfg, safe_gather_policy=safety_policy, interact_cfg=interact_cfg)
+
+
+def cnf2_config_with_policy(
+    safety_policy: SafetyPolicy | None,
+    *,
+    cfg: Cnf2Config = DEFAULT_CNF2_CONFIG,
+) -> Cnf2Config:
+    """Return a Cnf2Config with safe_gather_policy set."""
+    return replace(cfg, safe_gather_policy=safety_policy)
 from prism_vm_core.gating import (
     _cnf2_enabled as _cnf2_enabled_default,
     _cnf2_slot1_enabled as _cnf2_slot1_enabled_default,

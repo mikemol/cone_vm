@@ -45,6 +45,7 @@ __all__ = [
     "DEFAULT_ARENA_CYCLE_CONFIG",
     "arena_interact_config_with_policy",
     "arena_cycle_config_with_policy",
+    "cnf2_config_with_policy",
     "IntrinsicConfig",
     "DEFAULT_INTRINSIC_CONFIG",
     "CoordConfig",
