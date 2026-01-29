@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from prism_core.safety import SafetyPolicy
+from prism_core.compact import CompactConfig
 
 from ic_core.protocols import (
     AllocPlanFn,
@@ -26,6 +27,7 @@ class ICGraphConfig:
 
     safety_policy: SafetyPolicy | None = None
     safe_index_fn: SafeIndexFn | None = None
+    compact_cfg: CompactConfig | None = None
 
 
 DEFAULT_GRAPH_CONFIG = ICGraphConfig()

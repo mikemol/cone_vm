@@ -85,6 +85,7 @@ def _find_active_pairs_jit(cfg: ICGraphConfig):
             state,
             safety_policy=cfg.safety_policy,
             safe_index_fn=safe_index_fn,
+            compact_cfg=cfg.compact_cfg,
         )
 
     return _impl
@@ -111,6 +112,7 @@ def _compact_active_pairs_jit(cfg: ICGraphConfig):
             state,
             safety_policy=cfg.safety_policy,
             safe_index_fn=safe_index_fn,
+            compact_cfg=cfg.compact_cfg,
         )
 
     return _impl
