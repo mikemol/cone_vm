@@ -35,6 +35,8 @@ from ic_core.graph import (
     TYPE_DUP,
     TYPE_ERA,
     TYPE_FREE,
+    _halted,
+    _scan_corrupt_ports,
     decode_port,
     encode_port,
     ic_alloc,
@@ -96,6 +98,25 @@ def ic_reduce(
     Axis: Interface/Control. Commutes with q. Erased by q.
     """
     return ic_reduce_cfg(state, max_steps, cfg=cfg)
+
+
+def engine_config_from_rules(
+    rule_cfg: ICRuleConfig,
+    *,
+    compact_pairs_fn=ic_compact_active_pairs,
+    decode_port_fn=decode_port,
+    halted_fn=_halted,
+    scan_corrupt_fn=_scan_corrupt_ports,
+) -> ICEngineConfig:
+    """Build an engine config from a rule config (Interface/Control)."""
+    return ICEngineConfig(
+        compact_pairs_fn=compact_pairs_fn,
+        decode_port_fn=decode_port_fn,
+        alloc_plan_fn=rule_cfg.alloc_plan_fn,
+        apply_template_planned_fn=rule_cfg.apply_template_planned_fn,
+        halted_fn=halted_fn,
+        scan_corrupt_fn=scan_corrupt_fn,
+    )
 
 
 __all__ = [
@@ -162,6 +183,7 @@ __all__ = [
     "ic_reduce",
     "ic_apply_active_pairs_cfg",
     "ic_reduce_cfg",
+    "engine_config_from_rules",
     "apply_active_pairs_jit",
     "reduce_jit",
     "ic_alloc",
