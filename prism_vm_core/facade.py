@@ -17,6 +17,13 @@ import jax.numpy as jnp
 from prism_core import jax_safe as _jax_safe
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
+from prism_bsp.config import (
+    Cnf2Config,
+    Cnf2Flags,
+    DEFAULT_CNF2_CONFIG,
+    DEFAULT_CNF2_FLAGS,
+)
+from prism_coord.config import CoordConfig, DEFAULT_COORD_CONFIG
 from prism_vm_core.protocols import EmitCandidatesFn, HostRaiseFn, InternFn
 import os
 
@@ -35,7 +42,6 @@ from prism_vm_core.ontology import OP_ADD, OP_MUL, OP_NULL, OP_ZERO, HostBool
 from prism_vm_core.domains import _host_bool, _host_raise_if_bad
 from prism_vm_core.structures import NodeBatch
 from prism_bsp.space import RANK_FREE
-from prism_bsp.config import Cnf2Config, Cnf2Flags
 from prism_bsp.cnf2 import (
     emit_candidates as _emit_candidates_default,
     compact_candidates as _compact_candidates,
@@ -246,6 +252,14 @@ cnf2_metrics_get = cnf2_metrics_get
 cnf2_metrics_reset = cnf2_metrics_reset
 GPUWatchdog = GPUWatchdog
 _gpu_watchdog_create = _gpu_watchdog_create
+InternConfig = InternConfig
+DEFAULT_INTERN_CONFIG = DEFAULT_INTERN_CONFIG
+Cnf2Config = Cnf2Config
+Cnf2Flags = Cnf2Flags
+DEFAULT_CNF2_CONFIG = DEFAULT_CNF2_CONFIG
+DEFAULT_CNF2_FLAGS = DEFAULT_CNF2_FLAGS
+CoordConfig = CoordConfig
+DEFAULT_COORD_CONFIG = DEFAULT_COORD_CONFIG
 dispatch_kernel = dispatch_kernel
 kernel_add = kernel_add
 kernel_mul = kernel_mul
