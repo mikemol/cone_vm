@@ -16,6 +16,7 @@ from ic_core.protocols import (
     HaltedFn,
     RuleForTypesFn,
     ScanCorruptFn,
+    SafeIndexFn,
 )
 
 
@@ -24,6 +25,7 @@ class ICGraphConfig:
     """Graph-level DI bundle for IC wiring safety."""
 
     safety_policy: SafetyPolicy | None = None
+    safe_index_fn: SafeIndexFn | None = None
 
 
 @dataclass(frozen=True, slots=True)
