@@ -88,6 +88,26 @@ def safe_gather_1d_ok_cfg(
     )
 
 
+def make_safe_gather_fn(
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+    policy=None,
+    safe_gather_fn=None,
+):
+    """Return a SafeGatherFn wired to the provided GuardConfig."""
+    if safe_gather_fn is None:
+        safe_gather_fn = _jax_safe.safe_gather_1d
+
+    def _safe_gather(arr, idx, label, *, policy=policy, return_ok: bool = False):
+        size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
+        guard_gather_index_cfg(idx, size, label, cfg=cfg)
+        return safe_gather_fn(
+            arr, idx, label, guard=False, policy=policy, return_ok=return_ok
+        )
+
+    return _safe_gather
+
+
 def make_safe_index_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
@@ -111,5 +131,6 @@ __all__ = [
     "safe_index_1d_cfg",
     "safe_gather_1d_cfg",
     "safe_gather_1d_ok_cfg",
+    "make_safe_gather_fn",
     "make_safe_index_fn",
 ]
