@@ -15,6 +15,7 @@ on:
       - "src/**"
       - "prism_vm.py"
       - "ic_vm.py"
+      - "interaction_combinator.py"
       - "typecheck/**"
 
 permissions:
