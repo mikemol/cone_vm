@@ -21,6 +21,7 @@ from ic_core.graph import (
     encode_port,
     decode_port,
 )
+from ic_core.config import ICRuleConfig
 
 RULE_ALLOC_ANNIHILATE = jnp.uint32(0)
 RULE_ALLOC_ERASE = jnp.uint32(2)
@@ -417,7 +418,7 @@ def _alloc_plan(
             lambda _: alloc_ids,
             operand=None,
         )
-        return state2, template_ids, alloc_counts, alloc_ids, valid
+    return state2, template_ids, alloc_counts, alloc_ids, valid
 
     return jax.lax.cond(halted_fn(state), _halt, _run, state)
 
@@ -453,6 +454,17 @@ def _apply_template_planned(
     return jax.lax.cond(state.oom | state.corrupt, _noop, _apply, state)
 
 
+DEFAULT_RULE_CONFIG = ICRuleConfig(
+    rule_for_types_fn=ic_rule_for_types,
+    apply_annihilate_fn=ic_apply_annihilate,
+    apply_erase_fn=ic_apply_erase,
+    apply_commute_fn=ic_apply_commute,
+    apply_template_fn=ic_apply_template,
+    alloc_plan_fn=_alloc_plan,
+    apply_template_planned_fn=_apply_template_planned,
+)
+
+
 __all__ = [
     "RULE_ALLOC_ANNIHILATE",
     "RULE_ALLOC_ERASE",
@@ -470,4 +482,5 @@ __all__ = [
     "ic_apply_template",
     "_alloc_plan",
     "_apply_template_planned",
+    "DEFAULT_RULE_CONFIG",
 ]

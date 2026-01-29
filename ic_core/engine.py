@@ -11,6 +11,8 @@ from ic_core.graph import (
     _scan_corrupt_ports,
 )
 from ic_core.rules import TEMPLATE_NONE, _alloc_plan, _apply_template_planned
+from ic_core.config import ICEngineConfig
+from functools import partial
 
 
 class ICRewriteStats(NamedTuple):
@@ -18,6 +20,16 @@ class ICRewriteStats(NamedTuple):
     alloc_nodes: jnp.ndarray
     freed_nodes: jnp.ndarray
     template_counts: jnp.ndarray
+
+
+DEFAULT_ENGINE_CONFIG = ICEngineConfig(
+    compact_pairs_fn=ic_compact_active_pairs,
+    decode_port_fn=decode_port,
+    alloc_plan_fn=_alloc_plan,
+    apply_template_planned_fn=_apply_template_planned,
+    halted_fn=_halted,
+    scan_corrupt_fn=_scan_corrupt_ports,
+)
 
 
 @jax.jit(
@@ -162,4 +174,47 @@ def ic_reduce(
     return s_out, stats_out, steps_out
 
 
-__all__ = ["ICRewriteStats", "ic_apply_active_pairs", "ic_reduce"]
+def ic_apply_active_pairs_cfg(
+    state: ICState, *, cfg: ICEngineConfig = DEFAULT_ENGINE_CONFIG
+) -> Tuple[ICState, ICRewriteStats]:
+    """Interface/Control wrapper for IC apply_active_pairs with DI bundle."""
+    return ic_apply_active_pairs(
+        state,
+        compact_pairs_fn=cfg.compact_pairs_fn,
+        decode_port_fn=cfg.decode_port_fn,
+        alloc_plan_fn=cfg.alloc_plan_fn,
+        apply_template_planned_fn=cfg.apply_template_planned_fn,
+        halted_fn=cfg.halted_fn,
+        scan_corrupt_fn=cfg.scan_corrupt_fn,
+    )
+
+
+def ic_reduce_cfg(
+    state: ICState, max_steps: int, *, cfg: ICEngineConfig = DEFAULT_ENGINE_CONFIG
+) -> Tuple[ICState, ICRewriteStats, jnp.ndarray]:
+    """Interface/Control wrapper for IC reduce with DI bundle."""
+    apply_fn = partial(
+        ic_apply_active_pairs,
+        compact_pairs_fn=cfg.compact_pairs_fn,
+        decode_port_fn=cfg.decode_port_fn,
+        alloc_plan_fn=cfg.alloc_plan_fn,
+        apply_template_planned_fn=cfg.apply_template_planned_fn,
+        halted_fn=cfg.halted_fn,
+        scan_corrupt_fn=cfg.scan_corrupt_fn,
+    )
+    return ic_reduce(
+        state,
+        max_steps,
+        apply_active_pairs_fn=apply_fn,
+        scan_corrupt_fn=cfg.scan_corrupt_fn,
+    )
+
+
+__all__ = [
+    "ICRewriteStats",
+    "DEFAULT_ENGINE_CONFIG",
+    "ic_apply_active_pairs",
+    "ic_reduce",
+    "ic_apply_active_pairs_cfg",
+    "ic_reduce_cfg",
+]
