@@ -4,6 +4,7 @@ from jax import lax
 from functools import partial
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.guards import safe_gather_1d_ok_cfg
 from prism_core.compact import scatter_compacted_ids
 from prism_core.safety import SafetyPolicy, oob_any
 from prism_coord.coord import coord_xor_batch
@@ -359,6 +360,10 @@ def cycle_candidates(
         safe_gather_ok_fn = _maybe_override(
             safe_gather_ok_fn, _jax_safe.safe_gather_1d_ok, cfg.safe_gather_ok_fn
         )
+        if cfg.guard_cfg is not None and safe_gather_ok_fn is _jax_safe.safe_gather_1d_ok:
+            safe_gather_ok_fn = partial(
+                safe_gather_1d_ok_cfg, cfg=cfg.guard_cfg
+            )
         host_bool_value_fn = _maybe_override(
             host_bool_value_fn, _host_bool_value, cfg.host_bool_value_fn
         )
