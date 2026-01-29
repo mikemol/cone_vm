@@ -5,7 +5,7 @@ from functools import partial
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.compact import scatter_compacted_ids
-from prism_core.safety import SafetyPolicy, oob_mask
+from prism_core.safety import SafetyPolicy, oob_any
 from prism_coord.coord import coord_xor_batch
 from prism_ledger.intern import intern_nodes
 from prism_ledger.config import InternConfig
@@ -626,7 +626,7 @@ def cycle_candidates(
         post_ids, ok = apply_q_fn(q_map, next_frontier, return_ok=True)
         meta = getattr(q_map, "_prism_meta", None)
         if meta is not None and meta.safe_gather_policy is not None:
-            corrupt = jnp.any(oob_mask(ok, policy=meta.safe_gather_policy))
+            corrupt = oob_any(ok, policy=meta.safe_gather_policy)
             ledger2 = ledger2._replace(corrupt=ledger2.corrupt | corrupt)
         post_ids = post_ids.a
         post_hash = ledger_roots_hash_host_fn(ledger2, post_ids)

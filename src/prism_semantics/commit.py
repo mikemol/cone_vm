@@ -5,7 +5,7 @@ import jax.numpy as jnp
 from jax import lax
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.safety import SafetyPolicy, oob_mask
+from prism_core.safety import SafetyPolicy, oob_any
 from prism_core.di import wrap_policy
 from prism_ledger.intern import intern_nodes
 from prism_vm_core.constants import _PREFIX_SCAN_CHUNK
@@ -212,7 +212,7 @@ def _apply_stratum_q(
         return out
     if oob_policy is None:
         oob_policy = SafetyPolicy()
-    corrupt = jnp.any(oob_mask(ok, policy=oob_policy))
+    corrupt = oob_any(ok, policy=oob_policy)
     return out, ok, corrupt
 
 

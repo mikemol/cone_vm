@@ -28,4 +28,9 @@ def oob_mask(ok, *, policy: SafetyPolicy = DEFAULT_SAFETY_POLICY):
     return jnp.zeros_like(ok, dtype=jnp.bool_)
 
 
-__all__ = ["SafetyPolicy", "DEFAULT_SAFETY_POLICY", "oob_mask"]
+def oob_any(ok, *, policy: SafetyPolicy = DEFAULT_SAFETY_POLICY):
+    """Return True if OOB should be treated as corruption."""
+    return jnp.any(oob_mask(ok, policy=policy))
+
+
+__all__ = ["SafetyPolicy", "DEFAULT_SAFETY_POLICY", "oob_mask", "oob_any"]
