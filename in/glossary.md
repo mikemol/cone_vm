@@ -198,6 +198,47 @@ pretty(denote(q(rewrite(propose(x))))) = pretty(denote(q(propose(rewrite(x)))))
 
 ---
 
+## 3.1 SafetyPolicy / GuardConfig / SafeIndex
+
+### SafetyPolicy (OOB Handling)
+
+**Axis:** Interface/Control (runtime safety; host-visible)
+
+SafetyPolicy specifies how out-of-bounds indices are handled in
+`safe_gather_1d` / `safe_index_1d`:
+
+* **corrupt** — propagate OOB as semantic corruption
+* **clamp** — clamp indices, do not corrupt
+* **drop** — ignore OOB (masked / scatter-drop semantics)
+
+**Desired Commutation:** SafetyPolicy must commute with `q` and be erased by `q`.
+
+**Normative Rule:** Any non-default SafetyPolicy must be explicit at the
+facade/config boundary. Silent overrides are invalid.
+
+**Test Obligations:**
+
+- (m1) `tests/test_gather_guard.py`
+- (m6) `tests/test_ic_guard_cfg_smoke.py`
+
+### GuardConfig (Debug Guard Surface)
+
+**Axis:** Interface/Control (diagnostic guards; host-visible)
+
+GuardConfig specifies debug-only guard hooks (e.g., `guard_gather_index`) used
+to surface invalid indices without altering denotation.
+
+**Desired Commutation:** GuardConfig must commute with `q` and be erased by `q`.
+
+**Normative Rule:** GuardConfig affects diagnostics only; it must never change
+canonical identity or rewrite semantics.
+
+**Test Obligations:**
+
+- (m1) `tests/test_gather_guard.py`
+- (m6) `tests/test_ic_guard_cfg_smoke.py`
+
+
 ## 4. Collapse
 
 ### Meanings (must be qualified)
