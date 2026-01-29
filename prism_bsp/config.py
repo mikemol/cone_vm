@@ -72,6 +72,7 @@ class Cnf2Config:
     host_int_value_fn: HostIntValueFn | None = None
     guards_enabled_fn: GuardsEnabledFn | None = None
     ledger_roots_hash_host_fn: LedgerRootsHashFn | None = None
+    safe_gather_policy: SafetyPolicy | None = None
     cnf2_enabled_fn: Callable[[], bool] | None = None
     cnf2_slot1_enabled_fn: Callable[[], bool] | None = None
     cnf2_metrics_enabled_fn: Callable[[], bool] | None = None
