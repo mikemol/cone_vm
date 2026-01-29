@@ -43,7 +43,11 @@ from prism_vm_core.structures import (
     hyperstrata_precedes,
     staging_context_forgets_detail,
 )
-from prism_core.compact import CompactResult
+from prism_core.compact import (
+    CompactResult,
+    CompactConfig,
+    DEFAULT_COMPACT_CONFIG,
+)
 from prism_core.alloc import AllocConfig, DEFAULT_ALLOC_CONFIG
 from prism_vm_core.domains import (
     QMap,
@@ -90,6 +94,8 @@ __all__ = [
     "Arena",
     "CandidateBuffer",
     "CompactResult",
+    "CompactConfig",
+    "DEFAULT_COMPACT_CONFIG",
     "AllocConfig",
     "DEFAULT_ALLOC_CONFIG",
     "Ledger",

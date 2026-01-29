@@ -1,17 +1,38 @@
 import jax.numpy as jnp
 
-from prism_core.compact import CompactResult, compact_mask
+from prism_core.compact import (
+    CompactResult,
+    CompactConfig,
+    compact_mask_cfg,
+)
+
+DEFAULT_CANDIDATE_COMPACT_CONFIG = CompactConfig(
+    index_dtype=jnp.int32, count_dtype=jnp.int32
+)
 
 
-def _candidate_indices(enabled) -> CompactResult:
-    return compact_mask(enabled, index_dtype=jnp.int32, count_dtype=jnp.int32)
+def _candidate_indices(
+    enabled, *, compact_cfg: CompactConfig | None = None
+) -> CompactResult:
+    if compact_cfg is None:
+        compact_cfg = DEFAULT_CANDIDATE_COMPACT_CONFIG
+    return compact_mask_cfg(enabled, cfg=compact_cfg)
 
 
-def candidate_indices_cfg(enabled, *, candidate_indices_fn=None):
+def candidate_indices_cfg(
+    enabled,
+    *,
+    candidate_indices_fn=None,
+    compact_cfg: CompactConfig | None = None,
+):
     """Interface/Control wrapper for candidate index selection."""
     if candidate_indices_fn is None:
-        candidate_indices_fn = _candidate_indices
+        return _candidate_indices(enabled, compact_cfg=compact_cfg)
     return candidate_indices_fn(enabled)
 
 
-__all__ = ["_candidate_indices", "candidate_indices_cfg"]
+__all__ = [
+    "_candidate_indices",
+    "candidate_indices_cfg",
+    "DEFAULT_CANDIDATE_COMPACT_CONFIG",
+]

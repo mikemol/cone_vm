@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import NamedTuple
 
 import jax.numpy as jnp
@@ -7,6 +8,17 @@ class CompactResult(NamedTuple):
     idx: jnp.ndarray
     valid: jnp.ndarray
     count: jnp.ndarray
+
+
+@dataclass(frozen=True, slots=True)
+class CompactConfig:
+    """Compact/selection DI bundle (shared)."""
+
+    index_dtype: jnp.dtype | None = None
+    count_dtype: jnp.dtype | None = None
+
+
+DEFAULT_COMPACT_CONFIG = CompactConfig()
 
 
 def compact_mask(mask, *, index_dtype=None, count_dtype=None):
@@ -25,6 +37,16 @@ def compact_mask(mask, *, index_dtype=None, count_dtype=None):
     comp_dtype = idx.dtype
     valid = jnp.arange(size, dtype=comp_dtype) < count.astype(comp_dtype)
     return CompactResult(idx=idx, valid=valid, count=count)
+
+
+def compact_mask_cfg(mask, *, cfg: CompactConfig = DEFAULT_COMPACT_CONFIG):
+    """compact_mask wrapper for a fixed CompactConfig."""
+    return compact_mask(
+        mask,
+        index_dtype=cfg.index_dtype,
+        count_dtype=cfg.count_dtype,
+    )
+
 
 def scatter_compacted_ids(
     comp_idx,
@@ -45,4 +67,11 @@ def scatter_compacted_ids(
     )
 
 
-__all__ = ["CompactResult", "compact_mask", "scatter_compacted_ids"]
+__all__ = [
+    "CompactResult",
+    "CompactConfig",
+    "DEFAULT_COMPACT_CONFIG",
+    "compact_mask",
+    "compact_mask_cfg",
+    "scatter_compacted_ids",
+]
