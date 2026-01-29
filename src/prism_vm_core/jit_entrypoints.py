@@ -11,6 +11,7 @@ import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.di import cached_jit, resolve, wrap_policy
+from prism_core.guards import GuardConfig, make_safe_gather_fn
 from prism_core.safety import SafetyPolicy
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -101,11 +102,19 @@ def op_interact_jit(
     scatter_drop_fn=_jax_safe.scatter_drop,
     guard_max_fn=None,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     """Return a jitted op_interact entrypoint for fixed DI."""
     if guard_max_fn is None:
         from prism_vm_core.guards import _guard_max as guard_max_fn  # type: ignore
-    safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
+    if guard_cfg is not None:
+        safe_gather_fn = make_safe_gather_fn(
+            cfg=guard_cfg,
+            policy=safe_gather_policy,
+            safe_gather_fn=safe_gather_fn,
+        )
+    else:
+        safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
     return _op_interact_jit(safe_gather_fn, scatter_drop_fn, guard_max_fn)
 
 
@@ -120,6 +129,7 @@ def op_interact_jit_cfg(
         scatter_drop_fn=resolve(cfg.scatter_drop_fn, _jax_safe.scatter_drop),
         guard_max_fn=cfg.guard_max_fn,
         safe_gather_policy=cfg.safe_gather_policy,
+        guard_cfg=cfg.guard_cfg,
     )
 
 
@@ -404,11 +414,19 @@ def cycle_jit(
     op_interact_fn=_op_interact,
     test_guards: bool = False,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
 ):
     """Return a jitted cycle entrypoint for fixed DI."""
     if test_guards:
         raise RuntimeError("cycle_jit is disabled under TEST_GUARDS")
-    safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
+    if guard_cfg is not None:
+        safe_gather_fn = make_safe_gather_fn(
+            cfg=guard_cfg,
+            policy=safe_gather_policy,
+            safe_gather_fn=safe_gather_fn,
+        )
+    else:
+        safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
     servo_enabled_value = bool(servo_enabled_fn())
     return _cycle_jit(
         do_sort,
@@ -477,6 +495,7 @@ def cycle_jit_cfg(
             op_interact_fn = op_interact_jit(
                 safe_gather_fn=safe_gather_fn,
                 safe_gather_policy=cfg.safe_gather_policy,
+                guard_cfg=cfg.guard_cfg,
             )
         else:
             op_interact_fn = _op_interact
@@ -500,6 +519,7 @@ def cycle_jit_cfg(
         op_interact_fn=op_interact_fn,
         test_guards=test_guards,
         safe_gather_policy=cfg.safe_gather_policy,
+        guard_cfg=cfg.guard_cfg,
     )
 
 
