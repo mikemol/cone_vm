@@ -2,6 +2,8 @@ import os
 import jax
 import jax.numpy as jnp
 
+from prism_core.safety import DEFAULT_SAFETY_POLICY, SafetyPolicy
+
 TEST_GUARDS = os.environ.get("PRISM_TEST_GUARDS", "").strip().lower() in (
     "1",
     "true",
@@ -100,23 +102,55 @@ def guard_gather_index(idx, size, label, guard=None):
     jax.debug.callback(_raise, bad, min_idx, max_idx, size)
 
 
-def safe_gather_1d(arr, idx, label="safe_gather_1d", guard=None):
-    # Guarded gather: raise on invalid indices in test mode; always clamp for
-    # deterministic OOB behavior across backends.
+def safe_gather_1d(
+    arr,
+    idx,
+    label="safe_gather_1d",
+    guard=None,
+    *,
+    policy: SafetyPolicy | None = None,
+    return_ok: bool = False,
+):
+    """Guarded gather with explicit SafetyPolicy handling."""
+    if policy is None:
+        policy = DEFAULT_SAFETY_POLICY
     size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
     idx_i = jnp.asarray(idx, dtype=jnp.int32)
     guard_gather_index(idx_i, size, label, guard=guard)
+    ok = (idx_i >= 0) & (idx_i < size)
     idx_safe = jnp.clip(idx_i, 0, size - 1)
-    return arr[idx_safe]
+    if policy.mode == "drop":
+        idx_safe = jnp.where(ok, idx_safe, jnp.int32(0))
+    values = arr[idx_safe]
+    if policy.mode == "drop":
+        values = jnp.where(ok, values, jnp.zeros_like(values))
+    if policy.mode == "clamp":
+        ok = jnp.ones_like(ok, dtype=jnp.bool_)
+    if return_ok:
+        return values, ok
+    return values
 
 
-def safe_index_1d(idx, size, label="safe_index_1d", guard=None):
-    """Return a clamped index and an in-bounds mask for 1D indexing."""
+def safe_index_1d(
+    idx,
+    size,
+    label="safe_index_1d",
+    guard=None,
+    *,
+    policy: SafetyPolicy | None = None,
+):
+    """Return a policy-aware safe index and in-bounds mask."""
+    if policy is None:
+        policy = DEFAULT_SAFETY_POLICY
     size_i = jnp.asarray(size, dtype=jnp.int32)
     idx_i = jnp.asarray(idx, dtype=jnp.int32)
     guard_gather_index(idx_i, size_i, label, guard=guard)
     ok = (idx_i >= 0) & (idx_i < size_i)
     idx_safe = jnp.clip(idx_i, 0, size_i - 1)
+    if policy.mode == "drop":
+        idx_safe = jnp.where(ok, idx_safe, jnp.int32(0))
+    if policy.mode == "clamp":
+        ok = jnp.ones_like(ok, dtype=jnp.bool_)
     return idx_safe, ok
 
 

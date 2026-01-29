@@ -14,6 +14,7 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.safety import SafetyPolicy, DEFAULT_SAFETY_POLICY, oob_mask
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
 from prism_bsp.config import (
@@ -173,6 +174,9 @@ _scatter_guard = _jax_safe.scatter_guard
 _scatter_guard_strict = _jax_safe.scatter_guard_strict
 _scatter_drop = _jax_safe.scatter_drop
 _scatter_strict = _jax_safe.scatter_strict
+SafetyPolicy = SafetyPolicy
+DEFAULT_SAFETY_POLICY = DEFAULT_SAFETY_POLICY
+oob_mask = oob_mask
 GuardConfig = GuardConfig
 DEFAULT_GUARD_CONFIG = DEFAULT_GUARD_CONFIG
 guards_enabled_cfg = guards_enabled_cfg
@@ -183,7 +187,15 @@ guard_zero_row_cfg = guard_zero_row_cfg
 guard_zero_args_cfg = guard_zero_args_cfg
 guard_swizzle_args_cfg = guard_swizzle_args_cfg
 
-def safe_gather_1d(arr, idx, label="safe_gather_1d", *, guard=None):
+def safe_gather_1d(
+    arr,
+    idx,
+    label="safe_gather_1d",
+    *,
+    guard=None,
+    policy: SafetyPolicy | None = None,
+    return_ok: bool = False,
+):
     """Interface/Control wrapper for gather guards.
 
     Axis: Interface/Control. Commutes with q. Erased by q.
@@ -191,7 +203,9 @@ def safe_gather_1d(arr, idx, label="safe_gather_1d", *, guard=None):
     """
     if guard is None:
         guard = _GATHER_GUARD
-    return _jax_safe.safe_gather_1d(arr, idx, label, guard=guard)
+    return _jax_safe.safe_gather_1d(
+        arr, idx, label, guard=guard, policy=policy, return_ok=return_ok
+    )
 
 
 def node_batch(op, a1, a2) -> NodeBatch:

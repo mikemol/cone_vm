@@ -43,6 +43,7 @@ from prism_vm_core.structures import (
     hyperstrata_precedes,
     staging_context_forgets_detail,
 )
+from prism_core.compact import CompactResult
 from prism_vm_core.domains import (
     QMap,
     _arena_ptr,
@@ -87,6 +88,7 @@ __all__ = [
     "ZERO_PTR",
     "Arena",
     "CandidateBuffer",
+    "CompactResult",
     "Ledger",
     "Manifest",
     "NodeBatch",
