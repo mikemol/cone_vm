@@ -697,6 +697,9 @@ def cycle_cfg(
         guard_cfg=cfg.guard_cfg,
     )
     safe_gather_value_fn = cfg.safe_gather_value_fn
+    if cfg.safe_gather_policy_value is not None:
+        if safe_gather_value_fn is None:
+            safe_gather_value_fn = _jax_safe.safe_gather_1d_value
         if cfg.op_sort_and_swizzle_with_perm_fn is None:
             op_sort_and_swizzle_with_perm_fn = op_sort_and_swizzle_with_perm_value
         if cfg.op_sort_and_swizzle_morton_with_perm_fn is None:
