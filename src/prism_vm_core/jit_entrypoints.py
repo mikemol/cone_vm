@@ -17,7 +17,13 @@ from prism_core.guards import (
     resolve_safe_gather_fn,
     resolve_safe_gather_value_fn,
 )
-from prism_core.safety import SafetyPolicy, DEFAULT_SAFETY_POLICY, POLICY_VALUE_DEFAULT
+from prism_core.safety import (
+    PolicyMode,
+    SafetyPolicy,
+    DEFAULT_SAFETY_POLICY,
+    POLICY_VALUE_DEFAULT,
+    resolve_policy_binding,
+)
 from prism_core.modes import ValidateMode
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -595,14 +601,12 @@ def cycle_candidates_jit(
     cnf2_slot1_enabled_fn=None,
 ):
     """Return a jitted cycle_candidates entrypoint for fixed DI."""
-    if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise PrismPolicyBindingError(
-            "cycle_candidates_jit received both safe_gather_policy and "
-            "safe_gather_policy_value",
-            context="cycle_candidates_jit",
-            policy_mode="ambiguous",
-        )
-    if safe_gather_policy_value is not None:
+    binding = resolve_policy_binding(
+        policy=safe_gather_policy,
+        policy_value=safe_gather_policy_value,
+        context="cycle_candidates_jit",
+    )
+    if binding.mode == PolicyMode.VALUE:
         return cycle_candidates_value_jit(
             validate_stratum=validate_stratum,
             validate_mode=validate_mode,
@@ -610,7 +614,7 @@ def cycle_candidates_jit(
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
             host_raise_if_bad_fn=host_raise_if_bad_fn,
-            safe_gather_policy_value=safe_gather_policy_value,
+            safe_gather_policy_value=binding.policy_value,
             guard_cfg=guard_cfg,
             cnf2_cfg=cnf2_cfg,
             cnf2_flags=cnf2_flags,
@@ -624,7 +628,7 @@ def cycle_candidates_jit(
         intern_cfg=intern_cfg,
         emit_candidates_fn=emit_candidates_fn,
         host_raise_if_bad_fn=host_raise_if_bad_fn,
-        safe_gather_policy=safe_gather_policy,
+        safe_gather_policy=binding.policy,
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,

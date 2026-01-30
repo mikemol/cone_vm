@@ -19,6 +19,7 @@ from prism_core.di import call_with_optional_kwargs
 from prism_core.safety import (
     PolicyMode,
     coerce_policy_mode,
+    PolicyBinding,
     SafetyMode,
     coerce_safety_mode,
     SafetyPolicy,
@@ -32,6 +33,7 @@ from prism_core.safety import (
     oob_any_value,
     oob_mask,
     oob_mask_value,
+    resolve_policy_binding,
 )
 from prism_core.modes import (
     ValidateMode,
@@ -1307,14 +1309,12 @@ def cycle_candidates(
     Axis: Interface/Control. Commutes with q. Erased by q.
     Test: tests/test_candidate_cycle.py
     """
-    if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise PrismPolicyBindingError(
-            "cycle_candidates received both safe_gather_policy and "
-            "safe_gather_policy_value",
-            context="cycle_candidates",
-            policy_mode="ambiguous",
-        )
-    if safe_gather_policy_value is not None:
+    binding = resolve_policy_binding(
+        policy=safe_gather_policy,
+        policy_value=safe_gather_policy_value,
+        context="cycle_candidates",
+    )
+    if binding.mode == PolicyMode.VALUE:
         return cycle_candidates_value(
             ledger,
             frontier_ids,
@@ -1324,7 +1324,7 @@ def cycle_candidates(
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
             host_raise_if_bad_fn=host_raise_if_bad_fn,
-            safe_gather_policy_value=safe_gather_policy_value,
+            safe_gather_policy_value=binding.policy_value,
             guard_cfg=guard_cfg,
             cnf2_cfg=cnf2_cfg,
             cnf2_flags=cnf2_flags,
@@ -1340,7 +1340,7 @@ def cycle_candidates(
         intern_cfg=intern_cfg,
         emit_candidates_fn=emit_candidates_fn,
         host_raise_if_bad_fn=host_raise_if_bad_fn,
-        safe_gather_policy=safe_gather_policy,
+        safe_gather_policy=binding.policy,
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,

@@ -81,6 +81,8 @@ __all__ = [
     "coerce_safety_mode",
     "PolicyMode",
     "coerce_policy_mode",
+    "PolicyBinding",
+    "resolve_policy_binding",
     "ValidateMode",
     "coerce_validate_mode",
     "BspMode",
