@@ -2,7 +2,14 @@
 
 import importlib
 
-from prism_core.errors import PrismExportMissingError
+from prism_core.errors import (
+    PrismExportMissingError,
+    PrismPolicyBindingError,
+    PrismPolicyModeError,
+    PrismValidateModeError,
+    PrismBspModeError,
+    PrismSafetyModeError,
+)
 
 from prism_vm_core import facade as _facade
 from prism_vm_core import types as _types
@@ -21,6 +28,12 @@ __all__ = [
     "OP_COORD_PAIR",
     "ZERO_PTR",
     "OP_NAMES",
+    "PrismExportMissingError",
+    "PrismPolicyBindingError",
+    "PrismPolicyModeError",
+    "PrismValidateModeError",
+    "PrismBspModeError",
+    "PrismSafetyModeError",
     "ManifestPtr",
     "LedgerId",
     "ArenaPtr",
