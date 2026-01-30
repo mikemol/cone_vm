@@ -496,6 +496,8 @@ from prism_bsp.cnf2 import (
 from prism_vm_core.jit_entrypoints import (
     coord_norm_batch_jit,
     cycle_candidates_jit,
+    cycle_candidates_static_jit,
+    cycle_candidates_value_jit,
     cycle_intrinsic_jit,
     cycle_intrinsic_jit_cfg,
     cycle_jit as _cycle_jit_factory,
