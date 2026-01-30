@@ -188,6 +188,8 @@ __all__ = [
     "intern_candidates_jit",
     "intern_candidates_jit_cfg",
     "cycle_candidates_jit",
+    "cycle_candidates_static_jit",
+    "cycle_candidates_value_jit",
     "compact_candidates",
     "compact_candidates_result",
     "compact_candidates_cfg",

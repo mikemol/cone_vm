@@ -16,7 +16,7 @@ from prism_core.guards import (
     resolve_safe_gather_fn,
     resolve_safe_gather_value_fn,
 )
-from prism_core.safety import SafetyPolicy
+from prism_core.safety import SafetyPolicy, DEFAULT_SAFETY_POLICY, POLICY_VALUE_DEFAULT
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
 from prism_bsp.config import (
@@ -39,6 +39,9 @@ from prism_bsp.cnf2 import (
     compact_candidates_with_index as _compact_candidates_with_index,
     compact_candidates_with_index_result as _compact_candidates_with_index_result,
     intern_candidates as _intern_candidates,
+    cycle_candidates as _cycle_candidates_impl,
+    cycle_candidates_static as _cycle_candidates_static,
+    cycle_candidates_value as _cycle_candidates_value,
 )
 from prism_bsp.arena_step import (
     cycle_core as _cycle_core,
@@ -69,7 +72,6 @@ from prism_vm_core.gating import (
     _servo_enabled,
 )
 from prism_ledger.intern import _coord_norm_id_jax
-from prism_bsp.cnf2 import cycle_candidates as _cycle_candidates_impl
 
 
 def _noop_root_hash(_arena, _root):
@@ -355,7 +357,7 @@ def intern_candidates_jit_cfg(
     )
 
 
-def cycle_candidates_jit(
+def cycle_candidates_static_jit(
     *,
     validate_stratum: bool = False,
     validate_mode: str = "strict",
@@ -364,14 +366,13 @@ def cycle_candidates_jit(
     emit_candidates_fn: EmitCandidatesFn | None = None,
     host_raise_if_bad_fn: HostRaiseFn | None = None,
     safe_gather_policy: SafetyPolicy | None = None,
-    safe_gather_policy_value: jnp.ndarray | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
-    """Return a jitted cycle_candidates entrypoint for fixed DI."""
+    """Return a jitted cycle_candidates entrypoint (static policy)."""
     def _resolve_gate(flag_value, fn_value, default_fn):
         if flag_value is not None:
             return bool(flag_value)
@@ -394,6 +395,115 @@ def cycle_candidates_jit(
             emit_candidates_fn = cnf2_cfg.emit_candidates_fn
         if safe_gather_policy is None and cnf2_cfg.safe_gather_policy is not None:
             safe_gather_policy = cnf2_cfg.safe_gather_policy
+        if (
+            cnf2_cfg.safe_gather_policy_value is not None
+        ):
+            raise ValueError(
+                "cycle_candidates_static_jit received cfg.safe_gather_policy_value; "
+                "use cycle_candidates_value_jit"
+            )
+        if guard_cfg is None and cnf2_cfg.guard_cfg is not None:
+            guard_cfg = cnf2_cfg.guard_cfg
+        if cnf2_enabled_fn is None and cnf2_cfg.cnf2_enabled_fn is not None:
+            cnf2_enabled_fn = cnf2_cfg.cnf2_enabled_fn
+        if cnf2_slot1_enabled_fn is None and cnf2_cfg.cnf2_slot1_enabled_fn is not None:
+            cnf2_slot1_enabled_fn = cnf2_cfg.cnf2_slot1_enabled_fn
+        cnf2_flags = cnf2_cfg.flags if cnf2_flags is None else cnf2_flags
+    if cnf2_flags is not None:
+        if cnf2_enabled_fn is not None or cnf2_slot1_enabled_fn is not None:
+            raise ValueError("Pass either cnf2_flags or cnf2_*_enabled_fn, not both.")
+        enabled_value = _resolve_gate(
+            cnf2_flags.enabled, None, _cnf2_enabled_default
+        )
+        slot1_value = _resolve_gate(
+            cnf2_flags.slot1_enabled, None, _cnf2_slot1_enabled_default
+        )
+        cnf2_enabled_fn = lambda: enabled_value
+        cnf2_slot1_enabled_fn = lambda: slot1_value
+    if emit_candidates_fn is None:
+        emit_candidates_fn = _emit_candidates_default
+    if cnf2_flags is None:
+        enabled_value = _resolve_gate(None, cnf2_enabled_fn, _cnf2_enabled_default)
+        slot1_value = _resolve_gate(
+            None, cnf2_slot1_enabled_fn, _cnf2_slot1_enabled_default
+        )
+        cnf2_enabled_fn = lambda: enabled_value
+        cnf2_slot1_enabled_fn = lambda: slot1_value
+    if host_raise_if_bad_fn is None:
+        host_raise_if_bad_fn = _host_raise_if_bad
+    if not cnf2_enabled_fn():
+        raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
+    if safe_gather_policy is None:
+        safe_gather_policy = DEFAULT_SAFETY_POLICY
+
+    @jax.jit
+    def _impl(ledger, frontier_ids):
+        return _cycle_candidates_static(
+            ledger,
+            frontier_ids,
+            validate_stratum=validate_stratum,
+            validate_mode=validate_mode,
+            cfg=cnf2_cfg,
+            safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            cnf2_enabled_fn=cnf2_enabled_fn,
+            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        )
+
+    def _run(ledger, frontier_ids):
+        out = _impl(ledger, frontier_ids)
+        out_ledger = out[0]
+        if not bool(jax.device_get(out_ledger.corrupt)):
+            host_raise_if_bad_fn(out_ledger, "Ledger capacity exceeded during cycle")
+        return out
+
+    return _run
+
+
+def cycle_candidates_value_jit(
+    *,
+    validate_stratum: bool = False,
+    validate_mode: str = "strict",
+    intern_fn: InternFn | None = None,
+    intern_cfg: InternConfig | None = None,
+    emit_candidates_fn: EmitCandidatesFn | None = None,
+    host_raise_if_bad_fn: HostRaiseFn | None = None,
+    safe_gather_policy_value: jnp.ndarray | None = None,
+    guard_cfg: GuardConfig | None = None,
+    cnf2_cfg: Cnf2Config | None = None,
+    cnf2_flags: Cnf2Flags | None = None,
+    cnf2_enabled_fn=None,
+    cnf2_slot1_enabled_fn=None,
+):
+    """Return a jitted cycle_candidates entrypoint (policy as JAX value)."""
+    def _resolve_gate(flag_value, fn_value, default_fn):
+        if flag_value is not None:
+            return bool(flag_value)
+        if fn_value is not None:
+            return bool(fn_value())
+        return bool(default_fn())
+
+    if intern_fn is None:
+        intern_fn = _ledger_intern.intern_nodes
+    if cnf2_cfg is not None and cnf2_flags is not None:
+        cnf2_cfg = replace(cnf2_cfg, flags=cnf2_flags)
+    elif cnf2_cfg is None and cnf2_flags is not None:
+        cnf2_cfg = Cnf2Config(flags=cnf2_flags)
+    if cnf2_cfg is not None:
+        if intern_cfg is None:
+            intern_cfg = cnf2_cfg.intern_cfg
+        if intern_fn is None and cnf2_cfg.intern_fn is not None:
+            intern_fn = cnf2_cfg.intern_fn
+        if emit_candidates_fn is None and cnf2_cfg.emit_candidates_fn is not None:
+            emit_candidates_fn = cnf2_cfg.emit_candidates_fn
+        if cnf2_cfg.safe_gather_policy is not None:
+            raise ValueError(
+                "cycle_candidates_value_jit received cfg.safe_gather_policy; "
+                "use cycle_candidates_static_jit"
+            )
         if (
             safe_gather_policy_value is None
             and cnf2_cfg.safe_gather_policy_value is not None
@@ -428,23 +538,19 @@ def cycle_candidates_jit(
         cnf2_slot1_enabled_fn = lambda: slot1_value
     if host_raise_if_bad_fn is None:
         host_raise_if_bad_fn = _host_raise_if_bad
-    if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
-            "cycle_candidates_jit received both safe_gather_policy and "
-            "safe_gather_policy_value"
-        )
     if not cnf2_enabled_fn():
         raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
+    if safe_gather_policy_value is None:
+        safe_gather_policy_value = POLICY_VALUE_DEFAULT
 
     @jax.jit
     def _impl(ledger, frontier_ids):
-        return _cycle_candidates_impl(
+        return _cycle_candidates_value(
             ledger,
             frontier_ids,
             validate_stratum=validate_stratum,
             validate_mode=validate_mode,
             cfg=cnf2_cfg,
-            safe_gather_policy=safe_gather_policy,
             safe_gather_policy_value=safe_gather_policy_value,
             guard_cfg=guard_cfg,
             intern_fn=intern_fn,
@@ -464,6 +570,57 @@ def cycle_candidates_jit(
     return _run
 
 
+def cycle_candidates_jit(
+    *,
+    validate_stratum: bool = False,
+    validate_mode: str = "strict",
+    intern_fn: InternFn | None = None,
+    intern_cfg: InternConfig | None = None,
+    emit_candidates_fn: EmitCandidatesFn | None = None,
+    host_raise_if_bad_fn: HostRaiseFn | None = None,
+    safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: jnp.ndarray | None = None,
+    guard_cfg: GuardConfig | None = None,
+    cnf2_cfg: Cnf2Config | None = None,
+    cnf2_flags: Cnf2Flags | None = None,
+    cnf2_enabled_fn=None,
+    cnf2_slot1_enabled_fn=None,
+):
+    """Return a jitted cycle_candidates entrypoint for fixed DI."""
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "cycle_candidates_jit received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if safe_gather_policy_value is not None:
+        return cycle_candidates_value_jit(
+            validate_stratum=validate_stratum,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            host_raise_if_bad_fn=host_raise_if_bad_fn,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+            cnf2_cfg=cnf2_cfg,
+            cnf2_flags=cnf2_flags,
+            cnf2_enabled_fn=cnf2_enabled_fn,
+            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        )
+    return cycle_candidates_static_jit(
+        validate_stratum=validate_stratum,
+        validate_mode=validate_mode,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        emit_candidates_fn=emit_candidates_fn,
+        host_raise_if_bad_fn=host_raise_if_bad_fn,
+        safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+        cnf2_cfg=cnf2_cfg,
+        cnf2_flags=cnf2_flags,
+        cnf2_enabled_fn=cnf2_enabled_fn,
+        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+    )
 @cached_jit
 def _cycle_jit(
     do_sort,
@@ -844,6 +1001,8 @@ __all__ = [
     "intern_candidates_jit",
     "intern_candidates_jit_cfg",
     "cycle_candidates_jit",
+    "cycle_candidates_static_jit",
+    "cycle_candidates_value_jit",
     "cycle_jit",
     "cycle_jit_cfg",
     "cycle_value_jit",
