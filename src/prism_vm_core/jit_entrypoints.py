@@ -178,9 +178,21 @@ def op_interact_jit_cfg(
     """Return a jitted op_interact entrypoint for a fixed config."""
     if cfg is None:
         cfg = DEFAULT_ARENA_INTERACT_CONFIG
+    safe_gather_policy = cfg.safe_gather_policy
+    safe_gather_policy_value = cfg.safe_gather_policy_value
+    if cfg.policy_binding is not None:
+        if safe_gather_policy is not None or safe_gather_policy_value is not None:
+            raise PrismPolicyBindingError(
+                "op_interact_jit_cfg received both policy_binding and "
+                "safe_gather_policy/safe_gather_policy_value",
+                context="op_interact_jit_cfg",
+                policy_mode="ambiguous",
+            )
+        safe_gather_policy = cfg.policy_binding.policy
+        safe_gather_policy_value = cfg.policy_binding.policy_value
     binding = resolve_policy_binding(
-        policy=cfg.safe_gather_policy,
-        policy_value=cfg.safe_gather_policy_value,
+        policy=safe_gather_policy,
+        policy_value=safe_gather_policy_value,
         context="op_interact_jit_cfg",
     )
     if binding.mode == PolicyMode.VALUE:
@@ -846,9 +858,21 @@ def cycle_jit_cfg(
     """Return a jitted cycle entrypoint for a fixed config."""
     if cfg is None:
         cfg = DEFAULT_ARENA_CYCLE_CONFIG
+    safe_gather_policy = cfg.safe_gather_policy
+    safe_gather_policy_value = cfg.safe_gather_policy_value
+    if cfg.policy_binding is not None:
+        if safe_gather_policy is not None or safe_gather_policy_value is not None:
+            raise PrismPolicyBindingError(
+                "cycle_jit_cfg received both policy_binding and "
+                "safe_gather_policy/safe_gather_policy_value",
+                context="cycle_jit_cfg",
+                policy_mode="ambiguous",
+            )
+        safe_gather_policy = cfg.policy_binding.policy
+        safe_gather_policy_value = cfg.policy_binding.policy_value
     binding = resolve_policy_binding(
-        policy=cfg.safe_gather_policy,
-        policy_value=cfg.safe_gather_policy_value,
+        policy=safe_gather_policy,
+        policy_value=safe_gather_policy_value,
         context="cycle_jit_cfg",
     )
     if binding.mode == PolicyMode.VALUE:
