@@ -5,6 +5,7 @@ from typing import NamedTuple, Tuple
 
 from prism_core import alloc as _alloc
 from prism_core.jax_safe import safe_index_1d
+from prism_core.di import call_with_optional_kwargs
 from prism_core.compact import CompactConfig, CompactResult, compact_mask_cfg
 from prism_core.safety import DEFAULT_SAFETY_POLICY, SafetyPolicy, oob_mask
 from ic_core.domains import _node_id, _port_id
@@ -149,8 +150,12 @@ def ic_wire_jax(
         n_nodes = s.ports.shape[0]
         na_i = jnp.asarray(node_a_u, dtype=jnp.int32)
         nb_i = jnp.asarray(node_b_u, dtype=jnp.int32)
-        na_safe, ok_a = index_fn(na_i, n_nodes, "ic_wire_jax.na", policy=policy)
-        nb_safe, ok_b = index_fn(nb_i, n_nodes, "ic_wire_jax.nb", policy=policy)
+        na_safe, ok_a = call_with_optional_kwargs(
+            index_fn, {"policy": policy}, na_i, n_nodes, "ic_wire_jax.na"
+        )
+        nb_safe, ok_b = call_with_optional_kwargs(
+            index_fn, {"policy": policy}, nb_i, n_nodes, "ic_wire_jax.nb"
+        )
         node_a_u = na_safe.astype(jnp.uint32)
         node_b_u = nb_safe.astype(jnp.uint32)
         port_a_u = port_a_u & jnp.uint32(0x3)
@@ -191,11 +196,11 @@ def ic_wire_ptrs_jax(
         n_nodes = s.ports.shape[0]
         na_i = jnp.asarray(na, dtype=jnp.int32)
         nb_i = jnp.asarray(nb, dtype=jnp.int32)
-        na_safe, ok_a = index_fn(
-            na_i, n_nodes, "ic_wire_ptrs_jax.na", policy=policy
+        na_safe, ok_a = call_with_optional_kwargs(
+            index_fn, {"policy": policy}, na_i, n_nodes, "ic_wire_ptrs_jax.na"
         )
-        nb_safe, ok_b = index_fn(
-            nb_i, n_nodes, "ic_wire_ptrs_jax.nb", policy=policy
+        nb_safe, ok_b = call_with_optional_kwargs(
+            index_fn, {"policy": policy}, nb_i, n_nodes, "ic_wire_ptrs_jax.nb"
         )
         na = na_safe.astype(jnp.uint32)
         nb = nb_safe.astype(jnp.uint32)
@@ -264,11 +269,11 @@ def ic_wire_pairs_jax(
         n_nodes = s.ports.shape[0]
         na_i = jnp.asarray(node_a_u, dtype=jnp.int32)
         nb_i = jnp.asarray(node_b_u, dtype=jnp.int32)
-        na_safe, ok_a = index_fn(
-            na_i, n_nodes, "ic_wire_pairs_jax.na", policy=policy
+        na_safe, ok_a = call_with_optional_kwargs(
+            index_fn, {"policy": policy}, na_i, n_nodes, "ic_wire_pairs_jax.na"
         )
-        nb_safe, ok_b = index_fn(
-            nb_i, n_nodes, "ic_wire_pairs_jax.nb", policy=policy
+        nb_safe, ok_b = call_with_optional_kwargs(
+            index_fn, {"policy": policy}, nb_i, n_nodes, "ic_wire_pairs_jax.nb"
         )
         na = na_safe.astype(jnp.uint32)
         nb = nb_safe.astype(jnp.uint32)
@@ -323,11 +328,11 @@ def ic_wire_ptr_pairs_jax(
         n_nodes = s.ports.shape[0]
         na_i = jnp.asarray(na, dtype=jnp.int32)
         nb_i = jnp.asarray(nb, dtype=jnp.int32)
-        na_safe, ok_a = index_fn(
-            na_i, n_nodes, "ic_wire_ptr_pairs_jax.na", policy=policy
+        na_safe, ok_a = call_with_optional_kwargs(
+            index_fn, {"policy": policy}, na_i, n_nodes, "ic_wire_ptr_pairs_jax.na"
         )
-        nb_safe, ok_b = index_fn(
-            nb_i, n_nodes, "ic_wire_ptr_pairs_jax.nb", policy=policy
+        nb_safe, ok_b = call_with_optional_kwargs(
+            index_fn, {"policy": policy}, nb_i, n_nodes, "ic_wire_ptr_pairs_jax.nb"
         )
         na = na_safe.astype(jnp.uint32)
         nb = nb_safe.astype(jnp.uint32)
@@ -404,8 +409,12 @@ def ic_find_active_pairs(
     is_connected = ptr != jnp.uint32(0)
     tgt_node, tgt_port = decode_port(ptr)
     is_principal = tgt_port == PORT_PRINCIPAL
-    tgt_safe, ok = safe_index_fn(
-        tgt_node, n_u, "ic_find_active_pairs.tgt", policy=safety_policy
+    tgt_safe, ok = call_with_optional_kwargs(
+        safe_index_fn,
+        {"policy": safety_policy},
+        tgt_node,
+        n_u,
+        "ic_find_active_pairs.tgt",
     )
     safe_tgt = jnp.where(
         is_connected & is_principal & ok, tgt_safe, jnp.uint32(0)
