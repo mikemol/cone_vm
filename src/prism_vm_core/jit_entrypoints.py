@@ -52,10 +52,15 @@ from prism_bsp.space import (
     op_morton,
     op_rank,
     op_sort_and_swizzle_blocked_with_perm,
+    op_sort_and_swizzle_blocked_with_perm_value,
     op_sort_and_swizzle_hierarchical_with_perm,
+    op_sort_and_swizzle_hierarchical_with_perm_value,
     op_sort_and_swizzle_morton_with_perm,
+    op_sort_and_swizzle_morton_with_perm_value,
     op_sort_and_swizzle_servo_with_perm,
+    op_sort_and_swizzle_servo_with_perm_value,
     op_sort_and_swizzle_with_perm,
+    op_sort_and_swizzle_with_perm_value,
 )
 from prism_vm_core.domains import _host_raise_if_bad
 from prism_vm_core.gating import (
@@ -604,11 +609,11 @@ def _cycle_value_jit(
             servo_enabled_fn=lambda: servo_enabled_value,
             servo_update_fn=servo_update_fn,
             op_morton_fn=op_morton_fn,
-            op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_fn,
-            op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_fn,
-            op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_fn,
-            op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
-            op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
+            op_sort_and_swizzle_with_perm_value_fn=op_sort_and_swizzle_with_perm_fn,
+            op_sort_and_swizzle_morton_with_perm_value_fn=op_sort_and_swizzle_morton_with_perm_fn,
+            op_sort_and_swizzle_blocked_with_perm_value_fn=op_sort_and_swizzle_blocked_with_perm_fn,
+            op_sort_and_swizzle_hierarchical_with_perm_value_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
+            op_sort_and_swizzle_servo_with_perm_value_fn=op_sort_and_swizzle_servo_with_perm_fn,
             safe_gather_value_fn=safe_gather_value_fn,
             arena_root_hash_fn=_noop_root_hash,
             damage_tile_size_fn=_noop_tile_size,
@@ -630,20 +635,16 @@ def cycle_value_jit(
     servo_enabled_fn=_servo_enabled,
     servo_update_fn=_servo_update,
     op_morton_fn=op_morton,
-    op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm,
-    op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm,
-    op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm,
-    op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm,
-    op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm,
+    op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_value,
+    op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_value,
+    op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_value,
+    op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_value,
+    op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_value,
     safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
     guard_cfg: GuardConfig | None = None,
 ):
     """Return a jitted cycle entrypoint that accepts policy_value."""
     servo_enabled_value = bool(servo_enabled_fn())
-    safe_gather_value_fn = resolve_safe_gather_value_fn(
-        safe_gather_value_fn=safe_gather_value_fn,
-        guard_cfg=guard_cfg,
-    )
     return _cycle_value_jit(
         do_sort,
         use_morton,
