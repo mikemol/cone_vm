@@ -206,6 +206,8 @@ __all__ = [
     "apply_q",
     "commit_stratum",
     "cycle_candidates",
+    "cycle_candidates_static",
+    "cycle_candidates_value",
     "op_rank",
     "coord_norm",
     "coord_xor",
