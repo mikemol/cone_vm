@@ -58,16 +58,7 @@ def call_with_optional_kw(fn: Callable[..., T], name: str, value, *args, **kwarg
     This is a host-side helper to keep DI-compatible call sites tolerant of
     callables that have not yet adopted a new keyword parameter.
     """
-    if value is None:
-        return fn(*args, **kwargs)
-    call_kwargs = dict(kwargs)
-    call_kwargs[name] = value
-    try:
-        return fn(*args, **call_kwargs)
-    except TypeError as exc:
-        if name in str(exc):
-            return fn(*args, **kwargs)
-        raise
+    return call_with_optional_kwargs(fn, {name: value}, *args, **kwargs)
 
 
 def call_with_optional_kwargs(
