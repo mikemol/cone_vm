@@ -6,6 +6,7 @@ from typing import Callable, Optional
 import jax.numpy as jnp
 
 from prism_core.di import call_with_optional_kwargs, wrap_index_policy, wrap_policy
+from prism_core.errors import PrismPolicyBindingError
 from prism_core import jax_safe as _jax_safe
 from prism_core.protocols import (
     SafeGatherOkValueFn,
@@ -255,9 +256,17 @@ def resolve_safe_gather_fn(
     if safe_gather_fn is None:
         safe_gather_fn = _jax_safe.safe_gather_1d
     if policy is not None and getattr(safe_gather_fn, "_prism_policy_bound", False):
-        raise ValueError("safe_gather_fn already has a bound policy")
+        raise PrismPolicyBindingError(
+            "safe_gather_fn already has a bound policy",
+            context="resolve_safe_gather_fn",
+            policy_mode="static",
+        )
     if guard_cfg is not None and getattr(safe_gather_fn, "_prism_guard_bound", False):
-        raise ValueError("safe_gather_fn already has a bound guard config")
+        raise PrismPolicyBindingError(
+            "safe_gather_fn already has a bound guard config",
+            context="resolve_safe_gather_fn",
+            policy_mode="guard",
+        )
     if guard_cfg is not None:
         wrapped = make_safe_gather_fn(
             cfg=guard_cfg, policy=policy, safe_gather_fn=safe_gather_fn
@@ -282,9 +291,17 @@ def resolve_safe_gather_ok_fn(
     if safe_gather_ok_fn is None:
         safe_gather_ok_fn = _jax_safe.safe_gather_1d_ok
     if policy is not None and getattr(safe_gather_ok_fn, "_prism_policy_bound", False):
-        raise ValueError("safe_gather_ok_fn already has a bound policy")
+        raise PrismPolicyBindingError(
+            "safe_gather_ok_fn already has a bound policy",
+            context="resolve_safe_gather_ok_fn",
+            policy_mode="static",
+        )
     if guard_cfg is not None and getattr(safe_gather_ok_fn, "_prism_guard_bound", False):
-        raise ValueError("safe_gather_ok_fn already has a bound guard config")
+        raise PrismPolicyBindingError(
+            "safe_gather_ok_fn already has a bound guard config",
+            context="resolve_safe_gather_ok_fn",
+            policy_mode="guard",
+        )
     if guard_cfg is not None:
         wrapped = make_safe_gather_ok_fn(
             cfg=guard_cfg, policy=policy, safe_gather_ok_fn=safe_gather_ok_fn
@@ -309,9 +326,17 @@ def resolve_safe_index_fn(
     if safe_index_fn is None:
         safe_index_fn = _jax_safe.safe_index_1d
     if policy is not None and getattr(safe_index_fn, "_prism_policy_bound", False):
-        raise ValueError("safe_index_fn already has a bound policy")
+        raise PrismPolicyBindingError(
+            "safe_index_fn already has a bound policy",
+            context="resolve_safe_index_fn",
+            policy_mode="static",
+        )
     if guard_cfg is not None and getattr(safe_index_fn, "_prism_guard_bound", False):
-        raise ValueError("safe_index_fn already has a bound guard config")
+        raise PrismPolicyBindingError(
+            "safe_index_fn already has a bound guard config",
+            context="resolve_safe_index_fn",
+            policy_mode="guard",
+        )
     if guard_cfg is not None:
         wrapped = make_safe_index_fn(
             cfg=guard_cfg, policy=policy, safe_index_fn=safe_index_fn
@@ -335,7 +360,11 @@ def resolve_safe_gather_value_fn(
     if safe_gather_value_fn is None:
         safe_gather_value_fn = _jax_safe.safe_gather_1d_value
     if guard_cfg is not None and getattr(safe_gather_value_fn, "_prism_guard_bound", False):
-        raise ValueError("safe_gather_value_fn already has a bound guard config")
+        raise PrismPolicyBindingError(
+            "safe_gather_value_fn already has a bound guard config",
+            context="resolve_safe_gather_value_fn",
+            policy_mode="guard",
+        )
     if guard_cfg is not None:
         wrapped = make_safe_gather_value_fn(
             cfg=guard_cfg, safe_gather_value_fn=safe_gather_value_fn
@@ -358,7 +387,11 @@ def resolve_safe_gather_ok_value_fn(
     if safe_gather_ok_value_fn is None:
         safe_gather_ok_value_fn = _jax_safe.safe_gather_1d_ok_value
     if guard_cfg is not None and getattr(safe_gather_ok_value_fn, "_prism_guard_bound", False):
-        raise ValueError("safe_gather_ok_value_fn already has a bound guard config")
+        raise PrismPolicyBindingError(
+            "safe_gather_ok_value_fn already has a bound guard config",
+            context="resolve_safe_gather_ok_value_fn",
+            policy_mode="guard",
+        )
     if guard_cfg is not None:
         wrapped = make_safe_gather_ok_value_fn(
             cfg=guard_cfg, safe_gather_ok_value_fn=safe_gather_ok_value_fn
@@ -381,7 +414,11 @@ def resolve_safe_index_value_fn(
     if safe_index_value_fn is None:
         safe_index_value_fn = _jax_safe.safe_index_1d_value
     if guard_cfg is not None and getattr(safe_index_value_fn, "_prism_guard_bound", False):
-        raise ValueError("safe_index_value_fn already has a bound guard config")
+        raise PrismPolicyBindingError(
+            "safe_index_value_fn already has a bound guard config",
+            context="resolve_safe_index_value_fn",
+            policy_mode="guard",
+        )
     if guard_cfg is not None:
         wrapped = make_safe_index_value_fn(
             cfg=guard_cfg, safe_index_value_fn=safe_index_value_fn

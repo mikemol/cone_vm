@@ -3,6 +3,7 @@ import jax.numpy as jnp
 from jax import jit, lax
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.errors import PrismPolicyBindingError
 from prism_core.di import call_with_optional_kwargs
 from prism_core.guards import resolve_safe_gather_fn, resolve_safe_gather_value_fn
 from prism_metrics.metrics import _damage_metrics_update, _damage_tile_size
@@ -294,9 +295,11 @@ def op_interact_cfg(
         cfg.safe_gather_policy is not None
         and cfg.safe_gather_policy_value is not None
     ):
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "op_interact_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="op_interact_cfg",
+            policy_mode="ambiguous",
         )
     if cfg.safe_gather_policy_value is not None:
         safe_gather_value_fn = resolve_safe_gather_value_fn(
@@ -688,8 +691,10 @@ def cycle_cfg(
         cfg.safe_gather_policy is not None
         and cfg.safe_gather_policy_value is not None
     ):
-        raise ValueError(
-            "cycle_cfg received both safe_gather_policy and safe_gather_policy_value"
+        raise PrismPolicyBindingError(
+            "cycle_cfg received both safe_gather_policy and safe_gather_policy_value",
+            context="cycle_cfg",
+            policy_mode="ambiguous",
         )
     safe_gather_fn = resolve_safe_gather_fn(
         safe_gather_fn=cfg.safe_gather_fn,

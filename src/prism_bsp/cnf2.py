@@ -896,9 +896,11 @@ def cycle_candidates_static(
     cnf2_metrics_update_fn=_cnf2_metrics_update,
 ):
     if cfg is not None and cfg.safe_gather_policy_value is not None:
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "cycle_candidates_static received cfg.safe_gather_policy_value; "
-            "use cycle_candidates_value"
+            "use cycle_candidates_value",
+            context="cycle_candidates_static",
+            policy_mode="static",
         )
     if safe_gather_policy is None and cfg is not None and cfg.safe_gather_policy is not None:
         safe_gather_policy = cfg.safe_gather_policy
@@ -971,9 +973,11 @@ def cycle_candidates_value(
     cnf2_metrics_update_fn=_cnf2_metrics_update,
 ):
     if cfg is not None and cfg.safe_gather_policy is not None:
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "cycle_candidates_value received cfg.safe_gather_policy; "
-            "use cycle_candidates_static"
+            "use cycle_candidates_static",
+            context="cycle_candidates_value",
+            policy_mode="value",
         )
     if (
         safe_gather_policy_value is None
@@ -1054,9 +1058,11 @@ def cycle_candidates(
         safe_gather_policy_value = cfg.safe_gather_policy_value
     if safe_gather_policy_value is not None:
         if safe_gather_policy is not None:
-            raise ValueError(
+            raise PrismPolicyBindingError(
                 "cycle_candidates received both safe_gather_policy and "
-                "safe_gather_policy_value"
+                "safe_gather_policy_value",
+                context="cycle_candidates",
+                policy_mode="ambiguous",
             )
         return cycle_candidates_value(
             ledger,
