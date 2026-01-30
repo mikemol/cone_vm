@@ -92,6 +92,28 @@ def call_with_optional_kwargs(
     return fn(*args, **kwargs, **filtered)
 
 
+def bind_optional_kwargs(fn: Callable[..., T], **optional):
+    """Return fn partially applied with optional kwargs it accepts."""
+    optional = {k: v for k, v in optional.items() if v is not None}
+    if not optional:
+        return fn
+    try:
+        sig = signature(fn)
+    except (TypeError, ValueError):
+        return lambda *args, **kwargs: fn(*args, **kwargs, **optional)
+    if any(p.kind == Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+        return lambda *args, **kwargs: fn(*args, **kwargs, **optional)
+    allowed = {
+        name
+        for name, p in sig.parameters.items()
+        if p.kind in (Parameter.POSITIONAL_OR_KEYWORD, Parameter.KEYWORD_ONLY)
+    }
+    filtered = {k: v for k, v in optional.items() if k in allowed}
+    if not filtered:
+        return fn
+    return lambda *args, **kwargs: fn(*args, **kwargs, **filtered)
+
+
 __all__ = [
     "resolve",
     "wrap_policy",
@@ -100,4 +122,5 @@ __all__ = [
     "cached_jit",
     "call_with_optional_kw",
     "call_with_optional_kwargs",
+    "bind_optional_kwargs",
 ]
