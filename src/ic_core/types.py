@@ -32,6 +32,12 @@ from ic_core.graph import (
     PORT_AUX_RIGHT,
 )
 from ic_core.engine import ICRewriteStats
+from prism_core.compact import (
+    CompactResult,
+    CompactConfig,
+    DEFAULT_COMPACT_CONFIG,
+)
+from prism_core.alloc import AllocConfig, DEFAULT_ALLOC_CONFIG
 
 __all__ = [
     "ICNodeId",
@@ -52,6 +58,11 @@ __all__ = [
     "_host_bool_value",
     "ICState",
     "ICRewriteStats",
+    "CompactResult",
+    "CompactConfig",
+    "DEFAULT_COMPACT_CONFIG",
+    "AllocConfig",
+    "DEFAULT_ALLOC_CONFIG",
     "TYPE_FREE",
     "TYPE_ERA",
     "TYPE_CON",
