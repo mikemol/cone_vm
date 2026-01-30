@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.di import call_with_optional_kwargs, wrap_index_policy
+from prism_core.di import call_with_optional_kwargs
 from prism_core.safety import SafetyPolicy, DEFAULT_SAFETY_POLICY, oob_mask
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -412,9 +412,13 @@ def safe_gather_1d(
     """
     if guard is None:
         guard = _GATHER_GUARD
+    safe_gather_fn = resolve_safe_gather_fn(
+        safe_gather_fn=_jax_safe.safe_gather_1d,
+        policy=policy,
+    )
     return call_with_optional_kwargs(
-        _jax_safe.safe_gather_1d,
-        {"guard": guard, "policy": policy, "return_ok": return_ok},
+        safe_gather_fn,
+        {"guard": guard, "return_ok": return_ok},
         arr,
         idx,
         label,
@@ -435,9 +439,13 @@ def safe_gather_1d_ok(
     """
     if guard is None:
         guard = _GATHER_GUARD
+    safe_gather_ok_fn = resolve_safe_gather_ok_fn(
+        safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
+        policy=policy,
+    )
     return call_with_optional_kwargs(
-        _jax_safe.safe_gather_1d_ok,
-        {"guard": guard, "policy": policy},
+        safe_gather_ok_fn,
+        {"guard": guard},
         arr,
         idx,
         label,
@@ -497,7 +505,10 @@ def safe_index_1d(
     """
     if guard is None:
         guard = _GATHER_GUARD
-    safe_index_fn = wrap_index_policy(_jax_safe.safe_index_1d, policy)
+    safe_index_fn = resolve_safe_index_fn(
+        safe_index_fn=_jax_safe.safe_index_1d,
+        policy=policy,
+    )
     return call_with_optional_kwargs(
         safe_index_fn, {"guard": guard}, idx, size, label
     )
