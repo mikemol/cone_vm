@@ -13,6 +13,7 @@ from prism_core.safety import (
     POLICY_VALUE_CLAMP,
     POLICY_VALUE_DEFAULT,
 )
+from prism_core.modes import ValidateMode, coerce_validate_mode
 from prism_core.di import call_with_optional_kwargs
 from prism_core.errors import PrismPolicyModeError, PrismPolicyBindingError
 from prism_core.guards import (
@@ -371,7 +372,7 @@ def _commit_stratum_common(
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     policy_mode: PolicyMode | str,
     intern_fn: InternFn = intern_nodes,
@@ -394,13 +395,11 @@ def _commit_stratum_common(
 ):
     # Collapseʰ: homomorphic projection q at the stratum boundary.
     if validate:
-        mode = (validate_mode or "strict").strip().lower()
-        if mode == "strict":
+        mode = coerce_validate_mode(validate_mode, context="commit_stratum")
+        if mode == ValidateMode.STRICT:
             ok = validate_within_fn(ledger, stratum)
-        elif mode == "hyper":
-            ok = validate_future_fn(ledger, stratum)
         else:
-            raise ValueError(f"Unknown validate_mode={validate_mode!r}")
+            ok = validate_future_fn(ledger, stratum)
         if not ok:
             if mode == "strict":
                 raise ValueError("Stratum contains within-tier references")
@@ -498,7 +497,7 @@ def commit_stratum_static(
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -549,7 +548,7 @@ def commit_stratum_value(
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -599,7 +598,7 @@ def commit_stratum(
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,

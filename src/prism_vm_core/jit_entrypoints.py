@@ -17,6 +17,7 @@ from prism_core.guards import (
     resolve_safe_gather_value_fn,
 )
 from prism_core.safety import SafetyPolicy, DEFAULT_SAFETY_POLICY, POLICY_VALUE_DEFAULT
+from prism_core.modes import ValidateMode
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
 from prism_bsp.config import (
@@ -360,7 +361,7 @@ def intern_candidates_jit_cfg(
 def cycle_candidates_static_jit(
     *,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
     emit_candidates_fn: EmitCandidatesFn | None = None,
@@ -466,7 +467,7 @@ def cycle_candidates_static_jit(
 def cycle_candidates_value_jit(
     *,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
     emit_candidates_fn: EmitCandidatesFn | None = None,
@@ -573,7 +574,7 @@ def cycle_candidates_value_jit(
 def cycle_candidates_jit(
     *,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
     emit_candidates_fn: EmitCandidatesFn | None = None,

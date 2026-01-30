@@ -31,6 +31,7 @@ from prism_core.safety import (
     oob_mask,
     oob_mask_value,
 )
+from prism_core.modes import ValidateMode, coerce_validate_mode
 from prism_core.errors import PrismPolicyModeError, PrismPolicyBindingError
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -542,6 +543,8 @@ SafetyPolicy = SafetyPolicy
 DEFAULT_SAFETY_POLICY = DEFAULT_SAFETY_POLICY
 PolicyMode = PolicyMode
 coerce_policy_mode = coerce_policy_mode
+ValidateMode = ValidateMode
+coerce_validate_mode = coerce_validate_mode
 PolicyValue = PolicyValue
 POLICY_VALUE_CORRUPT = POLICY_VALUE_CORRUPT
 POLICY_VALUE_CLAMP = POLICY_VALUE_CLAMP
@@ -937,7 +940,7 @@ def commit_stratum_static(
     stratum,
     prior_q=None,
     validate: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     intern_fn: InternFn | None = None,
     *,
     safe_gather_policy: SafetyPolicy | None = None,
@@ -963,7 +966,7 @@ def commit_stratum_value(
     stratum,
     prior_q=None,
     validate: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     intern_fn: InternFn | None = None,
     *,
     safe_gather_policy_value: PolicyValue | None = None,
@@ -989,7 +992,7 @@ def commit_stratum(
     stratum,
     prior_q=None,
     validate: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     intern_fn: InternFn | None = None,
     *,
     safe_gather_policy: SafetyPolicy | None = None,
@@ -1033,7 +1036,7 @@ def _cycle_candidates_common(
     ledger,
     frontier_ids,
     validate_stratum: bool,
-    validate_mode: str,
+    validate_mode: ValidateMode | str,
     *,
     policy_mode: PolicyMode | str,
     intern_fn: InternFn | None,
@@ -1186,7 +1189,7 @@ def cycle_candidates_static(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
@@ -1224,7 +1227,7 @@ def cycle_candidates_value(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
@@ -1262,7 +1265,7 @@ def cycle_candidates(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,

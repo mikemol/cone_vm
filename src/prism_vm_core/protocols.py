@@ -5,6 +5,7 @@ from typing import Protocol, Tuple, runtime_checkable
 import jax.numpy as jnp
 
 from prism_core.compact import CompactResult
+from prism_core.modes import ValidateMode
 from prism_core.protocols import (
     PolicyValue,
     SafeGatherFn,
@@ -155,7 +156,7 @@ class CommitStratumFn(Protocol):
         stratum: Stratum,
         prior_q=None,
         validate: bool = False,
-        validate_mode: str = "strict",
+        validate_mode: ValidateMode | str = ValidateMode.STRICT,
         *,
         intern_fn: InternFn | None = None,
         safe_gather_policy=None,

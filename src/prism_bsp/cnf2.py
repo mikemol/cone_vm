@@ -21,6 +21,7 @@ from prism_core.safety import (
     oob_any,
     oob_any_value,
 )
+from prism_core.modes import ValidateMode
 from prism_coord.coord import coord_xor_batch
 from prism_ledger.intern import intern_nodes
 from prism_ledger.config import InternConfig
@@ -321,7 +322,7 @@ def _cycle_candidates_core_common(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     cfg: Cnf2Config | None = None,
     policy_mode: PolicyMode | str,
@@ -717,7 +718,7 @@ def _cycle_candidates_core_static(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy: SafetyPolicy,
@@ -779,7 +780,7 @@ def _cycle_candidates_core_value(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy_value: PolicyValue,
@@ -856,7 +857,7 @@ def cycle_candidates_static(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy: SafetyPolicy | None = None,
@@ -931,7 +932,7 @@ def cycle_candidates_value(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy_value: PolicyValue | None = None,
@@ -1009,7 +1010,7 @@ def cycle_candidates(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy: SafetyPolicy | None = None,

@@ -66,6 +66,8 @@ __all__ = [
     "DEFAULT_SAFETY_POLICY",
     "PolicyMode",
     "coerce_policy_mode",
+    "ValidateMode",
+    "coerce_validate_mode",
     "PolicyValue",
     "POLICY_VALUE_CORRUPT",
     "POLICY_VALUE_CLAMP",
