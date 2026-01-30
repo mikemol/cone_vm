@@ -18,10 +18,15 @@ from prism_bsp.space import (
     op_morton,
     op_rank,
     op_sort_and_swizzle_blocked_with_perm,
+    op_sort_and_swizzle_blocked_with_perm_value,
     op_sort_and_swizzle_hierarchical_with_perm,
+    op_sort_and_swizzle_hierarchical_with_perm_value,
     op_sort_and_swizzle_morton_with_perm,
+    op_sort_and_swizzle_morton_with_perm_value,
     op_sort_and_swizzle_servo_with_perm,
+    op_sort_and_swizzle_servo_with_perm_value,
     op_sort_and_swizzle_with_perm,
+    op_sort_and_swizzle_with_perm_value,
 )
 from prism_bsp.config import (
     ArenaInteractConfig,
@@ -134,6 +139,114 @@ def _op_interact_core(
     )
 
 
+def _op_interact_core_value(
+    arena,
+    policy_value,
+    safe_gather_value_fn,
+    scatter_drop_fn,
+    guard_max_fn,
+):
+    ops = arena.opcode
+    a1 = arena.arg1
+    a2 = arena.arg2
+    cap = jnp.int32(ops.shape[0])
+    is_hot = arena.rank == RANK_HOT
+    is_add = ops == OP_ADD
+    hot_add = is_hot & is_add
+    a1_for_op = jnp.where(hot_add, a1, jnp.int32(0))
+    a2_for_op = jnp.where(hot_add, a2, jnp.int32(0))
+    op_a1 = safe_gather_value_fn(
+        ops, a1_for_op, "op_interact.op_a1", policy_value=policy_value
+    )
+    op_a2 = safe_gather_value_fn(
+        ops, a2_for_op, "op_interact.op_a2", policy_value=policy_value
+    )
+    is_zero_a1 = op_a1 == OP_ZERO
+    is_zero_a2 = op_a2 == OP_ZERO
+    is_suc_a1 = op_a1 == OP_SUC
+    is_suc_a2 = op_a2 == OP_SUC
+    mask_zero = hot_add & (is_zero_a1 | is_zero_a2)
+    mask_suc = hot_add & (is_suc_a1 | is_suc_a2) & (~mask_zero) & (~arena.oom)
+
+    zero_other = jnp.where(is_zero_a1, a2, a1)
+    zero_other = jnp.where(mask_zero, zero_other, jnp.int32(0))
+    y_op = safe_gather_value_fn(
+        ops, zero_other, "op_interact.zero_op", policy_value=policy_value
+    )
+    y_a1 = safe_gather_value_fn(
+        a1, zero_other, "op_interact.zero_a1", policy_value=policy_value
+    )
+    y_a2 = safe_gather_value_fn(
+        a2, zero_other, "op_interact.zero_a2", policy_value=policy_value
+    )
+    new_ops = jnp.where(mask_zero, y_op, ops)
+    new_a1 = jnp.where(mask_zero, y_a1, a1)
+    new_a2 = jnp.where(mask_zero, y_a2, a2)
+
+    available = jnp.maximum(cap - arena.count, 0)
+    spawn = mask_suc.astype(jnp.int32)
+    prefix = jnp.cumsum(spawn)
+    spawn = spawn * (prefix <= available).astype(jnp.int32)
+    offsets = jnp.cumsum(spawn) - spawn
+    total_spawn = jnp.sum(spawn).astype(jnp.int32)
+    base_free = arena.count
+    new_add_idx = base_free + offsets
+
+    spawn_mask = spawn.astype(jnp.bool_)
+    new_ops = jnp.where(spawn_mask, OP_SUC, new_ops)
+    new_a1 = jnp.where(spawn_mask, new_add_idx, new_a1)
+    new_a2 = jnp.where(spawn_mask, 0, new_a2)
+
+    choose_a1 = is_suc_a1 & (~is_suc_a2 | (a1 <= a2))
+    suc_node = jnp.where(choose_a1, a1, a2)
+    other_node = jnp.where(choose_a1, a2, a1)
+    suc_for_spawn = jnp.where(spawn_mask, suc_node, jnp.int32(0))
+    other_for_spawn = jnp.where(spawn_mask, other_node, jnp.int32(0))
+    grandchild_x = safe_gather_value_fn(
+        a1, suc_for_spawn, "op_interact.grandchild_x", policy_value=policy_value
+    )
+    payload_op = jnp.full_like(new_add_idx, OP_ADD)
+    payload_a1_raw = jnp.where(spawn_mask, grandchild_x, jnp.int32(0))
+    payload_a2_raw = jnp.where(spawn_mask, other_for_spawn, jnp.int32(0))
+    payload_swap = payload_a2_raw < payload_a1_raw
+    payload_a1 = jnp.where(payload_swap, payload_a2_raw, payload_a1_raw)
+    payload_a2 = jnp.where(payload_swap, payload_a1_raw, payload_a2_raw)
+
+    valid = spawn_mask
+    idxs2 = jnp.where(valid, new_add_idx, cap)
+
+    final_ops = scatter_drop_fn(
+        new_ops,
+        idxs2,
+        jnp.where(valid, payload_op, new_ops[0]),
+        "op_interact.final_ops",
+    )
+    final_a1 = scatter_drop_fn(
+        new_a1,
+        idxs2,
+        jnp.where(valid, payload_a1, new_a1[0]),
+        "op_interact.final_a1",
+    )
+    final_a2 = scatter_drop_fn(
+        new_a2,
+        idxs2,
+        jnp.where(valid, payload_a2, new_a2[0]),
+        "op_interact.final_a2",
+    )
+
+    overflow = jnp.sum(mask_suc.astype(jnp.int32)) > available
+    new_oom = arena.oom | overflow
+    new_count = arena.count + total_spawn
+    guard_max_fn(new_count, cap, "arena.count")
+    return arena._replace(
+        opcode=final_ops,
+        arg1=final_a1,
+        arg2=final_a2,
+        count=new_count,
+        oom=new_oom,
+    )
+
+
 @jax.jit(
     static_argnames=(
         "safe_gather_fn",
@@ -166,12 +279,9 @@ def op_interact_value(
     scatter_drop_fn=_jax_safe.scatter_drop,
     guard_max_fn=_guard_max,
 ):
-    def _safe_gather(arr, idx, label):
-        return safe_gather_value_fn(
-            arr, idx, label, policy_value=policy_value
-        )
-
-    return _op_interact_core(arena, _safe_gather, scatter_drop_fn, guard_max_fn)
+    return _op_interact_core_value(
+        arena, policy_value, safe_gather_value_fn, scatter_drop_fn, guard_max_fn
+    )
 
 
 def op_interact_cfg(
@@ -315,6 +425,116 @@ def cycle_core(
     return arena, root_arr
 
 
+def cycle_core_value(
+    arena,
+    root_ptr,
+    policy_value,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    morton=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+    *,
+    op_rank_fn=op_rank,
+    servo_enabled_fn=_servo_enabled,
+    servo_update_fn=_servo_update,
+    op_morton_fn=op_morton,
+    op_sort_and_swizzle_with_perm_value_fn=op_sort_and_swizzle_with_perm_value,
+    op_sort_and_swizzle_morton_with_perm_value_fn=op_sort_and_swizzle_morton_with_perm_value,
+    op_sort_and_swizzle_blocked_with_perm_value_fn=op_sort_and_swizzle_blocked_with_perm_value,
+    op_sort_and_swizzle_hierarchical_with_perm_value_fn=op_sort_and_swizzle_hierarchical_with_perm_value,
+    op_sort_and_swizzle_servo_with_perm_value_fn=op_sort_and_swizzle_servo_with_perm_value,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
+    guard_cfg=None,
+    arena_root_hash_fn=_arena_root_hash_host,
+    damage_tile_size_fn=_damage_tile_size,
+    damage_metrics_update_fn=_damage_metrics_update,
+    op_interact_value_fn=op_interact_value,
+):
+    """Run one BSP cycle with policy_value as data (JAX value)."""
+    safe_gather_value_fn = resolve_safe_gather_value_fn(
+        safe_gather_value_fn=safe_gather_value_fn,
+        guard_cfg=guard_cfg,
+    )
+    arena = op_rank_fn(arena)
+    root_arr = jnp.asarray(root_ptr, dtype=jnp.int32)
+    if do_sort:
+        pre_hash = arena_root_hash_fn(arena, root_arr)
+        morton_arr = None
+        if servo_enabled_fn():
+            arena = servo_update_fn(arena)
+            morton_arr = morton if morton is not None else op_morton_fn(arena)
+            servo_mask = arena.servo[0]
+            arena, inv_perm = call_with_optional_kwargs(
+                op_sort_and_swizzle_servo_with_perm_value_fn,
+                {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+                arena,
+                morton_arr,
+                servo_mask,
+                policy_value,
+            )
+        else:
+            if use_morton or morton is not None:
+                morton_arr = morton if morton is not None else op_morton_fn(arena)
+            if l2_block_size is not None or l1_block_size is not None:
+                if l2_block_size is None:
+                    l2_block_size = l1_block_size
+                if l1_block_size is None:
+                    l1_block_size = l2_block_size
+                arena, inv_perm = call_with_optional_kwargs(
+                    op_sort_and_swizzle_hierarchical_with_perm_value_fn,
+                    {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+                    arena,
+                    l2_block_size,
+                    l1_block_size,
+                    policy_value,
+                    morton=morton_arr,
+                    do_global=do_global,
+                )
+            elif block_size is not None:
+                arena, inv_perm = call_with_optional_kwargs(
+                    op_sort_and_swizzle_blocked_with_perm_value_fn,
+                    {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+                    arena,
+                    block_size,
+                    policy_value,
+                    morton=morton_arr,
+                )
+            elif morton_arr is not None:
+                arena, inv_perm = call_with_optional_kwargs(
+                    op_sort_and_swizzle_morton_with_perm_value_fn,
+                    {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+                    arena,
+                    morton_arr,
+                    policy_value,
+                )
+            else:
+                arena, inv_perm = call_with_optional_kwargs(
+                    op_sort_and_swizzle_with_perm_value_fn,
+                    {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+                    arena,
+                    policy_value,
+                )
+        root_idx = jnp.where(root_arr != 0, root_arr, jnp.int32(0))
+        root_g = safe_gather_value_fn(
+            inv_perm, root_idx, "cycle.root_remap", policy_value=policy_value
+        )
+        root_arr = jnp.where(root_arr != 0, root_g, 0)
+        if _TEST_GUARDS and pre_hash != arena_root_hash_fn(arena, root_arr):
+            raise RuntimeError("BSPˢ renormalization changed root structure")
+    tile_size = damage_tile_size_fn(block_size, l2_block_size, l1_block_size)
+    damage_metrics_update_fn(arena, tile_size)
+    arena = call_with_optional_kwargs(
+        op_interact_value_fn,
+        {"safe_gather_value_fn": safe_gather_value_fn},
+        arena,
+        policy_value,
+    )
+    return arena, root_arr
+
+
 def cycle(
     arena,
     root_ptr,
@@ -386,32 +606,22 @@ def cycle_value(
     servo_enabled_fn=_servo_enabled,
     servo_update_fn=_servo_update,
     op_morton_fn=op_morton,
-    op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm,
-    op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm,
-    op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm,
-    op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm,
-    op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm,
+    op_sort_and_swizzle_with_perm_value_fn=op_sort_and_swizzle_with_perm_value,
+    op_sort_and_swizzle_morton_with_perm_value_fn=op_sort_and_swizzle_morton_with_perm_value,
+    op_sort_and_swizzle_blocked_with_perm_value_fn=op_sort_and_swizzle_blocked_with_perm_value,
+    op_sort_and_swizzle_hierarchical_with_perm_value_fn=op_sort_and_swizzle_hierarchical_with_perm_value,
+    op_sort_and_swizzle_servo_with_perm_value_fn=op_sort_and_swizzle_servo_with_perm_value,
     safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
     guard_cfg=None,
     arena_root_hash_fn=_arena_root_hash_host,
     damage_tile_size_fn=_damage_tile_size,
     damage_metrics_update_fn=_damage_metrics_update,
-    op_interact_fn=None,
+    op_interact_value_fn=op_interact_value,
 ):
-    def _safe_gather(arr, idx, label):
-        return safe_gather_value_fn(
-            arr, idx, label, policy_value=policy_value
-        )
-
-    if op_interact_fn is None:
-        op_interact_fn = lambda a: op_interact_value(
-            a,
-            policy_value,
-            safe_gather_value_fn=safe_gather_value_fn,
-        )
-    return cycle_core(
+    return cycle_core_value(
         arena,
         root_ptr,
+        policy_value,
         do_sort=do_sort,
         use_morton=use_morton,
         block_size=block_size,
@@ -423,17 +633,17 @@ def cycle_value(
         servo_enabled_fn=servo_enabled_fn,
         servo_update_fn=servo_update_fn,
         op_morton_fn=op_morton_fn,
-        op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_fn,
-        op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_fn,
-        op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_fn,
-        op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
-        op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
-        safe_gather_fn=_safe_gather,
+        op_sort_and_swizzle_with_perm_value_fn=op_sort_and_swizzle_with_perm_value_fn,
+        op_sort_and_swizzle_morton_with_perm_value_fn=op_sort_and_swizzle_morton_with_perm_value_fn,
+        op_sort_and_swizzle_blocked_with_perm_value_fn=op_sort_and_swizzle_blocked_with_perm_value_fn,
+        op_sort_and_swizzle_hierarchical_with_perm_value_fn=op_sort_and_swizzle_hierarchical_with_perm_value_fn,
+        op_sort_and_swizzle_servo_with_perm_value_fn=op_sort_and_swizzle_servo_with_perm_value_fn,
+        safe_gather_value_fn=safe_gather_value_fn,
         guard_cfg=guard_cfg,
         arena_root_hash_fn=arena_root_hash_fn,
         damage_tile_size_fn=damage_tile_size_fn,
         damage_metrics_update_fn=damage_metrics_update_fn,
-        op_interact_fn=op_interact_fn,
+        op_interact_value_fn=op_interact_value_fn,
     )
 
 def cycle_cfg(
@@ -486,12 +696,25 @@ def cycle_cfg(
         policy=cfg.safe_gather_policy,
         guard_cfg=cfg.guard_cfg,
     )
-    safe_gather_value_fn = None
-    if cfg.safe_gather_policy_value is not None:
-        safe_gather_value_fn = resolve_safe_gather_value_fn(
-            safe_gather_value_fn=cfg.safe_gather_value_fn,
-            guard_cfg=cfg.guard_cfg,
-        )
+    safe_gather_value_fn = cfg.safe_gather_value_fn
+        if cfg.op_sort_and_swizzle_with_perm_fn is None:
+            op_sort_and_swizzle_with_perm_fn = op_sort_and_swizzle_with_perm_value
+        if cfg.op_sort_and_swizzle_morton_with_perm_fn is None:
+            op_sort_and_swizzle_morton_with_perm_fn = (
+                op_sort_and_swizzle_morton_with_perm_value
+            )
+        if cfg.op_sort_and_swizzle_blocked_with_perm_fn is None:
+            op_sort_and_swizzle_blocked_with_perm_fn = (
+                op_sort_and_swizzle_blocked_with_perm_value
+            )
+        if cfg.op_sort_and_swizzle_hierarchical_with_perm_fn is None:
+            op_sort_and_swizzle_hierarchical_with_perm_fn = (
+                op_sort_and_swizzle_hierarchical_with_perm_value
+            )
+        if cfg.op_sort_and_swizzle_servo_with_perm_fn is None:
+            op_sort_and_swizzle_servo_with_perm_fn = (
+                op_sort_and_swizzle_servo_with_perm_value
+            )
     arena_root_hash_fn = cfg.arena_root_hash_fn or _arena_root_hash_host
     damage_tile_size_fn = cfg.damage_tile_size_fn or _damage_tile_size
     damage_metrics_update_fn = cfg.damage_metrics_update_fn or _damage_metrics_update
@@ -499,12 +722,8 @@ def cycle_cfg(
     if op_interact_fn is None and cfg.interact_cfg is not None:
         op_interact_fn = lambda a: op_interact_cfg(a, cfg=cfg.interact_cfg)
     if op_interact_fn is None:
-        if cfg.safe_gather_policy_value is not None and safe_gather_value_fn is not None:
-            op_interact_fn = lambda a: op_interact_value(
-                a,
-                cfg.safe_gather_policy_value,
-                safe_gather_value_fn=safe_gather_value_fn,
-            )
+        if cfg.safe_gather_policy_value is not None:
+            op_interact_fn = op_interact_value
         else:
             op_interact_fn = lambda a: op_interact(a, safe_gather_fn=safe_gather_fn)
     if cfg.safe_gather_policy_value is not None and safe_gather_value_fn is not None:
@@ -523,17 +742,17 @@ def cycle_cfg(
             servo_enabled_fn=servo_enabled_fn,
             servo_update_fn=servo_update_fn,
             op_morton_fn=op_morton_fn,
-            op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_fn,
-            op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_fn,
-            op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_fn,
-            op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
-            op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
+            op_sort_and_swizzle_with_perm_value_fn=op_sort_and_swizzle_with_perm_fn,
+            op_sort_and_swizzle_morton_with_perm_value_fn=op_sort_and_swizzle_morton_with_perm_fn,
+            op_sort_and_swizzle_blocked_with_perm_value_fn=op_sort_and_swizzle_blocked_with_perm_fn,
+            op_sort_and_swizzle_hierarchical_with_perm_value_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
+            op_sort_and_swizzle_servo_with_perm_value_fn=op_sort_and_swizzle_servo_with_perm_fn,
             safe_gather_value_fn=safe_gather_value_fn,
             guard_cfg=cfg.guard_cfg,
             arena_root_hash_fn=arena_root_hash_fn,
             damage_tile_size_fn=damage_tile_size_fn,
             damage_metrics_update_fn=damage_metrics_update_fn,
-            op_interact_fn=op_interact_fn,
+            op_interact_value_fn=op_interact_fn,
         )
     return cycle_core(
         arena,
@@ -567,6 +786,7 @@ __all__ = [
     "op_interact_value",
     "op_interact_cfg",
     "cycle_core",
+    "cycle_core_value",
     "cycle",
     "cycle_value",
     "cycle_cfg",

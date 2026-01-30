@@ -78,6 +78,7 @@ from prism_bsp.cnf2 import (
 from prism_bsp.arena_step import (
     cycle as _cycle,
     cycle_core as _cycle_core,
+    cycle_core_value as _cycle_core_value,
     cycle_value as _cycle_value,
     op_interact as _op_interact,
     op_interact_cfg,
@@ -100,13 +101,18 @@ from prism_bsp.space import (
     op_sort_and_swizzle,
     op_sort_and_swizzle_blocked,
     op_sort_and_swizzle_blocked_with_perm,
+    op_sort_and_swizzle_blocked_with_perm_value,
     op_sort_and_swizzle_hierarchical,
     op_sort_and_swizzle_hierarchical_with_perm,
+    op_sort_and_swizzle_hierarchical_with_perm_value,
     op_sort_and_swizzle_morton,
     op_sort_and_swizzle_morton_with_perm,
+    op_sort_and_swizzle_morton_with_perm_value,
     op_sort_and_swizzle_servo,
     op_sort_and_swizzle_servo_with_perm,
+    op_sort_and_swizzle_servo_with_perm_value,
     op_sort_and_swizzle_with_perm,
+    op_sort_and_swizzle_with_perm_value,
     swizzle_2to1,
     swizzle_2to1_dev,
     swizzle_2to1_host,
@@ -225,10 +231,24 @@ def op_sort_with_perm_cfg(
     arena,
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
     safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_with_perm with guard cfg."""
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "op_sort_with_perm_cfg received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if safe_gather_policy_value is not None:
+        return call_with_optional_kwargs(
+            op_sort_and_swizzle_with_perm_value,
+            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            arena,
+            safe_gather_policy_value,
+        )
     return call_with_optional_kwargs(
         op_sort_and_swizzle_with_perm,
         {
@@ -246,10 +266,26 @@ def op_sort_blocked_with_perm_cfg(
     morton=None,
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
     safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_blocked_with_perm with guard cfg."""
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "op_sort_blocked_with_perm_cfg received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if safe_gather_policy_value is not None:
+        return call_with_optional_kwargs(
+            op_sort_and_swizzle_blocked_with_perm_value,
+            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            arena,
+            block_size,
+            safe_gather_policy_value,
+            morton=morton,
+        )
     return call_with_optional_kwargs(
         op_sort_and_swizzle_blocked_with_perm,
         {
@@ -271,10 +307,28 @@ def op_sort_hierarchical_with_perm_cfg(
     do_global=False,
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
     safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_hierarchical_with_perm with guard cfg."""
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "op_sort_hierarchical_with_perm_cfg received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if safe_gather_policy_value is not None:
+        return call_with_optional_kwargs(
+            op_sort_and_swizzle_hierarchical_with_perm_value,
+            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            arena,
+            l2_block_size,
+            l1_block_size,
+            safe_gather_policy_value,
+            morton=morton,
+            do_global=do_global,
+        )
     return call_with_optional_kwargs(
         op_sort_and_swizzle_hierarchical_with_perm,
         {
@@ -295,10 +349,25 @@ def op_sort_morton_with_perm_cfg(
     morton,
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
     safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_morton_with_perm with guard cfg."""
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "op_sort_morton_with_perm_cfg received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if safe_gather_policy_value is not None:
+        return call_with_optional_kwargs(
+            op_sort_and_swizzle_morton_with_perm_value,
+            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            arena,
+            morton,
+            safe_gather_policy_value,
+        )
     return call_with_optional_kwargs(
         op_sort_and_swizzle_morton_with_perm,
         {
@@ -317,10 +386,26 @@ def op_sort_servo_with_perm_cfg(
     servo_mask,
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
     safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_servo_with_perm with guard cfg."""
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "op_sort_servo_with_perm_cfg received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if safe_gather_policy_value is not None:
+        return call_with_optional_kwargs(
+            op_sort_and_swizzle_servo_with_perm_value,
+            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            arena,
+            morton,
+            servo_mask,
+            safe_gather_policy_value,
+        )
     return call_with_optional_kwargs(
         op_sort_and_swizzle_servo_with_perm,
         {
@@ -667,6 +752,7 @@ intern_candidates = _intern_candidates
 intern_candidates_cfg = _intern_candidates_cfg
 cycle = _cycle
 cycle_core = _cycle_core
+cycle_core_value = _cycle_core_value
 cycle_value = _cycle_value
 op_interact = _op_interact
 op_interact_value = _op_interact_value
@@ -681,13 +767,18 @@ op_rank = op_rank
 op_sort_and_swizzle = op_sort_and_swizzle
 op_sort_and_swizzle_blocked = op_sort_and_swizzle_blocked
 op_sort_and_swizzle_blocked_with_perm = op_sort_and_swizzle_blocked_with_perm
+op_sort_and_swizzle_blocked_with_perm_value = op_sort_and_swizzle_blocked_with_perm_value
 op_sort_and_swizzle_hierarchical = op_sort_and_swizzle_hierarchical
 op_sort_and_swizzle_hierarchical_with_perm = op_sort_and_swizzle_hierarchical_with_perm
+op_sort_and_swizzle_hierarchical_with_perm_value = op_sort_and_swizzle_hierarchical_with_perm_value
 op_sort_and_swizzle_morton = op_sort_and_swizzle_morton
 op_sort_and_swizzle_morton_with_perm = op_sort_and_swizzle_morton_with_perm
+op_sort_and_swizzle_morton_with_perm_value = op_sort_and_swizzle_morton_with_perm_value
 op_sort_and_swizzle_servo = op_sort_and_swizzle_servo
 op_sort_and_swizzle_servo_with_perm = op_sort_and_swizzle_servo_with_perm
+op_sort_and_swizzle_servo_with_perm_value = op_sort_and_swizzle_servo_with_perm_value
 op_sort_and_swizzle_with_perm = op_sort_and_swizzle_with_perm
+op_sort_and_swizzle_with_perm_value = op_sort_and_swizzle_with_perm_value
 swizzle_2to1 = swizzle_2to1
 swizzle_2to1_dev = swizzle_2to1_dev
 swizzle_2to1_host = swizzle_2to1_host
