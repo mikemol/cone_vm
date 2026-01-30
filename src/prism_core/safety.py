@@ -6,7 +6,11 @@ from enum import Enum
 import jax.numpy as jnp
 from typing import TypeAlias
 
-from prism_core.errors import PrismPolicyModeError, PrismSafetyModeError
+from prism_core.errors import (
+    PrismPolicyModeError,
+    PrismSafetyModeError,
+    PrismPolicyBindingError,
+)
 
 
 class SafetyMode(str, Enum):
@@ -80,6 +84,33 @@ def policy_to_value(policy: SafetyPolicy) -> PolicyValue:
 POLICY_VALUE_DEFAULT = policy_to_value(DEFAULT_SAFETY_POLICY)
 
 
+@dataclass(frozen=True, slots=True)
+class PolicyBinding:
+    """Resolved policy binding for static vs value policy modes."""
+
+    mode: PolicyMode
+    policy: SafetyPolicy | None = None
+    policy_value: PolicyValue | None = None
+
+
+def resolve_policy_binding(
+    *,
+    policy: SafetyPolicy | None = None,
+    policy_value: PolicyValue | None = None,
+    context: str | None = None,
+) -> PolicyBinding:
+    """Resolve a policy binding, enforcing that only one of policy/value is set."""
+    if policy is not None and policy_value is not None:
+        raise PrismPolicyBindingError(
+            "received both safety policy and policy_value",
+            context=context,
+            policy_mode="ambiguous",
+        )
+    if policy_value is not None:
+        return PolicyBinding(PolicyMode.VALUE, policy=None, policy_value=policy_value)
+    return PolicyBinding(PolicyMode.STATIC, policy=policy, policy_value=None)
+
+
 def oob_mask(ok, *, policy: SafetyPolicy = DEFAULT_SAFETY_POLICY):
     """Return a corruption mask based on OOB policy."""
     if policy.mode == SafetyMode.CORRUPT:
@@ -120,4 +151,6 @@ __all__ = [
     "oob_any",
     "oob_mask_value",
     "oob_any_value",
+    "PolicyBinding",
+    "resolve_policy_binding",
 ]
