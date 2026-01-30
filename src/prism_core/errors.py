@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 
-@dataclass(frozen=True)
+@dataclass
 class PrismExportMissingError(AttributeError):
     name: str
     module: str = "prism_vm_core.exports"
@@ -15,7 +15,7 @@ class PrismExportMissingError(AttributeError):
         return f"prism_vm export missing: {self.name}"
 
 
-@dataclass(frozen=True)
+@dataclass
 class PrismPolicyModeError(ValueError):
     mode: object
     allowed: tuple[str, ...] = ("static", "value")
@@ -26,7 +26,7 @@ class PrismPolicyModeError(ValueError):
         return f"unknown policy_mode={self.mode!r}"
 
 
-@dataclass(frozen=True)
+@dataclass
 class PrismPolicyBindingError(ValueError):
     message: str
     context: str | None = None
@@ -36,7 +36,7 @@ class PrismPolicyBindingError(ValueError):
         return self.message
 
 
-@dataclass(frozen=True)
+@dataclass
 class PrismValidateModeError(ValueError):
     mode: object
     allowed: tuple[str, ...] = ("none", "strict", "hyper")
@@ -46,7 +46,7 @@ class PrismValidateModeError(ValueError):
         return f"Unknown validate_mode={self.mode!r}"
 
 
-@dataclass(frozen=True)
+@dataclass
 class PrismBspModeError(ValueError):
     mode: object
     allowed: tuple[str, ...] = ("intrinsic", "cnf2", "auto")
@@ -56,7 +56,7 @@ class PrismBspModeError(ValueError):
         return f"Unknown bsp_mode={self.mode!r}"
 
 
-@dataclass(frozen=True)
+@dataclass
 class PrismCnf2ModeError(ValueError):
     mode: object
     allowed: tuple[str, ...] = ("off", "base", "slot1", "auto")
@@ -66,7 +66,7 @@ class PrismCnf2ModeError(ValueError):
         return f"Unknown cnf2_mode={self.mode!r}"
 
 
-@dataclass(frozen=True)
+@dataclass
 class PrismCnf2ModeConflictError(ValueError):
     message: str
     context: str | None = None
@@ -75,7 +75,7 @@ class PrismCnf2ModeConflictError(ValueError):
         return self.message
 
 
-@dataclass(frozen=True)
+@dataclass
 class PrismSafetyModeError(ValueError):
     mode: object
     allowed: tuple[str, ...] = ("corrupt", "clamp", "drop")
