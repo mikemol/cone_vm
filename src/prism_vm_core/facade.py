@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.di import call_with_optional_kwargs, wrap_policy, wrap_index_policy
+from prism_core.di import call_with_optional_kwargs, wrap_index_policy
 from prism_core.safety import SafetyPolicy, DEFAULT_SAFETY_POLICY, oob_mask
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -330,7 +330,11 @@ from prism_vm_core.guards import (
     safe_gather_1d_ok_cfg as _safe_gather_1d_ok_cfg,
     safe_index_1d_cfg as _safe_index_1d_cfg,
     make_safe_gather_fn,
+    make_safe_gather_ok_fn,
     make_safe_index_fn,
+    resolve_safe_gather_fn,
+    resolve_safe_gather_ok_fn,
+    resolve_safe_index_fn,
     guard_slot0_perm_cfg,
     guard_null_row_cfg,
     guard_zero_row_cfg,
@@ -381,7 +385,11 @@ guards_enabled_cfg = guards_enabled_cfg
 guard_max_cfg = guard_max_cfg
 guard_gather_index_cfg = guard_gather_index_cfg
 make_safe_gather_fn = make_safe_gather_fn
+make_safe_gather_ok_fn = make_safe_gather_ok_fn
 make_safe_index_fn = make_safe_index_fn
+resolve_safe_gather_fn = resolve_safe_gather_fn
+resolve_safe_gather_ok_fn = resolve_safe_gather_ok_fn
+resolve_safe_index_fn = resolve_safe_index_fn
 guard_slot0_perm_cfg = guard_slot0_perm_cfg
 guard_null_row_cfg = guard_null_row_cfg
 guard_zero_row_cfg = guard_zero_row_cfg
@@ -740,12 +748,6 @@ def commit_stratum(
     """
     if intern_fn is None:
         intern_fn = intern_nodes
-    safe_gather_fn = safe_gather_1d
-    safe_gather_ok_fn = safe_gather_1d_ok
-    if guard_cfg is not None:
-        safe_gather_fn = partial(safe_gather_1d_cfg, cfg=guard_cfg)
-        safe_gather_ok_fn = partial(safe_gather_1d_ok_cfg, cfg=guard_cfg)
-    safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
     return _commit_stratum_impl(
         ledger,
         stratum,
@@ -753,9 +755,8 @@ def commit_stratum(
         validate=validate,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
-        safe_gather_fn=safe_gather_fn,
-        safe_gather_ok_fn=safe_gather_ok_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
 
 

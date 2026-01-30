@@ -10,8 +10,8 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.di import bind_optional_kwargs, cached_jit, resolve, wrap_policy
-from prism_core.guards import GuardConfig, make_safe_gather_fn
+from prism_core.di import bind_optional_kwargs, cached_jit, resolve
+from prism_core.guards import GuardConfig, resolve_safe_gather_fn
 from prism_core.safety import SafetyPolicy
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -109,14 +109,11 @@ def op_interact_jit(
     """Return a jitted op_interact entrypoint for fixed DI."""
     if guard_max_fn is None:
         from prism_vm_core.guards import _guard_max as guard_max_fn  # type: ignore
-    if guard_cfg is not None:
-        safe_gather_fn = make_safe_gather_fn(
-            cfg=guard_cfg,
-            policy=safe_gather_policy,
-            safe_gather_fn=safe_gather_fn,
-        )
-    else:
-        safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
+    safe_gather_fn = resolve_safe_gather_fn(
+        safe_gather_fn=safe_gather_fn,
+        policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
     return _op_interact_jit(safe_gather_fn, scatter_drop_fn, guard_max_fn)
 
 
@@ -472,14 +469,11 @@ def cycle_jit(
     """Return a jitted cycle entrypoint for fixed DI."""
     if test_guards:
         raise RuntimeError("cycle_jit is disabled under TEST_GUARDS")
-    if guard_cfg is not None:
-        safe_gather_fn = make_safe_gather_fn(
-            cfg=guard_cfg,
-            policy=safe_gather_policy,
+        safe_gather_fn = resolve_safe_gather_fn(
             safe_gather_fn=safe_gather_fn,
+            policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
         )
-    else:
-        safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
     servo_enabled_value = bool(servo_enabled_fn())
     return _cycle_jit(
         do_sort,

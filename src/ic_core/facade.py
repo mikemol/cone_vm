@@ -10,7 +10,7 @@ from dataclasses import replace
 from functools import partial
 
 from prism_core.safety import SafetyPolicy
-from prism_core.jax_safe import safe_index_1d
+from prism_core.guards import resolve_safe_index_fn
 from prism_core.alloc import (
     AllocConfig,
     DEFAULT_ALLOC_CONFIG,
@@ -23,7 +23,6 @@ from ic_core.guards import (
     DEFAULT_IC_GUARD_CONFIG,
     safe_index_1d_cfg,
 )
-from prism_core.guards import make_safe_index_fn
 
 from ic_core.config import ICEngineConfig, ICGraphConfig, ICRuleConfig, DEFAULT_GRAPH_CONFIG
 from ic_core.domains import (
@@ -143,14 +142,11 @@ from ic_core.rules import (
 
 
 def _resolve_safe_index_fn(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
-    if cfg.guard_cfg is not None:
-        safe_index_fn = make_safe_index_fn(
-            cfg=cfg.guard_cfg,
-            policy=cfg.safety_policy,
-            safe_index_fn=safe_index_fn,
-        )
-    return safe_index_fn
+    return resolve_safe_index_fn(
+        safe_index_fn=cfg.safe_index_fn,
+        policy=cfg.safety_policy,
+        guard_cfg=cfg.guard_cfg,
+    )
 
 
 def ic_apply_active_pairs(
@@ -217,14 +213,14 @@ def graph_config_with_guard(
     compact_cfg=None,
 ) -> ICGraphConfig:
     """Return a graph config using safe_index_1d_cfg with guard config."""
-    base_index_fn = cfg.safe_index_fn or safe_index_1d
+    base_index_fn = cfg.safe_index_fn
     cfg = replace(
         cfg,
         guard_cfg=guard_cfg,
-        safe_index_fn=make_safe_index_fn(
-            cfg=guard_cfg,
-            policy=safety_policy,
+        safe_index_fn=resolve_safe_index_fn(
             safe_index_fn=base_index_fn,
+            policy=safety_policy,
+            guard_cfg=guard_cfg,
         ),
     )
     if safety_policy is not None:
@@ -541,7 +537,7 @@ __all__ = [
     "ICGuardConfig",
     "DEFAULT_IC_GUARD_CONFIG",
     "safe_index_1d_cfg",
-    "make_safe_index_fn",
+    "resolve_safe_index_fn",
     "graph_config_with_index_fn",
     "ICNodeId",
     "ICPortId",

@@ -3,8 +3,7 @@ from __future__ import annotations
 from functools import partial
 
 from prism_core.di import cached_jit
-from prism_core.jax_safe import safe_index_1d
-from ic_core.guards import make_safe_index_fn
+from prism_core.guards import resolve_safe_index_fn
 from ic_core.config import ICGraphConfig, ICEngineConfig, DEFAULT_GRAPH_CONFIG
 from ic_core.engine import (
     DEFAULT_ENGINE_CONFIG,
@@ -24,14 +23,11 @@ from ic_core.graph import (
 )
 
 def _resolve_safe_index_fn(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
-    if cfg.guard_cfg is not None:
-        safe_index_fn = make_safe_index_fn(
-            cfg=cfg.guard_cfg,
-            policy=cfg.safety_policy,
-            safe_index_fn=safe_index_fn,
-        )
-    return safe_index_fn
+    return resolve_safe_index_fn(
+        safe_index_fn=cfg.safe_index_fn,
+        policy=cfg.safety_policy,
+        guard_cfg=cfg.guard_cfg,
+    )
 
 
 @cached_jit

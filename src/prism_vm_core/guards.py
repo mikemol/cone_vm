@@ -11,7 +11,11 @@ from prism_core.guards import (
     safe_gather_1d_cfg as _safe_gather_1d_cfg,
     safe_gather_1d_ok_cfg as _safe_gather_1d_ok_cfg,
     make_safe_gather_fn as _make_safe_gather_fn,
+    make_safe_gather_ok_fn as _make_safe_gather_ok_fn,
     make_safe_index_fn as _make_safe_index_fn,
+    resolve_safe_gather_fn as _resolve_safe_gather_fn,
+    resolve_safe_gather_ok_fn as _resolve_safe_gather_ok_fn,
+    resolve_safe_index_fn as _resolve_safe_index_fn,
 )
 from prism_vm_core.ontology import OP_NULL, OP_ZERO
 
@@ -107,6 +111,17 @@ def make_safe_gather_fn(*, cfg: GuardConfig = DEFAULT_GUARD_CONFIG, policy=None,
     return _make_safe_gather_fn(cfg=cfg, policy=policy, safe_gather_fn=safe_gather_fn)
 
 
+def make_safe_gather_ok_fn(
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+    policy=None,
+    safe_gather_ok_fn=None,
+):
+    return _make_safe_gather_ok_fn(
+        cfg=cfg, policy=policy, safe_gather_ok_fn=safe_gather_ok_fn
+    )
+
+
 def make_safe_index_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
@@ -115,6 +130,41 @@ def make_safe_index_fn(
 ):
     return _make_safe_index_fn(
         cfg=cfg, policy=policy, safe_index_fn=safe_index_fn
+    )
+
+
+def resolve_safe_gather_fn(
+    *,
+    safe_gather_fn=None,
+    policy=None,
+    guard_cfg: GuardConfig | None = None,
+):
+    return _resolve_safe_gather_fn(
+        safe_gather_fn=safe_gather_fn, policy=policy, guard_cfg=guard_cfg
+    )
+
+
+def resolve_safe_gather_ok_fn(
+    *,
+    safe_gather_ok_fn=None,
+    policy=None,
+    guard_cfg: GuardConfig | None = None,
+):
+    return _resolve_safe_gather_ok_fn(
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        policy=policy,
+        guard_cfg=guard_cfg,
+    )
+
+
+def resolve_safe_index_fn(
+    *,
+    safe_index_fn=None,
+    policy=None,
+    guard_cfg: GuardConfig | None = None,
+):
+    return _resolve_safe_index_fn(
+        safe_index_fn=safe_index_fn, policy=policy, guard_cfg=guard_cfg
     )
 
 
@@ -260,7 +310,11 @@ __all__ = [
     "safe_gather_1d_cfg",
     "safe_gather_1d_ok_cfg",
     "make_safe_gather_fn",
+    "make_safe_gather_ok_fn",
     "make_safe_index_fn",
+    "resolve_safe_gather_fn",
+    "resolve_safe_gather_ok_fn",
+    "resolve_safe_index_fn",
     "guard_slot0_perm_cfg",
     "guard_null_row_cfg",
     "guard_zero_row_cfg",
