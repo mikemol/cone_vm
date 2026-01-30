@@ -56,6 +56,16 @@ class PrismBspModeError(ValueError):
         return f"Unknown bsp_mode={self.mode!r}"
 
 
+@dataclass(frozen=True)
+class PrismSafetyModeError(ValueError):
+    mode: object
+    allowed: tuple[str, ...] = ("corrupt", "clamp", "drop")
+    context: str | None = None
+
+    def __str__(self) -> str:
+        return f"Unknown safety mode: {self.mode!r}"
+
+
 def _available_tuple(values: Iterable[str] | None) -> tuple[str, ...] | None:
     if values is None:
         return None
@@ -68,5 +78,6 @@ __all__ = [
     "PrismPolicyBindingError",
     "PrismValidateModeError",
     "PrismBspModeError",
+    "PrismSafetyModeError",
     "_available_tuple",
 ]

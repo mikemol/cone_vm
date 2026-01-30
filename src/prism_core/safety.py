@@ -6,7 +6,7 @@ from enum import Enum
 import jax.numpy as jnp
 from typing import TypeAlias
 
-from prism_core.errors import PrismPolicyModeError
+from prism_core.errors import PrismPolicyModeError, PrismSafetyModeError
 
 
 class SafetyMode(str, Enum):
@@ -25,7 +25,7 @@ def coerce_safety_mode(mode: SafetyMode | str) -> SafetyMode:
             return SafetyMode.CLAMP
         if mode == SafetyMode.DROP.value:
             return SafetyMode.DROP
-    raise ValueError(f"Unknown safety mode: {mode!r}")
+    raise PrismSafetyModeError(mode=mode)
 
 
 class PolicyMode(str, Enum):
