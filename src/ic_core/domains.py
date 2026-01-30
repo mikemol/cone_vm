@@ -10,6 +10,7 @@ from prism_core.host import (
     _host_int,
     _host_int_value,
 )
+from prism_core.domains import _require_ptr_domain
 
 
 @dataclass(frozen=True)
@@ -43,12 +44,6 @@ class ICPtr:
 
     def __index__(self) -> int:
         return int(self.i)
-
-
-def _require_ptr_domain(ptr, label: str, expected_type):
-    if not isinstance(ptr, expected_type):
-        raise TypeError(f"{label} expected {expected_type.__name__}")
-    return ptr
 
 
 def _node_id(value) -> ICNodeId:
