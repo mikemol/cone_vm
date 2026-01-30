@@ -126,20 +126,21 @@ def make_safe_index_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
     policy=None,
+    safe_index_fn=None,
 ):
     """Return a SafeIndexFn wired to the provided GuardConfig."""
-    if cfg.safe_index_fn is not None:
-        def _safe_index(idx, size, label, *, policy=policy):
-            return call_with_optional_kwargs(
-                cfg.safe_index_fn,
-                {"guard": None, "policy": policy},
-                idx,
-                size,
-                label,
-            )
-    else:
-        def _safe_index(idx, size, label, *, policy=policy):
-            return safe_index_1d_cfg(idx, size, label, policy=policy, cfg=cfg)
+    if safe_index_fn is None:
+        safe_index_fn = cfg.safe_index_fn or _jax_safe.safe_index_1d
+
+    def _safe_index(idx, size, label, *, policy=policy):
+        guard_gather_index_cfg(idx, size, label, cfg=cfg)
+        return call_with_optional_kwargs(
+            safe_index_fn,
+            {"guard": False, "policy": policy},
+            idx,
+            size,
+            label,
+        )
 
     return _safe_index
 

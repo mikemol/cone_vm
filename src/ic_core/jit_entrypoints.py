@@ -24,10 +24,12 @@ from ic_core.graph import (
 )
 
 def _resolve_safe_index_fn(cfg: ICGraphConfig):
-    safe_index_fn = _resolve_safe_index_fn(cfg)
-    if cfg.guard_cfg is not None and safe_index_fn is safe_index_1d:
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    if cfg.guard_cfg is not None:
         safe_index_fn = make_safe_index_fn(
-            cfg=cfg.guard_cfg, policy=cfg.safety_policy
+            cfg=cfg.guard_cfg,
+            policy=cfg.safety_policy,
+            safe_index_fn=safe_index_fn,
         )
     return safe_index_fn
 

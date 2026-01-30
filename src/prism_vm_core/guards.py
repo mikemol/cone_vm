@@ -107,8 +107,15 @@ def make_safe_gather_fn(*, cfg: GuardConfig = DEFAULT_GUARD_CONFIG, policy=None,
     return _make_safe_gather_fn(cfg=cfg, policy=policy, safe_gather_fn=safe_gather_fn)
 
 
-def make_safe_index_fn(*, cfg: GuardConfig = DEFAULT_GUARD_CONFIG, policy=None):
-    return _make_safe_index_fn(cfg=cfg, policy=policy)
+def make_safe_index_fn(
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+    policy=None,
+    safe_index_fn=None,
+):
+    return _make_safe_index_fn(
+        cfg=cfg, policy=policy, safe_index_fn=safe_index_fn
+    )
 
 
 def _pop_token(tokens):
