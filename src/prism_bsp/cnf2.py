@@ -482,7 +482,9 @@ def _cycle_candidates_core_common(
             (empty, empty, empty),
             identity_q_fn,
         )
-    num_frontier = frontier_ids.a.shape[0]
+    frontier_arr = jnp.atleast_1d(frontier_ids.a)
+    frontier_ids = _committed_ids(frontier_arr)
+    num_frontier = frontier_arr.shape[0]
     if num_frontier == 0:
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
         return (
@@ -503,7 +505,7 @@ def _cycle_candidates_core_common(
 
         return lax.while_loop(cond, body, (ptr, jnp.int32(0)))
 
-    rewrite_ids, depths = jax.vmap(_peel_one)(frontier_ids.a)
+    rewrite_ids, depths = jax.vmap(_peel_one)(frontier_arr)
 
     r_ops = ledger.opcode[rewrite_ids]
     r_a1 = ledger.arg1[rewrite_ids]

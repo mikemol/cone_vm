@@ -21,9 +21,9 @@ def i32v(*values):
     return jnp.array(values, dtype=jnp.int32)
 
 
-def intern_nodes(ledger, ops, a1s, a2s):
+def intern_nodes(ledger, ops, a1s, a2s, **kwargs):
     """Intern nodes using Python lists/arrays; returns (ids, ledger)."""
-    return pv.intern_nodes(ledger, i32(ops), i32(a1s), i32(a2s))
+    return pv.intern_nodes(ledger, i32(ops), i32(a1s), i32(a2s), **kwargs)
 
 
 def intern1(ledger, op, a1, a2):
