@@ -51,25 +51,54 @@ def _load_all_list(path: Path) -> list[str]:
     raise SystemExit(f"__all__ not found or not a literal list in {path}")
 
 
-def main() -> int:
-    exports_path = ROOT / "src" / "prism_vm_core" / "exports.py"
-    facade_path = ROOT / "src" / "prism_vm_core" / "facade.py"
-    types_path = ROOT / "src" / "prism_vm_core" / "types.py"
-    repl_path = ROOT / "src" / "prism_cli" / "repl.py"
-    errors_path = ROOT / "src" / "prism_core" / "errors.py"
-
+def _check_exports(exports_path: Path, source_paths: tuple[Path, ...]) -> list[str]:
     export_names = _load_all_list(exports_path)
-    available = set()
-    for path in (facade_path, types_path, repl_path, errors_path):
+    available: set[str] = set()
+    for path in source_paths:
         available |= _load_module_names(path)
+    return [name for name in export_names if name not in available]
 
-    missing = [name for name in export_names if name not in available]
+
+def main() -> int:
+    failures: list[tuple[str, list[str]]] = []
+
+    prism_exports = ROOT / "src" / "prism_vm_core" / "exports.py"
+    prism_sources = (
+        ROOT / "src" / "prism_vm_core" / "facade.py",
+        ROOT / "src" / "prism_vm_core" / "types.py",
+        ROOT / "src" / "prism_cli" / "repl.py",
+        ROOT / "src" / "prism_core" / "errors.py",
+    )
+    missing = _check_exports(prism_exports, prism_sources)
     if missing:
+        failures.append(("prism_vm_core/exports.py", missing))
+
+    ic_facade = ROOT / "src" / "ic_core" / "facade.py"
+    ic_types = ROOT / "src" / "ic_core" / "types.py"
+    ic_sources = (
+        ic_facade,
+        ic_types,
+    )
+    ic_export_names = _load_all_list(ic_facade)
+    ic_export_names += [name for name in _load_all_list(ic_types) if name not in ic_export_names]
+    available = set()
+    for path in ic_sources:
+        available |= _load_module_names(path)
+    missing = [name for name in ic_export_names if name not in available]
+    if missing:
+        failures.append(("ic_core (facade/types __all__)", missing))
+
+    if failures:
         print("Missing exports detected:")
-        for name in missing:
-            print(f"  - {name}")
+        for label, missing_names in failures:
+            print(f"- {label}")
+            for name in missing_names:
+                print(f"  - {name}")
         return 1
-    print(f"export smoke: ok ({len(export_names)} symbols)")
+
+    prism_count = len(_load_all_list(prism_exports))
+    ic_count = len(ic_export_names)
+    print(f"export smoke: ok (prism={prism_count}, ic={ic_count})")
     return 0
 
 
