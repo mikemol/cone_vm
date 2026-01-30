@@ -12,6 +12,7 @@ from prism_core.safety import (
     POLICY_VALUE_DEFAULT,
 )
 from prism_core.di import call_with_optional_kwargs
+from prism_core.errors import PrismPolicyModeError, PrismPolicyBindingError
 from prism_core.guards import (
     GuardConfig,
     resolve_safe_gather_fn,
@@ -406,12 +407,16 @@ def _commit_stratum_common(
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
     q_prev: QMap = prior_q or identity_q_fn
     if policy_mode not in ("static", "value"):
-        raise ValueError(f"commit_stratum unknown policy_mode={policy_mode!r}")
+        raise PrismPolicyModeError(
+            mode=policy_mode, allowed=("static", "value"), context="commit_stratum"
+        )
     if policy_mode == "static":
         if safe_gather_policy_value is not None:
-            raise ValueError(
+            raise PrismPolicyBindingError(
                 "commit_stratum_static received safe_gather_policy_value; "
-                "use commit_stratum_value"
+                "use commit_stratum_value",
+                context="commit_stratum_static",
+                policy_mode="static",
             )
         if safe_gather_policy is None:
             safe_gather_policy = SafetyPolicy()
@@ -427,9 +432,11 @@ def _commit_stratum_common(
         )
     else:
         if safe_gather_policy is not None:
-            raise ValueError(
+            raise PrismPolicyBindingError(
                 "commit_stratum_value received safe_gather_policy; "
-                "use commit_stratum_static"
+                "use commit_stratum_static",
+                context="commit_stratum_value",
+                policy_mode="value",
             )
         if safe_gather_policy_value is None:
             safe_gather_policy_value = POLICY_VALUE_DEFAULT
@@ -615,9 +622,10 @@ def commit_stratum(
 ):
     """Dispatching wrapper for commit_stratum."""
     if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "commit_stratum received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="commit_stratum",
         )
     if safe_gather_policy_value is not None:
         return commit_stratum_value(

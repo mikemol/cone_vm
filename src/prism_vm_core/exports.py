@@ -2,6 +2,8 @@
 
 import importlib
 
+from prism_core.errors import PrismExportMissingError
+
 from prism_vm_core import facade as _facade
 from prism_vm_core import types as _types
 
@@ -297,7 +299,9 @@ def _export_lookup(name: str):
         return getattr(_types, name)
     if hasattr(_repl, name):
         return getattr(_repl, name)
-    raise AttributeError(f"prism_vm export missing: {name}")
+    raise PrismExportMissingError(
+        name=name, module=__name__, available=tuple(__all__)
+    )
 
 
 for _name in __all__:
