@@ -53,10 +53,15 @@ def _run_intrinsic(ledger, frontier, iterations: int):
     return ledger, pv._committed_ids(frontier_ids)
 
 
+def _validate_mode_from_flag(validate: bool) -> pv.ValidateMode:
+    return pv.ValidateMode.STRICT if validate else pv.ValidateMode.NONE
+
+
 def _run_cnf2(ledger, frontier, iterations: int, validate: bool):
+    validate_mode = _validate_mode_from_flag(validate)
     for _ in range(iterations):
         ledger, frontier_prov, _, q_map = pv.cycle_candidates(
-            ledger, frontier, validate_stratum=validate
+            ledger, frontier, validate_mode=validate_mode
         )
         frontier = pv.apply_q(q_map, frontier_prov)
     jax.block_until_ready(ledger.count)

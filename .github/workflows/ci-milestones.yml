@@ -262,6 +262,8 @@ jobs:
     if: needs.changes.outputs.code_changed == 'true' && github.actor == github.repository_owner && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     runs-on: [self-hosted, cassian, gpu, local]
     timeout-minutes: 30
+    env:
+      XLA_FLAGS: "--xla_gpu_enable_command_buffer="
     strategy:
       fail-fast: false
       matrix:
