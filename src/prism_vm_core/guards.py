@@ -13,9 +13,15 @@ from prism_core.guards import (
     make_safe_gather_fn as _make_safe_gather_fn,
     make_safe_gather_ok_fn as _make_safe_gather_ok_fn,
     make_safe_index_fn as _make_safe_index_fn,
+    make_safe_gather_value_fn as _make_safe_gather_value_fn,
+    make_safe_gather_ok_value_fn as _make_safe_gather_ok_value_fn,
+    make_safe_index_value_fn as _make_safe_index_value_fn,
     resolve_safe_gather_fn as _resolve_safe_gather_fn,
     resolve_safe_gather_ok_fn as _resolve_safe_gather_ok_fn,
     resolve_safe_index_fn as _resolve_safe_index_fn,
+    resolve_safe_gather_value_fn as _resolve_safe_gather_value_fn,
+    resolve_safe_gather_ok_value_fn as _resolve_safe_gather_ok_value_fn,
+    resolve_safe_index_value_fn as _resolve_safe_index_value_fn,
 )
 from prism_vm_core.ontology import OP_NULL, OP_ZERO
 
@@ -133,6 +139,36 @@ def make_safe_index_fn(
     )
 
 
+def make_safe_gather_value_fn(
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+    safe_gather_value_fn=None,
+):
+    return _make_safe_gather_value_fn(
+        cfg=cfg, safe_gather_value_fn=safe_gather_value_fn
+    )
+
+
+def make_safe_gather_ok_value_fn(
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+    safe_gather_ok_value_fn=None,
+):
+    return _make_safe_gather_ok_value_fn(
+        cfg=cfg, safe_gather_ok_value_fn=safe_gather_ok_value_fn
+    )
+
+
+def make_safe_index_value_fn(
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+    safe_index_value_fn=None,
+):
+    return _make_safe_index_value_fn(
+        cfg=cfg, safe_index_value_fn=safe_index_value_fn
+    )
+
+
 def resolve_safe_gather_fn(
     *,
     safe_gather_fn=None,
@@ -165,6 +201,36 @@ def resolve_safe_index_fn(
 ):
     return _resolve_safe_index_fn(
         safe_index_fn=safe_index_fn, policy=policy, guard_cfg=guard_cfg
+    )
+
+
+def resolve_safe_gather_value_fn(
+    *,
+    safe_gather_value_fn=None,
+    guard_cfg: GuardConfig | None = None,
+):
+    return _resolve_safe_gather_value_fn(
+        safe_gather_value_fn=safe_gather_value_fn, guard_cfg=guard_cfg
+    )
+
+
+def resolve_safe_gather_ok_value_fn(
+    *,
+    safe_gather_ok_value_fn=None,
+    guard_cfg: GuardConfig | None = None,
+):
+    return _resolve_safe_gather_ok_value_fn(
+        safe_gather_ok_value_fn=safe_gather_ok_value_fn, guard_cfg=guard_cfg
+    )
+
+
+def resolve_safe_index_value_fn(
+    *,
+    safe_index_value_fn=None,
+    guard_cfg: GuardConfig | None = None,
+):
+    return _resolve_safe_index_value_fn(
+        safe_index_value_fn=safe_index_value_fn, guard_cfg=guard_cfg
     )
 
 
@@ -312,9 +378,15 @@ __all__ = [
     "make_safe_gather_fn",
     "make_safe_gather_ok_fn",
     "make_safe_index_fn",
+    "make_safe_gather_value_fn",
+    "make_safe_gather_ok_value_fn",
+    "make_safe_index_value_fn",
     "resolve_safe_gather_fn",
     "resolve_safe_gather_ok_fn",
     "resolve_safe_index_fn",
+    "resolve_safe_gather_value_fn",
+    "resolve_safe_gather_ok_value_fn",
+    "resolve_safe_index_value_fn",
     "guard_slot0_perm_cfg",
     "guard_null_row_cfg",
     "guard_zero_row_cfg",

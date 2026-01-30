@@ -5,12 +5,17 @@ import jax.numpy as jnp
 from jax import lax
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.safety import SafetyPolicy
+from prism_core.safety import (
+    SafetyPolicy,
+    PolicyValue,
+    POLICY_VALUE_CLAMP,
+)
 from prism_core.di import call_with_optional_kwargs
 from prism_core.guards import (
     GuardConfig,
     resolve_safe_gather_fn,
     resolve_safe_gather_ok_fn,
+    resolve_safe_gather_ok_value_fn,
 )
 from prism_ledger.intern import intern_nodes
 from prism_vm_core.constants import _PREFIX_SCAN_CHUNK
@@ -24,11 +29,12 @@ from prism_vm_core.domains import (
 )
 from prism_vm_core.guards import _guards_enabled
 from prism_vm_core.structures import NodeBatch, Stratum
-from prism_core.protocols import SafeGatherOkFn
+from prism_core.protocols import SafeGatherOkBoundFn, SafeGatherOkFn, SafeGatherOkValueFn
 from prism_vm_core.protocols import HostRaiseFn, InternFn, NodeBatchFn
 
 safe_gather_1d = _jax_safe.safe_gather_1d
 safe_gather_1d_ok = _jax_safe.safe_gather_1d_ok
+safe_gather_1d_ok_value = _jax_safe.safe_gather_1d_ok_value
 
 
 def _node_batch(op, a1, a2):
@@ -148,6 +154,7 @@ class QMapMeta:
     stratum: Stratum
     canon_len: jnp.ndarray
     safe_gather_policy: SafetyPolicy | None
+    safe_gather_policy_value: PolicyValue | None = None
 
 
 def _q_map_ok(ids, meta: QMapMeta):
@@ -158,6 +165,14 @@ def _q_map_ok(ids, meta: QMapMeta):
     idx = jnp.where(in_range, ids_arr - start, jnp.int32(0))
     ok_idx = idx < meta.canon_len
     ok = jnp.where(in_range, ok_idx, True)
+    if meta.safe_gather_policy_value is not None:
+        policy_val = jnp.asarray(meta.safe_gather_policy_value, dtype=jnp.int32)
+        ok = jnp.where(
+            policy_val == POLICY_VALUE_CLAMP,
+            jnp.ones_like(ok, dtype=jnp.bool_),
+            ok,
+        )
+        return ok
     policy = meta.safe_gather_policy or SafetyPolicy()
     if policy.mode == "clamp":
         ok = jnp.ones_like(ok, dtype=jnp.bool_)
@@ -184,7 +199,7 @@ def apply_q(
     return out, ok
 
 
-def _apply_stratum_q(
+def _apply_stratum_q_core(
     ids,
     stratum: Stratum,
     canon_ids,
@@ -195,7 +210,7 @@ def _apply_stratum_q(
     guards_enabled_fn=_guards_enabled,
     provisional_ids_fn=_provisional_ids,
     return_ok: bool = False,
-    oob_policy: SafetyPolicy | None = None,
+    policy: SafetyPolicy,
 ):
     expected = jnp.maximum(jnp.asarray(stratum.count, dtype=jnp.int32), 0)
     actual = jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32)
@@ -216,20 +231,133 @@ def _apply_stratum_q(
     in_range = (ids.a >= start) & (ids.a < start + count)
     idx = jnp.where(in_range, ids.a - start, jnp.int32(0))
     canon_len = jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32)
-    values, ok_idx, corrupt = call_with_optional_kwargs(
-        safe_gather_ok_fn,
-        {"policy": oob_policy},
-        canon_ids.a,
-        idx,
-        label,
-    )
+    values, ok_idx, corrupt = safe_gather_ok_fn(canon_ids.a, idx, label)
     ok = jnp.where(in_range, ok_idx, True)
     mapped = values
     out = provisional_ids_fn(jnp.where(in_range, mapped, ids.a))
     if not return_ok:
         return out
-    if oob_policy is None:
-        oob_policy = SafetyPolicy()
+    if policy.mode == "clamp":
+        ok = jnp.ones_like(ok, dtype=jnp.bool_)
+    corrupt = jnp.where(in_range, corrupt, False)
+    return out, ok, corrupt
+
+
+def _apply_stratum_q_static(
+    ids,
+    stratum: Stratum,
+    canon_ids,
+    label: str,
+    *,
+    safe_gather_fn=safe_gather_1d,
+    safe_gather_ok_fn: SafeGatherOkBoundFn = safe_gather_1d_ok,
+    guards_enabled_fn=_guards_enabled,
+    provisional_ids_fn=_provisional_ids,
+    return_ok: bool = False,
+    policy: SafetyPolicy,
+):
+    """Static-policy variant: safe_gather_ok_fn already bound to policy."""
+    return _apply_stratum_q_core(
+        ids,
+        stratum,
+        canon_ids,
+        label,
+        safe_gather_fn=safe_gather_fn,
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        provisional_ids_fn=provisional_ids_fn,
+        return_ok=return_ok,
+        policy=policy,
+    )
+
+
+def _apply_stratum_q_dynamic(
+    ids,
+    stratum: Stratum,
+    canon_ids,
+    label: str,
+    *,
+    safe_gather_fn=safe_gather_1d,
+    safe_gather_ok_fn: SafeGatherOkFn = safe_gather_1d_ok,
+    guards_enabled_fn=_guards_enabled,
+    provisional_ids_fn=_provisional_ids,
+    return_ok: bool = False,
+    policy: SafetyPolicy,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Dynamic-policy variant: policy passed at call site."""
+    safe_gather_ok_fn = resolve_safe_gather_ok_fn(
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        policy=policy,
+        guard_cfg=guard_cfg,
+    )
+    return _apply_stratum_q_core(
+        ids,
+        stratum,
+        canon_ids,
+        label,
+        safe_gather_fn=safe_gather_fn,
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        provisional_ids_fn=provisional_ids_fn,
+        return_ok=return_ok,
+        policy=policy,
+    )
+
+
+def _apply_stratum_q_value(
+    ids,
+    stratum: Stratum,
+    canon_ids,
+    label: str,
+    *,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = safe_gather_1d_ok_value,
+    guards_enabled_fn=_guards_enabled,
+    provisional_ids_fn=_provisional_ids,
+    return_ok: bool = False,
+    policy_value: PolicyValue,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Policy-value variant: policy passed as JAX value."""
+    safe_gather_ok_value_fn = resolve_safe_gather_ok_value_fn(
+        safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+        guard_cfg=guard_cfg,
+    )
+
+    def _safe_gather_ok(arr, idx, inner_label):
+        return safe_gather_ok_value_fn(
+            arr, idx, inner_label, policy_value=policy_value
+        )
+
+    expected = jnp.maximum(jnp.asarray(stratum.count, dtype=jnp.int32), 0)
+    actual = jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32)
+    if guards_enabled_fn():
+        mismatch = expected != actual
+
+        def _raise(bad_val, exp_val, act_val):
+            if bad_val:
+                raise RuntimeError(
+                    f"guard failed: {label} count={int(exp_val)} canon_ids={int(act_val)}"
+                )
+
+        jax.debug.callback(_raise, mismatch, expected, actual)
+    if canon_ids.a.shape[0] == 0:
+        return ids
+    start = jnp.asarray(stratum.start, dtype=jnp.int32)
+    count = expected
+    in_range = (ids.a >= start) & (ids.a < start + count)
+    idx = jnp.where(in_range, ids.a - start, jnp.int32(0))
+    values, ok_idx, corrupt = _safe_gather_ok(canon_ids.a, idx, label)
+    ok = jnp.where(in_range, ok_idx, True)
+    out = provisional_ids_fn(jnp.where(in_range, values, ids.a))
+    if not return_ok:
+        return out
+    policy_val = jnp.asarray(policy_value, dtype=jnp.int32)
+    ok = jnp.where(
+        policy_val == POLICY_VALUE_CLAMP,
+        jnp.ones_like(ok, dtype=jnp.bool_),
+        ok,
+    )
     corrupt = jnp.where(in_range, corrupt, False)
     return out, ok, corrupt
 
@@ -244,7 +372,7 @@ def commit_stratum(
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q,
+    apply_stratum_q_fn=_apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -255,6 +383,8 @@ def commit_stratum(
     safe_gather_fn=safe_gather_1d,
     safe_gather_ok_fn: SafeGatherOkFn = safe_gather_1d_ok,
     safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = safe_gather_1d_ok_value,
     guard_cfg: GuardConfig | None = None,
 ):
     # Collapseʰ: homomorphic projection q at the stratum boundary.
@@ -273,18 +403,31 @@ def commit_stratum(
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
     q_prev: QMap = prior_q or identity_q_fn
-    if safe_gather_policy is None:
-        safe_gather_policy = SafetyPolicy()
-    safe_gather_fn = resolve_safe_gather_fn(
-        safe_gather_fn=safe_gather_fn,
-        policy=safe_gather_policy,
-        guard_cfg=guard_cfg,
-    )
-    safe_gather_ok_fn = resolve_safe_gather_ok_fn(
-        safe_gather_ok_fn=safe_gather_ok_fn,
-        policy=safe_gather_policy,
-        guard_cfg=guard_cfg,
-    )
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "commit_stratum received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if safe_gather_policy_value is None:
+        if safe_gather_policy is None:
+            safe_gather_policy = SafetyPolicy()
+        safe_gather_fn = resolve_safe_gather_fn(
+            safe_gather_fn=safe_gather_fn,
+            policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
+        )
+        safe_gather_ok_fn = resolve_safe_gather_ok_fn(
+            safe_gather_ok_fn=safe_gather_ok_fn,
+            policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
+        )
+    else:
+        safe_gather_ok_value_fn = resolve_safe_gather_ok_value_fn(
+            safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+            guard_cfg=guard_cfg,
+        )
+        if apply_stratum_q_fn in (_apply_stratum_q_static, _apply_stratum_q_dynamic):
+            apply_stratum_q_fn = _apply_stratum_q_value
     # SYNC: host int() pulls device scalar for host-side control flow (m1).
     count = host_int_value_fn(jnp.maximum(stratum.count, 0))
     if count == 0:
@@ -301,23 +444,31 @@ def commit_stratum(
         raise ValueError("Stratum count mismatch in commit_stratum")
 
     def q_map(ids_in):
-        mapped = apply_stratum_q_fn(
+        apply_optional = {
+            "guard_cfg": guard_cfg,
+            "policy": safe_gather_policy,
+            "policy_value": safe_gather_policy_value,
+            "safe_gather_fn": safe_gather_fn,
+            "safe_gather_ok_fn": safe_gather_ok_fn,
+            "safe_gather_ok_value_fn": safe_gather_ok_value_fn,
+        }
+        mapped = call_with_optional_kwargs(
+            apply_stratum_q_fn,
+            apply_optional,
             ids_in,
             stratum,
             canon_ids,
             "commit_stratum.q",
-            safe_gather_fn=safe_gather_fn,
-            safe_gather_ok_fn=safe_gather_ok_fn,
             guards_enabled_fn=guards_enabled_fn,
             provisional_ids_fn=provisional_ids_fn,
-            oob_policy=safe_gather_policy,
         )
         return q_prev(mapped)
 
     q_meta = QMapMeta(
         stratum=stratum,
         canon_len=jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32),
-        safe_gather_policy=safe_gather_policy,
+        safe_gather_policy=safe_gather_policy if safe_gather_policy_value is None else None,
+        safe_gather_policy_value=safe_gather_policy_value,
     )
     setattr(q_map, "_prism_meta", q_meta)
 

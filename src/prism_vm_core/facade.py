@@ -16,7 +16,18 @@ import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.di import call_with_optional_kwargs
-from prism_core.safety import SafetyPolicy, DEFAULT_SAFETY_POLICY, oob_mask
+from prism_core.safety import (
+    SafetyPolicy,
+    DEFAULT_SAFETY_POLICY,
+    PolicyValue,
+    POLICY_VALUE_CLAMP,
+    POLICY_VALUE_CORRUPT,
+    POLICY_VALUE_DROP,
+    policy_to_value,
+    oob_any_value,
+    oob_mask,
+    oob_mask_value,
+)
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
 from prism_bsp.config import (
@@ -67,8 +78,10 @@ from prism_bsp.cnf2 import (
 from prism_bsp.arena_step import (
     cycle as _cycle,
     cycle_core as _cycle_core,
+    cycle_value as _cycle_value,
     op_interact as _op_interact,
     op_interact_cfg,
+    op_interact_value as _op_interact_value,
     cycle_cfg,
 )
 from prism_bsp.intrinsic import cycle_intrinsic as _cycle_intrinsic, cycle_intrinsic_cfg
@@ -141,6 +154,15 @@ def arena_interact_config_with_policy(
     return replace(cfg, safe_gather_policy=safety_policy)
 
 
+def arena_interact_config_with_policy_value(
+    policy_value,
+    *,
+    cfg: ArenaInteractConfig = DEFAULT_ARENA_INTERACT_CONFIG,
+) -> ArenaInteractConfig:
+    """Return an ArenaInteractConfig with safe_gather_policy_value set."""
+    return replace(cfg, safe_gather_policy_value=policy_value)
+
+
 def arena_interact_config_with_guard(
     guard_cfg: GuardConfig | None,
     *,
@@ -163,6 +185,25 @@ def arena_cycle_config_with_policy(
             interact_cfg = DEFAULT_ARENA_INTERACT_CONFIG
         interact_cfg = replace(interact_cfg, safe_gather_policy=safety_policy)
     return replace(cfg, safe_gather_policy=safety_policy, interact_cfg=interact_cfg)
+
+
+def arena_cycle_config_with_policy_value(
+    policy_value,
+    *,
+    cfg: ArenaCycleConfig = DEFAULT_ARENA_CYCLE_CONFIG,
+    include_interact: bool = True,
+) -> ArenaCycleConfig:
+    """Return an ArenaCycleConfig with safe_gather_policy_value set."""
+    interact_cfg = cfg.interact_cfg
+    if include_interact:
+        if interact_cfg is None:
+            interact_cfg = DEFAULT_ARENA_INTERACT_CONFIG
+        interact_cfg = replace(interact_cfg, safe_gather_policy_value=policy_value)
+    return replace(
+        cfg,
+        safe_gather_policy_value=policy_value,
+        interact_cfg=interact_cfg,
+    )
 
 
 def arena_cycle_config_with_guard(
@@ -302,6 +343,15 @@ def cnf2_config_with_policy(
     return replace(cfg, safe_gather_policy=safety_policy)
 
 
+def cnf2_config_with_policy_value(
+    policy_value,
+    *,
+    cfg: Cnf2Config = DEFAULT_CNF2_CONFIG,
+) -> Cnf2Config:
+    """Return a Cnf2Config with safe_gather_policy_value set."""
+    return replace(cfg, safe_gather_policy_value=policy_value)
+
+
 def cnf2_config_with_guard(
     guard_cfg: GuardConfig | None,
     *,
@@ -332,9 +382,15 @@ from prism_vm_core.guards import (
     make_safe_gather_fn,
     make_safe_gather_ok_fn,
     make_safe_index_fn,
+    make_safe_gather_value_fn,
+    make_safe_gather_ok_value_fn,
+    make_safe_index_value_fn,
     resolve_safe_gather_fn,
     resolve_safe_gather_ok_fn,
     resolve_safe_index_fn,
+    resolve_safe_gather_value_fn,
+    resolve_safe_gather_ok_value_fn,
+    resolve_safe_index_value_fn,
     guard_slot0_perm_cfg,
     guard_null_row_cfg,
     guard_zero_row_cfg,
@@ -342,7 +398,11 @@ from prism_vm_core.guards import (
     guard_swizzle_args_cfg,
 )
 from prism_semantics.commit import commit_stratum as _commit_stratum_impl
-from prism_bsp.cnf2 import cycle_candidates as _cycle_candidates_impl
+from prism_bsp.cnf2 import (
+    cycle_candidates as _cycle_candidates_impl,
+    cycle_candidates_static as _cycle_candidates_static,
+    cycle_candidates_value as _cycle_candidates_value,
+)
 from prism_vm_core.jit_entrypoints import (
     coord_norm_batch_jit,
     cycle_candidates_jit,
@@ -365,6 +425,8 @@ from prism_vm_core.jit_entrypoints import (
     intern_nodes_jit,
     op_interact_jit,
     op_interact_jit_cfg,
+    op_interact_value_jit,
+    cycle_value_jit,
 )
 
 
@@ -378,7 +440,14 @@ _scatter_drop = _jax_safe.scatter_drop
 _scatter_strict = _jax_safe.scatter_strict
 SafetyPolicy = SafetyPolicy
 DEFAULT_SAFETY_POLICY = DEFAULT_SAFETY_POLICY
+PolicyValue = PolicyValue
+POLICY_VALUE_CORRUPT = POLICY_VALUE_CORRUPT
+POLICY_VALUE_CLAMP = POLICY_VALUE_CLAMP
+POLICY_VALUE_DROP = POLICY_VALUE_DROP
+policy_to_value = policy_to_value
 oob_mask = oob_mask
+oob_mask_value = oob_mask_value
+oob_any_value = oob_any_value
 GuardConfig = GuardConfig
 DEFAULT_GUARD_CONFIG = DEFAULT_GUARD_CONFIG
 guards_enabled_cfg = guards_enabled_cfg
@@ -387,9 +456,15 @@ guard_gather_index_cfg = guard_gather_index_cfg
 make_safe_gather_fn = make_safe_gather_fn
 make_safe_gather_ok_fn = make_safe_gather_ok_fn
 make_safe_index_fn = make_safe_index_fn
+make_safe_gather_value_fn = make_safe_gather_value_fn
+make_safe_gather_ok_value_fn = make_safe_gather_ok_value_fn
+make_safe_index_value_fn = make_safe_index_value_fn
 resolve_safe_gather_fn = resolve_safe_gather_fn
 resolve_safe_gather_ok_fn = resolve_safe_gather_ok_fn
 resolve_safe_index_fn = resolve_safe_index_fn
+resolve_safe_gather_value_fn = resolve_safe_gather_value_fn
+resolve_safe_gather_ok_value_fn = resolve_safe_gather_ok_value_fn
+resolve_safe_index_value_fn = resolve_safe_index_value_fn
 guard_slot0_perm_cfg = guard_slot0_perm_cfg
 guard_null_row_cfg = guard_null_row_cfg
 guard_zero_row_cfg = guard_zero_row_cfg
@@ -592,7 +667,9 @@ intern_candidates = _intern_candidates
 intern_candidates_cfg = _intern_candidates_cfg
 cycle = _cycle
 cycle_core = _cycle_core
+cycle_value = _cycle_value
 op_interact = _op_interact
+op_interact_value = _op_interact_value
 cycle_intrinsic = _cycle_intrinsic
 RANK_COLD = RANK_COLD
 RANK_FREE = _RANK_FREE_EXPORT
@@ -750,6 +827,7 @@ def commit_stratum(
     intern_fn: InternFn | None = None,
     *,
     safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for commit_stratum injection.
@@ -767,6 +845,7 @@ def commit_stratum(
         validate_mode=validate_mode,
         intern_fn=intern_fn,
         safe_gather_policy=safe_gather_policy,
+        safe_gather_policy_value=safe_gather_policy_value,
         guard_cfg=guard_cfg,
     )
 
@@ -782,6 +861,7 @@ def cycle_candidates(
     emit_candidates_fn: EmitCandidatesFn | None = None,
     host_raise_if_bad_fn: HostRaiseFn | None = None,
     safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
@@ -804,6 +884,11 @@ def cycle_candidates(
             intern_cfg = cnf2_cfg.intern_cfg
         if safe_gather_policy is None and cnf2_cfg.safe_gather_policy is not None:
             safe_gather_policy = cnf2_cfg.safe_gather_policy
+        if (
+            safe_gather_policy_value is None
+            and cnf2_cfg.safe_gather_policy_value is not None
+        ):
+            safe_gather_policy_value = cnf2_cfg.safe_gather_policy_value
         if guard_cfg is None and cnf2_cfg.guard_cfg is not None:
             guard_cfg = cnf2_cfg.guard_cfg
         if intern_fn is None and cnf2_cfg.intern_fn is not None:
@@ -815,6 +900,11 @@ def cycle_candidates(
         if cnf2_slot1_enabled_fn is None and cnf2_cfg.cnf2_slot1_enabled_fn is not None:
             cnf2_slot1_enabled_fn = cnf2_cfg.cnf2_slot1_enabled_fn
         cnf2_flags = cnf2_cfg.flags if cnf2_flags is None else cnf2_flags
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "cycle_candidates received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
     def _resolve_gate(flag_value, fn_value, default_fn):
         if flag_value is not None:
             return bool(flag_value)
@@ -846,20 +936,36 @@ def cycle_candidates(
         host_raise_if_bad_fn = _host_raise_if_bad
     if not cnf2_enabled_fn():
         raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
-    ledger, frontier_ids, strata, q_map = _cycle_candidates_impl(
-        ledger,
-        frontier_ids,
-        validate_stratum=validate_stratum,
-        validate_mode=validate_mode,
-        cfg=cnf2_cfg,
-        safe_gather_policy=safe_gather_policy,
-        guard_cfg=guard_cfg,
-        intern_fn=intern_fn,
-        intern_cfg=intern_cfg,
-        emit_candidates_fn=emit_candidates_fn,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-    )
+    if safe_gather_policy_value is not None:
+        ledger, frontier_ids, strata, q_map = _cycle_candidates_value(
+            ledger,
+            frontier_ids,
+            validate_stratum=validate_stratum,
+            validate_mode=validate_mode,
+            cfg=cnf2_cfg,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            cnf2_enabled_fn=cnf2_enabled_fn,
+            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        )
+    else:
+        ledger, frontier_ids, strata, q_map = _cycle_candidates_static(
+            ledger,
+            frontier_ids,
+            validate_stratum=validate_stratum,
+            validate_mode=validate_mode,
+            cfg=cnf2_cfg,
+            safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            cnf2_enabled_fn=cnf2_enabled_fn,
+            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        )
     if not bool(jax.device_get(ledger.corrupt)):
         host_raise_if_bad_fn(ledger, "Ledger capacity exceeded during cycle")
     return ledger, frontier_ids, strata, q_map
