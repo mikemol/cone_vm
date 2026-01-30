@@ -308,6 +308,9 @@ def op_sort_with_perm_cfg(
         policy=safe_gather_policy,
         policy_value=safe_gather_policy_value,
         context="op_sort_with_perm_cfg",
+        default_policy=_default_policy_for_safe_gather(
+            safe_gather_fn, safe_gather_policy, safe_gather_policy_value
+        ),
     )
     if binding.mode == PolicyMode.VALUE:
         return call_with_optional_kwargs(
@@ -343,6 +346,9 @@ def op_sort_blocked_with_perm_cfg(
         policy=safe_gather_policy,
         policy_value=safe_gather_policy_value,
         context="op_sort_blocked_with_perm_cfg",
+        default_policy=_default_policy_for_safe_gather(
+            safe_gather_fn, safe_gather_policy, safe_gather_policy_value
+        ),
     )
     if binding.mode == PolicyMode.VALUE:
         return call_with_optional_kwargs(
@@ -384,6 +390,9 @@ def op_sort_hierarchical_with_perm_cfg(
         policy=safe_gather_policy,
         policy_value=safe_gather_policy_value,
         context="op_sort_hierarchical_with_perm_cfg",
+        default_policy=_default_policy_for_safe_gather(
+            safe_gather_fn, safe_gather_policy, safe_gather_policy_value
+        ),
     )
     if binding.mode == PolicyMode.VALUE:
         return call_with_optional_kwargs(
@@ -426,6 +435,9 @@ def op_sort_morton_with_perm_cfg(
         policy=safe_gather_policy,
         policy_value=safe_gather_policy_value,
         context="op_sort_morton_with_perm_cfg",
+        default_policy=_default_policy_for_safe_gather(
+            safe_gather_fn, safe_gather_policy, safe_gather_policy_value
+        ),
     )
     if binding.mode == PolicyMode.VALUE:
         return call_with_optional_kwargs(
@@ -463,6 +475,9 @@ def op_sort_servo_with_perm_cfg(
         policy=safe_gather_policy,
         policy_value=safe_gather_policy_value,
         context="op_sort_servo_with_perm_cfg",
+        default_policy=_default_policy_for_safe_gather(
+            safe_gather_fn, safe_gather_policy, safe_gather_policy_value
+        ),
     )
     if binding.mode == PolicyMode.VALUE:
         return call_with_optional_kwargs(
@@ -657,6 +672,18 @@ guard_null_row_cfg = guard_null_row_cfg
 guard_zero_row_cfg = guard_zero_row_cfg
 guard_zero_args_cfg = guard_zero_args_cfg
 guard_swizzle_args_cfg = guard_swizzle_args_cfg
+
+def _default_policy_for_safe_gather(
+    safe_gather_fn,
+    safe_gather_policy: SafetyPolicy | None,
+    safe_gather_policy_value: PolicyValue | None,
+) -> bool:
+    """Return True if resolve_policy_binding should inject the default policy."""
+    if safe_gather_policy is not None or safe_gather_policy_value is not None:
+        return True
+    if safe_gather_fn is None:
+        return True
+    return not getattr(safe_gather_fn, "_prism_policy_bound", False)
 
 def safe_gather_1d(
     arr,
