@@ -6,6 +6,7 @@ from jax import lax
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.safety import (
+    PolicyBinding,
     PolicyMode,
     coerce_policy_mode,
     SafetyPolicy,
@@ -393,6 +394,7 @@ def _commit_stratum_common(
     safe_gather_policy_value: PolicyValue | None = None,
     safe_gather_ok_value_fn: SafeGatherOkValueFn = safe_gather_1d_ok_value,
     guard_cfg: GuardConfig | None = None,
+    policy_binding: PolicyBinding | None = None,
 ):
     # Collapseʰ: homomorphic projection q at the stratum boundary.
     if validate:
@@ -408,6 +410,20 @@ def _commit_stratum_common(
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
     q_prev: QMap = prior_q or identity_q_fn
+    if policy_binding is not None:
+        if safe_gather_policy is not None or safe_gather_policy_value is not None:
+            raise PrismPolicyBindingError(
+                "commit_stratum received both policy_binding and "
+                "safe_gather_policy/safe_gather_policy_value",
+                context="commit_stratum",
+                policy_mode="ambiguous",
+            )
+        binding_mode = coerce_policy_mode(policy_binding.mode, context="commit_stratum")
+        policy_mode = binding_mode
+        if binding_mode == PolicyMode.VALUE:
+            safe_gather_policy_value = policy_binding.policy_value
+        else:
+            safe_gather_policy = policy_binding.policy
     policy_mode = coerce_policy_mode(policy_mode, context="commit_stratum")
     if policy_mode == PolicyMode.STATIC:
         if safe_gather_policy_value is not None:
@@ -515,8 +531,15 @@ def commit_stratum_static(
     safe_gather_ok_fn: SafeGatherOkFn = safe_gather_1d_ok,
     safe_gather_policy: SafetyPolicy | None = None,
     guard_cfg: GuardConfig | None = None,
+    policy_binding: PolicyBinding | None = None,
 ):
     """Static-policy wrapper for commit_stratum."""
+    if policy_binding is not None and policy_binding.mode == PolicyMode.VALUE:
+        raise PrismPolicyBindingError(
+            "commit_stratum_static received value-mode policy_binding",
+            context="commit_stratum_static",
+            policy_mode=PolicyMode.STATIC,
+        )
     return _commit_stratum_common(
         ledger,
         stratum,
@@ -541,6 +564,7 @@ def commit_stratum_static(
         safe_gather_policy_value=None,
         safe_gather_ok_value_fn=safe_gather_1d_ok_value,
         guard_cfg=guard_cfg,
+        policy_binding=policy_binding,
     )
 
 
@@ -565,8 +589,15 @@ def commit_stratum_value(
     safe_gather_ok_value_fn: SafeGatherOkValueFn = safe_gather_1d_ok_value,
     safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
+    policy_binding: PolicyBinding | None = None,
 ):
     """Policy-value wrapper for commit_stratum."""
+    if policy_binding is not None and policy_binding.mode == PolicyMode.STATIC:
+        raise PrismPolicyBindingError(
+            "commit_stratum_value received static-mode policy_binding",
+            context="commit_stratum_value",
+            policy_mode=PolicyMode.VALUE,
+        )
     return _commit_stratum_common(
         ledger,
         stratum,
@@ -591,6 +622,7 @@ def commit_stratum_value(
         safe_gather_policy_value=safe_gather_policy_value,
         safe_gather_ok_value_fn=safe_gather_ok_value_fn,
         guard_cfg=guard_cfg,
+        policy_binding=policy_binding,
     )
 
 
@@ -618,13 +650,67 @@ def commit_stratum(
     safe_gather_policy_value: PolicyValue | None = None,
     safe_gather_ok_value_fn: SafeGatherOkValueFn = safe_gather_1d_ok_value,
     guard_cfg: GuardConfig | None = None,
+    policy_binding: PolicyBinding | None = None,
 ):
     """Dispatching wrapper for commit_stratum."""
+    if policy_binding is not None and (
+        safe_gather_policy is not None or safe_gather_policy_value is not None
+    ):
+        raise PrismPolicyBindingError(
+            "commit_stratum received both policy_binding and "
+            "safe_gather_policy/safe_gather_policy_value",
+            context="commit_stratum",
+            policy_mode="ambiguous",
+        )
     if safe_gather_policy is not None and safe_gather_policy_value is not None:
         raise PrismPolicyBindingError(
             "commit_stratum received both safe_gather_policy and "
             "safe_gather_policy_value",
             context="commit_stratum",
+        )
+    if policy_binding is not None:
+        if policy_binding.mode == PolicyMode.VALUE:
+            return commit_stratum_value(
+                ledger,
+                stratum,
+                prior_q=prior_q,
+                validate=validate,
+                validate_mode=validate_mode,
+                intern_fn=intern_fn,
+                node_batch_fn=node_batch_fn,
+                identity_q_fn=identity_q_fn,
+                apply_stratum_q_fn=apply_stratum_q_fn,
+                validate_within_fn=validate_within_fn,
+                validate_future_fn=validate_future_fn,
+                guards_enabled_fn=guards_enabled_fn,
+                host_int_value_fn=host_int_value_fn,
+                host_raise_fn=host_raise_fn,
+                provisional_ids_fn=provisional_ids_fn,
+                committed_ids_fn=committed_ids_fn,
+                safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+                policy_binding=policy_binding,
+                guard_cfg=guard_cfg,
+            )
+        return commit_stratum_static(
+            ledger,
+            stratum,
+            prior_q=prior_q,
+            validate=validate,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            node_batch_fn=node_batch_fn,
+            identity_q_fn=identity_q_fn,
+            apply_stratum_q_fn=apply_stratum_q_fn,
+            validate_within_fn=validate_within_fn,
+            validate_future_fn=validate_future_fn,
+            guards_enabled_fn=guards_enabled_fn,
+            host_int_value_fn=host_int_value_fn,
+            host_raise_fn=host_raise_fn,
+            provisional_ids_fn=provisional_ids_fn,
+            committed_ids_fn=committed_ids_fn,
+            safe_gather_ok_fn=safe_gather_ok_fn,
+            policy_binding=policy_binding,
+            guard_cfg=guard_cfg,
         )
     if safe_gather_policy_value is not None:
         return commit_stratum_value(
