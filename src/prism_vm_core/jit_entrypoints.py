@@ -31,7 +31,9 @@ from prism_vm_core.candidates import _candidate_indices, candidate_indices_cfg
 from prism_bsp.cnf2 import (
     emit_candidates as _emit_candidates_default,
     compact_candidates as _compact_candidates,
+    compact_candidates_result as _compact_candidates_result,
     compact_candidates_with_index as _compact_candidates_with_index,
+    compact_candidates_with_index_result as _compact_candidates_with_index_result,
     intern_candidates as _intern_candidates,
 )
 from prism_bsp.arena_step import cycle_core as _cycle_core, op_interact as _op_interact
@@ -164,6 +166,17 @@ def compact_candidates_jit(*, candidate_indices_fn=_candidate_indices):
     return _impl
 
 
+def compact_candidates_result_jit(*, candidate_indices_fn=_candidate_indices):
+    """Return a jitted compact_candidates_result entrypoint for fixed DI."""
+    @jax.jit
+    def _impl(candidates):
+        return _compact_candidates_result(
+            candidates, candidate_indices_fn=candidate_indices_fn
+        )
+
+    return _impl
+
+
 def compact_candidates_jit_cfg(cfg: Cnf2Config | None = None):
     """Return a jitted compact_candidates entrypoint for a fixed config."""
     candidate_indices_fn = _candidate_indices
@@ -174,11 +187,32 @@ def compact_candidates_jit_cfg(cfg: Cnf2Config | None = None):
     return compact_candidates_jit(candidate_indices_fn=candidate_indices_fn)
 
 
+def compact_candidates_result_jit_cfg(cfg: Cnf2Config | None = None):
+    """Return a jitted compact_candidates_result entrypoint for a fixed config."""
+    candidate_indices_fn = _candidate_indices
+    if cfg is not None and cfg.candidate_indices_fn is not None:
+        candidate_indices_fn = cfg.candidate_indices_fn
+    if cfg is not None and cfg.compact_cfg is not None and candidate_indices_fn is _candidate_indices:
+        candidate_indices_fn = partial(candidate_indices_cfg, compact_cfg=cfg.compact_cfg)
+    return compact_candidates_result_jit(candidate_indices_fn=candidate_indices_fn)
+
+
 def compact_candidates_with_index_jit(*, candidate_indices_fn=_candidate_indices):
     """Return a jitted compact_candidates_with_index entrypoint for fixed DI."""
     @jax.jit
     def _impl(candidates):
         return _compact_candidates_with_index(
+            candidates, candidate_indices_fn=candidate_indices_fn
+        )
+
+    return _impl
+
+
+def compact_candidates_with_index_result_jit(*, candidate_indices_fn=_candidate_indices):
+    """Return a jitted compact_candidates_with_index_result entrypoint for fixed DI."""
+    @jax.jit
+    def _impl(candidates):
+        return _compact_candidates_with_index_result(
             candidates, candidate_indices_fn=candidate_indices_fn
         )
 
@@ -193,6 +227,18 @@ def compact_candidates_with_index_jit_cfg(cfg: Cnf2Config | None = None):
     if cfg is not None and cfg.compact_cfg is not None and candidate_indices_fn is _candidate_indices:
         candidate_indices_fn = partial(candidate_indices_cfg, compact_cfg=cfg.compact_cfg)
     return compact_candidates_with_index_jit(candidate_indices_fn=candidate_indices_fn)
+
+
+def compact_candidates_with_index_result_jit_cfg(cfg: Cnf2Config | None = None):
+    """Return a jitted compact_candidates_with_index_result entrypoint for a fixed config."""
+    candidate_indices_fn = _candidate_indices
+    if cfg is not None and cfg.candidate_indices_fn is not None:
+        candidate_indices_fn = cfg.candidate_indices_fn
+    if cfg is not None and cfg.compact_cfg is not None and candidate_indices_fn is _candidate_indices:
+        candidate_indices_fn = partial(candidate_indices_cfg, compact_cfg=cfg.compact_cfg)
+    return compact_candidates_with_index_result_jit(
+        candidate_indices_fn=candidate_indices_fn
+    )
 
 
 def intern_candidates_jit(
@@ -581,8 +627,12 @@ __all__ = [
     "emit_candidates_jit_cfg",
     "compact_candidates_jit",
     "compact_candidates_jit_cfg",
+    "compact_candidates_result_jit",
+    "compact_candidates_result_jit_cfg",
     "compact_candidates_with_index_jit",
     "compact_candidates_with_index_jit_cfg",
+    "compact_candidates_with_index_result_jit",
+    "compact_candidates_with_index_result_jit_cfg",
     "intern_candidates_jit",
     "intern_candidates_jit_cfg",
     "cycle_candidates_jit",
