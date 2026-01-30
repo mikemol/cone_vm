@@ -35,6 +35,9 @@ def policy_to_value(policy: SafetyPolicy) -> PolicyValue:
     return POLICY_VALUE_CORRUPT
 
 
+POLICY_VALUE_DEFAULT = policy_to_value(DEFAULT_SAFETY_POLICY)
+
+
 def oob_mask(ok, *, policy: SafetyPolicy = DEFAULT_SAFETY_POLICY):
     """Return a corruption mask based on OOB policy."""
     if policy.mode == "corrupt":
@@ -65,6 +68,7 @@ __all__ = [
     "POLICY_VALUE_CORRUPT",
     "POLICY_VALUE_CLAMP",
     "POLICY_VALUE_DROP",
+    "POLICY_VALUE_DEFAULT",
     "policy_to_value",
     "oob_mask",
     "oob_any",
