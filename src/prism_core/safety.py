@@ -9,6 +9,25 @@ from typing import TypeAlias
 from prism_core.errors import PrismPolicyModeError
 
 
+class SafetyMode(str, Enum):
+    CORRUPT = "corrupt"
+    CLAMP = "clamp"
+    DROP = "drop"
+
+
+def coerce_safety_mode(mode: SafetyMode | str) -> SafetyMode:
+    if isinstance(mode, SafetyMode):
+        return mode
+    if isinstance(mode, str):
+        if mode == SafetyMode.CORRUPT.value:
+            return SafetyMode.CORRUPT
+        if mode == SafetyMode.CLAMP.value:
+            return SafetyMode.CLAMP
+        if mode == SafetyMode.DROP.value:
+            return SafetyMode.DROP
+    raise ValueError(f"Unknown safety mode: {mode!r}")
+
+
 class PolicyMode(str, Enum):
     STATIC = "static"
     VALUE = "value"
@@ -36,7 +55,10 @@ class SafetyPolicy:
       - "drop": ignore OOB (for masked/scatter-drop semantics)
     """
 
-    mode: str = "corrupt"
+    mode: SafetyMode | str = SafetyMode.CORRUPT
+
+    def __post_init__(self):
+        object.__setattr__(self, "mode", coerce_safety_mode(self.mode))
 
 
 DEFAULT_SAFETY_POLICY = SafetyPolicy()
@@ -48,9 +70,9 @@ POLICY_VALUE_DROP = jnp.int32(2)
 
 def policy_to_value(policy: SafetyPolicy) -> PolicyValue:
     """Encode SafetyPolicy as a JAX value for JIT-safe policy handling."""
-    if policy.mode == "clamp":
+    if policy.mode == SafetyMode.CLAMP:
         return POLICY_VALUE_CLAMP
-    if policy.mode == "drop":
+    if policy.mode == SafetyMode.DROP:
         return POLICY_VALUE_DROP
     return POLICY_VALUE_CORRUPT
 
@@ -60,7 +82,7 @@ POLICY_VALUE_DEFAULT = policy_to_value(DEFAULT_SAFETY_POLICY)
 
 def oob_mask(ok, *, policy: SafetyPolicy = DEFAULT_SAFETY_POLICY):
     """Return a corruption mask based on OOB policy."""
-    if policy.mode == "corrupt":
+    if policy.mode == SafetyMode.CORRUPT:
         return ~ok
     return jnp.zeros_like(ok, dtype=jnp.bool_)
 
@@ -82,6 +104,8 @@ def oob_any_value(ok, *, policy_value: PolicyValue):
 
 
 __all__ = [
+    "SafetyMode",
+    "coerce_safety_mode",
     "PolicyMode",
     "coerce_policy_mode",
     "SafetyPolicy",

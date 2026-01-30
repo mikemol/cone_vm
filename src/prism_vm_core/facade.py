@@ -19,6 +19,8 @@ from prism_core.di import call_with_optional_kwargs
 from prism_core.safety import (
     PolicyMode,
     coerce_policy_mode,
+    SafetyMode,
+    coerce_safety_mode,
     SafetyPolicy,
     DEFAULT_SAFETY_POLICY,
     PolicyValue,
@@ -548,6 +550,8 @@ SafetyPolicy = SafetyPolicy
 DEFAULT_SAFETY_POLICY = DEFAULT_SAFETY_POLICY
 PolicyMode = PolicyMode
 coerce_policy_mode = coerce_policy_mode
+SafetyMode = SafetyMode
+coerce_safety_mode = coerce_safety_mode
 ValidateMode = ValidateMode
 coerce_validate_mode = coerce_validate_mode
 BspMode = BspMode
