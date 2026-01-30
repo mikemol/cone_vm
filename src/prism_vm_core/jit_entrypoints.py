@@ -700,11 +700,11 @@ def cycle_jit(
     """Return a jitted cycle entrypoint for fixed DI."""
     if test_guards:
         raise RuntimeError("cycle_jit is disabled under TEST_GUARDS")
-        safe_gather_fn = resolve_safe_gather_fn(
-            safe_gather_fn=safe_gather_fn,
-            policy=safe_gather_policy,
-            guard_cfg=guard_cfg,
-        )
+    safe_gather_fn = resolve_safe_gather_fn(
+        safe_gather_fn=safe_gather_fn,
+        policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
     servo_enabled_value = bool(servo_enabled_fn())
     return _cycle_jit(
         do_sort,
