@@ -37,7 +37,6 @@ from prism_core.safety import (
 )
 from prism_core.modes import (
     ValidateMode,
-    coerce_validate_mode,
     require_validate_mode,
     BspMode,
     coerce_bsp_mode,
@@ -649,7 +648,6 @@ coerce_policy_mode = coerce_policy_mode
 SafetyMode = SafetyMode
 coerce_safety_mode = coerce_safety_mode
 ValidateMode = ValidateMode
-coerce_validate_mode = coerce_validate_mode
 require_validate_mode = require_validate_mode
 BspMode = BspMode
 coerce_bsp_mode = coerce_bsp_mode
