@@ -5,6 +5,7 @@ from typing import Protocol, Tuple, runtime_checkable
 import jax.numpy as jnp
 
 from ic_core.graph import ICState
+from prism_core.compact import CompactResult
 from prism_core.protocols import SafeIndexFn
 
 
@@ -13,6 +14,12 @@ class CompactPairsFn(Protocol):
     def __call__(
         self, state: ICState
     ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        ...
+
+
+@runtime_checkable
+class CompactPairsResultFn(Protocol):
+    def __call__(self, state: ICState) -> Tuple[CompactResult, jnp.ndarray]:
         ...
 
 
@@ -95,6 +102,7 @@ class ApplyTemplateFn(Protocol):
 
 __all__ = [
     "CompactPairsFn",
+    "CompactPairsResultFn",
     "DecodePortFn",
     "AllocPlanFn",
     "ApplyTemplatePlannedFn",

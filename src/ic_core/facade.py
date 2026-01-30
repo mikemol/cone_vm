@@ -402,6 +402,7 @@ def engine_config_from_rules(
     rule_cfg: ICRuleConfig,
     *,
     compact_pairs_fn=ic_compact_active_pairs,
+    compact_pairs_result_fn=None,
     decode_port_fn=decode_port,
     halted_fn=_halted,
     scan_corrupt_fn=_scan_corrupt_ports,
@@ -409,6 +410,7 @@ def engine_config_from_rules(
     """Build an engine config from a rule config (Interface/Control)."""
     return ICEngineConfig(
         compact_pairs_fn=compact_pairs_fn,
+        compact_pairs_result_fn=compact_pairs_result_fn,
         decode_port_fn=decode_port_fn,
         alloc_plan_fn=rule_cfg.alloc_plan_fn,
         apply_template_planned_fn=rule_cfg.apply_template_planned_fn,
@@ -421,6 +423,7 @@ def apply_active_pairs_jit_from_rules(
     rule_cfg: ICRuleConfig,
     *,
     compact_pairs_fn=ic_compact_active_pairs,
+    compact_pairs_result_fn=None,
     decode_port_fn=decode_port,
     halted_fn=_halted,
     scan_corrupt_fn=_scan_corrupt_ports,
@@ -429,6 +432,7 @@ def apply_active_pairs_jit_from_rules(
     cfg = engine_config_from_rules(
         rule_cfg,
         compact_pairs_fn=compact_pairs_fn,
+        compact_pairs_result_fn=compact_pairs_result_fn,
         decode_port_fn=decode_port_fn,
         halted_fn=halted_fn,
         scan_corrupt_fn=scan_corrupt_fn,
@@ -440,6 +444,7 @@ def reduce_jit_from_rules(
     rule_cfg: ICRuleConfig,
     *,
     compact_pairs_fn=ic_compact_active_pairs,
+    compact_pairs_result_fn=None,
     decode_port_fn=decode_port,
     halted_fn=_halted,
     scan_corrupt_fn=_scan_corrupt_ports,
@@ -448,6 +453,7 @@ def reduce_jit_from_rules(
     cfg = engine_config_from_rules(
         rule_cfg,
         compact_pairs_fn=compact_pairs_fn,
+        compact_pairs_result_fn=compact_pairs_result_fn,
         decode_port_fn=decode_port_fn,
         halted_fn=halted_fn,
         scan_corrupt_fn=scan_corrupt_fn,
