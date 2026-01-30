@@ -446,6 +446,23 @@ def op_sort_and_swizzle(
     return sorted_arena
 
 
+def op_sort_and_swizzle_value(
+    arena,
+    policy_value: PolicyValue,
+    *,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
+    guard_cfg: GuardConfig | None = None,
+):
+    # BSPˢ: layout/space only (policy as JAX value).
+    sorted_arena, _ = op_sort_and_swizzle_with_perm_value(
+        arena,
+        policy_value,
+        safe_gather_value_fn=safe_gather_value_fn,
+        guard_cfg=guard_cfg,
+    )
+    return sorted_arena
+
+
 def _blocked_perm(arena, block_size, morton=None, active_count=None):
     # BSPˢ: layout/space only.
     size = int(arena.rank.shape[0])
@@ -567,6 +584,27 @@ def op_sort_and_swizzle_blocked(
         morton=morton,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
+    return sorted_arena
+
+
+def op_sort_and_swizzle_blocked_value(
+    arena,
+    block_size,
+    morton=None,
+    *,
+    policy_value: PolicyValue,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
+    guard_cfg: GuardConfig | None = None,
+):
+    # BSPˢ: layout/space only (policy as JAX value).
+    sorted_arena, _ = op_sort_and_swizzle_blocked_with_perm_value(
+        arena,
+        block_size,
+        morton=morton,
+        policy_value=policy_value,
+        safe_gather_value_fn=safe_gather_value_fn,
         guard_cfg=guard_cfg,
     )
     return sorted_arena
@@ -735,6 +773,31 @@ def op_sort_and_swizzle_hierarchical(
         do_global=do_global,
         safe_gather_fn=safe_gather_fn,
         safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
+    return sorted_arena
+
+
+def op_sort_and_swizzle_hierarchical_value(
+    arena,
+    l2_block_size,
+    l1_block_size,
+    morton=None,
+    do_global=False,
+    *,
+    policy_value: PolicyValue,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
+    guard_cfg: GuardConfig | None = None,
+):
+    # BSPˢ: layout/space only (policy as JAX value).
+    sorted_arena, _ = op_sort_and_swizzle_hierarchical_with_perm_value(
+        arena,
+        l2_block_size,
+        l1_block_size,
+        policy_value,
+        morton=morton,
+        do_global=do_global,
+        safe_gather_value_fn=safe_gather_value_fn,
         guard_cfg=guard_cfg,
     )
     return sorted_arena
@@ -1080,6 +1143,25 @@ def op_sort_and_swizzle_morton(
     return sorted_arena
 
 
+def op_sort_and_swizzle_morton_value(
+    arena,
+    morton,
+    policy_value: PolicyValue,
+    *,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
+    guard_cfg: GuardConfig | None = None,
+):
+    # BSPˢ: layout/space only (policy as JAX value).
+    sorted_arena, _ = op_sort_and_swizzle_morton_with_perm_value(
+        arena,
+        morton,
+        policy_value,
+        safe_gather_value_fn=safe_gather_value_fn,
+        guard_cfg=guard_cfg,
+    )
+    return sorted_arena
+
+
 @functools.partial(
     jax.jit, static_argnames=("safe_gather_fn", "safe_gather_policy", "guard_cfg")
 )
@@ -1317,6 +1399,27 @@ def op_sort_and_swizzle_servo(
     return sorted_arena
 
 
+def op_sort_and_swizzle_servo_value(
+    arena,
+    morton,
+    servo_mask,
+    policy_value: PolicyValue,
+    *,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
+    guard_cfg: GuardConfig | None = None,
+):
+    # BSPˢ: layout/space only (policy as JAX value).
+    sorted_arena, _ = op_sort_and_swizzle_servo_with_perm_value(
+        arena,
+        morton,
+        servo_mask,
+        policy_value,
+        safe_gather_value_fn=safe_gather_value_fn,
+        guard_cfg=guard_cfg,
+    )
+    return sorted_arena
+
+
 __all__ = [
     "RANK_HOT",
     "RANK_WARM",
@@ -1324,16 +1427,21 @@ __all__ = [
     "RANK_FREE",
     "op_rank",
     "op_sort_and_swizzle",
+    "op_sort_and_swizzle_value",
     "op_sort_and_swizzle_blocked",
+    "op_sort_and_swizzle_blocked_value",
     "op_sort_and_swizzle_blocked_with_perm",
     "op_sort_and_swizzle_blocked_with_perm_value",
     "op_sort_and_swizzle_hierarchical",
+    "op_sort_and_swizzle_hierarchical_value",
     "op_sort_and_swizzle_hierarchical_with_perm",
     "op_sort_and_swizzle_hierarchical_with_perm_value",
     "op_sort_and_swizzle_morton",
+    "op_sort_and_swizzle_morton_value",
     "op_sort_and_swizzle_morton_with_perm",
     "op_sort_and_swizzle_morton_with_perm_value",
     "op_sort_and_swizzle_servo",
+    "op_sort_and_swizzle_servo_value",
     "op_sort_and_swizzle_servo_with_perm",
     "op_sort_and_swizzle_servo_with_perm_value",
     "op_sort_and_swizzle_with_perm",
