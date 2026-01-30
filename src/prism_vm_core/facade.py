@@ -398,8 +398,12 @@ def safe_gather_1d(
     """
     if guard is None:
         guard = _GATHER_GUARD
-    return _jax_safe.safe_gather_1d(
-        arr, idx, label, guard=guard, policy=policy, return_ok=return_ok
+    return call_with_optional_kwargs(
+        _jax_safe.safe_gather_1d,
+        {"guard": guard, "policy": policy, "return_ok": return_ok},
+        arr,
+        idx,
+        label,
     )
 
 
@@ -417,8 +421,12 @@ def safe_gather_1d_ok(
     """
     if guard is None:
         guard = _GATHER_GUARD
-    return _jax_safe.safe_gather_1d_ok(
-        arr, idx, label, guard=guard, policy=policy
+    return call_with_optional_kwargs(
+        _jax_safe.safe_gather_1d_ok,
+        {"guard": guard, "policy": policy},
+        arr,
+        idx,
+        label,
     )
 
 
@@ -479,7 +487,9 @@ def safe_index_1d(
     if guard is None:
         guard = _GATHER_GUARD
     safe_index_fn = wrap_index_policy(_jax_safe.safe_index_1d, policy)
-    return safe_index_fn(idx, size, label, guard=guard)
+    return call_with_optional_kwargs(
+        safe_index_fn, {"guard": guard}, idx, size, label
+    )
 
 
 def safe_index_1d_cfg(
