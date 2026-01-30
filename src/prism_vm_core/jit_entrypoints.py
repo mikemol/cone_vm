@@ -411,8 +411,7 @@ def intern_candidates_jit_cfg(
 
 def cycle_candidates_static_jit(
     *,
-    validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
     emit_candidates_fn: EmitCandidatesFn | None = None,
@@ -529,7 +528,6 @@ def cycle_candidates_static_jit(
         return _cycle_candidates_static(
             ledger,
             frontier_ids,
-            validate_stratum=validate_stratum,
             validate_mode=validate_mode,
             cfg=cnf2_cfg,
             safe_gather_policy=safe_gather_policy,
@@ -553,8 +551,7 @@ def cycle_candidates_static_jit(
 
 def cycle_candidates_value_jit(
     *,
-    validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
     emit_candidates_fn: EmitCandidatesFn | None = None,
@@ -672,7 +669,6 @@ def cycle_candidates_value_jit(
         return _cycle_candidates_value(
             ledger,
             frontier_ids,
-            validate_stratum=validate_stratum,
             validate_mode=validate_mode,
             cfg=cnf2_cfg,
             safe_gather_policy_value=safe_gather_policy_value,
@@ -696,8 +692,7 @@ def cycle_candidates_value_jit(
 
 def cycle_candidates_jit(
     *,
-    validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
     emit_candidates_fn: EmitCandidatesFn | None = None,
@@ -719,22 +714,20 @@ def cycle_candidates_jit(
     )
     if binding.mode == PolicyMode.VALUE:
         return cycle_candidates_value_jit(
-            validate_stratum=validate_stratum,
             validate_mode=validate_mode,
             intern_fn=intern_fn,
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
             host_raise_if_bad_fn=host_raise_if_bad_fn,
-        safe_gather_policy_value=binding.policy_value,
-        guard_cfg=guard_cfg,
-        cnf2_cfg=cnf2_cfg,
-        cnf2_flags=cnf2_flags,
-        cnf2_mode=cnf2_mode,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-    )
+            safe_gather_policy_value=binding.policy_value,
+            guard_cfg=guard_cfg,
+            cnf2_cfg=cnf2_cfg,
+            cnf2_flags=cnf2_flags,
+            cnf2_mode=cnf2_mode,
+            cnf2_enabled_fn=cnf2_enabled_fn,
+            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        )
     return cycle_candidates_static_jit(
-        validate_stratum=validate_stratum,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
         intern_cfg=intern_cfg,

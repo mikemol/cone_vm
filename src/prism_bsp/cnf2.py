@@ -323,8 +323,7 @@ def intern_candidates_cfg(
 def _cycle_candidates_core_common(
     ledger,
     frontier_ids,
-    validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     policy_mode: PolicyMode | str,
@@ -670,11 +669,8 @@ def _cycle_candidates_core_common(
         )
         cnf2_metrics_update_fn(rewrite_child, changed_count, int(count2_i))
     mode = coerce_validate_mode(validate_mode, context="cycle_candidates")
-    if validate_stratum and mode == ValidateMode.NONE:
-        mode = ValidateMode.STRICT
     if guards_enabled_fn() and mode == ValidateMode.NONE:
         mode = ValidateMode.STRICT
-    validate = mode != ValidateMode.NONE
     if policy_mode == PolicyMode.STATIC:
         commit_optional = {
             "safe_gather_policy": safe_gather_policy,
@@ -692,7 +688,6 @@ def _cycle_candidates_core_common(
         commit_optional,
         ledger2,
         stratum0,
-        validate=validate,
         validate_mode=mode,
         intern_fn=intern_fn,
     )
@@ -702,7 +697,6 @@ def _cycle_candidates_core_common(
         ledger2,
         stratum1,
         prior_q=q_map,
-        validate=validate,
         validate_mode=mode,
         intern_fn=intern_fn,
     )
@@ -717,7 +711,6 @@ def _cycle_candidates_core_common(
             ledger2,
             micro_stratum,
             prior_q=q_map,
-            validate=validate,
             validate_mode=mode,
             intern_fn=intern_fn,
         )
@@ -766,8 +759,7 @@ def _cycle_candidates_core_common(
 def _cycle_candidates_core_static(
     ledger,
     frontier_ids,
-    validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy: SafetyPolicy,
@@ -795,7 +787,6 @@ def _cycle_candidates_core_static(
     return _cycle_candidates_core_common(
         ledger,
         frontier_ids,
-        validate_stratum=validate_stratum,
         validate_mode=validate_mode,
         cfg=cfg,
         policy_mode=PolicyMode.STATIC,
@@ -828,8 +819,7 @@ def _cycle_candidates_core_static(
 def _cycle_candidates_core_value(
     ledger,
     frontier_ids,
-    validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy_value: PolicyValue,
@@ -857,7 +847,6 @@ def _cycle_candidates_core_value(
     return _cycle_candidates_core_common(
         ledger,
         frontier_ids,
-        validate_stratum=validate_stratum,
         validate_mode=validate_mode,
         cfg=cfg,
         policy_mode=PolicyMode.VALUE,
@@ -905,8 +894,7 @@ def _resolve_guard_cfg(guard_cfg: GuardConfig | None, cfg: Cnf2Config | None):
 def cycle_candidates_static(
     ledger,
     frontier_ids,
-    validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy: SafetyPolicy | None = None,
@@ -961,7 +949,6 @@ def cycle_candidates_static(
     return _cycle_candidates_core_static(
         ledger,
         frontier_ids,
-        validate_stratum=validate_stratum,
         validate_mode=validate_mode,
         cfg=cfg,
         safe_gather_policy=safe_gather_policy,
@@ -977,7 +964,6 @@ def cycle_candidates_static(
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         safe_gather_ok_fn=safe_gather_ok_fn,
-        safe_gather_ok_value_fn=None,
         host_bool_value_fn=host_bool_value_fn,
         host_int_value_fn=host_int_value_fn,
         guards_enabled_fn=guards_enabled_fn,
@@ -992,8 +978,7 @@ def cycle_candidates_static(
 def cycle_candidates_value(
     ledger,
     frontier_ids,
-    validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy_value: PolicyValue | None = None,
@@ -1051,7 +1036,6 @@ def cycle_candidates_value(
     return _cycle_candidates_core_value(
         ledger,
         frontier_ids,
-        validate_stratum=validate_stratum,
         validate_mode=validate_mode,
         cfg=cfg,
         safe_gather_policy_value=safe_gather_policy_value,
@@ -1082,8 +1066,7 @@ def cycle_candidates_value(
 def cycle_candidates(
     ledger,
     frontier_ids,
-    validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy: SafetyPolicy | None = None,
@@ -1123,7 +1106,6 @@ def cycle_candidates(
         return cycle_candidates_value(
             ledger,
             frontier_ids,
-            validate_stratum=validate_stratum,
             validate_mode=validate_mode,
             cfg=cfg,
             safe_gather_policy_value=safe_gather_policy_value,
@@ -1151,7 +1133,6 @@ def cycle_candidates(
     return cycle_candidates_static(
         ledger,
         frontier_ids,
-        validate_stratum=validate_stratum,
         validate_mode=validate_mode,
         cfg=cfg,
         safe_gather_policy=safe_gather_policy,
@@ -1182,8 +1163,7 @@ def cycle_candidates_bound(
     ledger,
     frontier_ids,
     policy_binding: PolicyBinding,
-    validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     guard_cfg: GuardConfig | None = None,
@@ -1222,7 +1202,6 @@ def cycle_candidates_bound(
         return cycle_candidates_value(
             ledger,
             frontier_ids,
-            validate_stratum=validate_stratum,
             validate_mode=validate_mode,
             cfg=cfg,
             safe_gather_policy_value=policy_binding.policy_value,
@@ -1250,7 +1229,6 @@ def cycle_candidates_bound(
     return cycle_candidates_static(
         ledger,
         frontier_ids,
-        validate_stratum=validate_stratum,
         validate_mode=validate_mode,
         cfg=cfg,
         safe_gather_policy=policy_binding.policy,

@@ -20,7 +20,7 @@ def test_commit_stratum_identity():
     node_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
     stratum = pv.Stratum(start=jnp.int32(node_id), count=jnp.int32(1))
     ledger2, canon_ids, q_map = pv.commit_stratum(
-        ledger, stratum, validate=True
+        ledger, stratum, validate_mode=pv.ValidateMode.STRICT
     )
     assert int(ledger2.count) == int(ledger.count)
     assert int(canon_ids.a[0]) == int(node_id)
@@ -42,7 +42,7 @@ def test_commit_stratum_applies_prior_q_to_children():
 
     stratum = pv.Stratum(start=jnp.int32(add_id), count=jnp.int32(1))
     _, canon_ids, q_map = pv.commit_stratum(
-        ledger, stratum, prior_q=prior_q, validate=True
+        ledger, stratum, prior_q=prior_q, validate_mode=pv.ValidateMode.STRICT
     )
     assert int(canon_ids.a[0]) == int(add_zero)
     mapped = q_map(pv._provisional_ids(i32([add_id])))
@@ -63,7 +63,7 @@ def test_commit_stratum_applies_prior_q_to_children_a2():
 
     stratum = pv.Stratum(start=jnp.int32(add_id), count=jnp.int32(1))
     _, canon_ids, q_map = pv.commit_stratum(
-        ledger, stratum, prior_q=prior_q, validate=True
+        ledger, stratum, prior_q=prior_q, validate_mode=pv.ValidateMode.STRICT
     )
     assert int(canon_ids.a[0]) == int(add_zero)
     mapped = q_map(pv._provisional_ids(i32([add_id])))
@@ -81,7 +81,12 @@ def test_commit_stratum_count_mismatch_fails(monkeypatch):
         return ids[:0], new_ledger
 
     with pytest.raises(ValueError, match="Stratum count mismatch"):
-        pv.commit_stratum(ledger, stratum, validate=True, intern_fn=bad_intern)
+        pv.commit_stratum(
+            ledger,
+            stratum,
+            validate_mode=pv.ValidateMode.STRICT,
+            intern_fn=bad_intern,
+        )
 
 
 def test_commit_stratum_validate_trips_on_within_refs():
@@ -97,7 +102,9 @@ def test_commit_stratum_validate_trips_on_within_refs():
     new_count = int(new_ledger.count) - start
     stratum = pv.Stratum(start=jnp.int32(start), count=jnp.int32(new_count))
     with pytest.raises(ValueError, match="Stratum contains within-tier references"):
-        pv.commit_stratum(new_ledger, stratum, validate=True)
+        pv.commit_stratum(
+            new_ledger, stratum, validate_mode=pv.ValidateMode.STRICT
+        )
 
 
 def test_commit_stratum_q_map_totality_on_mixed_ids():
@@ -112,7 +119,7 @@ def test_commit_stratum_q_map_totality_on_mixed_ids():
 
     stratum = pv.Stratum(start=jnp.int32(node_id_i), count=jnp.int32(1))
     _, canon_ids, q_map = pv.commit_stratum(
-        ledger, stratum, prior_q=prior_q, validate=True
+        ledger, stratum, prior_q=prior_q, validate_mode=pv.ValidateMode.STRICT
     )
     mixed = jnp.array([0, pv.ZERO_PTR, node_id_i, node_id_i + 1], dtype=jnp.int32)
     mapped = q_map(pv._provisional_ids(mixed)).a
@@ -135,7 +142,9 @@ def test_commit_stratum_q_map_preserves_input_order():
         return pv._committed_ids(mapped)
 
     stratum = pv.Stratum(start=jnp.int32(node_id_i), count=jnp.int32(1))
-    _, _, q_map = pv.commit_stratum(ledger, stratum, prior_q=prior_q, validate=True)
+    _, _, q_map = pv.commit_stratum(
+        ledger, stratum, prior_q=prior_q, validate_mode=pv.ValidateMode.STRICT
+    )
     mixed = jnp.array([0, pv.ZERO_PTR, node_id_i, node_id_i + 1], dtype=jnp.int32)
     perm = jnp.array([2, 0, 3, 1], dtype=jnp.int32)
     mapped = q_map(pv._provisional_ids(mixed)).a
