@@ -29,6 +29,7 @@ from prism_core.safety import (
     oob_mask,
     oob_mask_value,
 )
+from prism_core.errors import PrismPolicyModeError, PrismPolicyBindingError
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
 from prism_bsp.config import (
@@ -1066,17 +1067,21 @@ def _cycle_candidates_common(
         cnf2_flags = cnf2_cfg.flags if cnf2_flags is None else cnf2_flags
         if policy_mode == "static":
             if cnf2_cfg.safe_gather_policy_value is not None:
-                raise ValueError(
+                raise PrismPolicyBindingError(
                     "cycle_candidates_static received cfg.safe_gather_policy_value; "
-                    "use cycle_candidates_value"
+                    "use cycle_candidates_value",
+                    context="cycle_candidates_static",
+                    policy_mode="static",
                 )
             if safe_gather_policy is None and cnf2_cfg.safe_gather_policy is not None:
                 safe_gather_policy = cnf2_cfg.safe_gather_policy
         else:
             if cnf2_cfg.safe_gather_policy is not None:
-                raise ValueError(
+                raise PrismPolicyBindingError(
                     "cycle_candidates_value received cfg.safe_gather_policy; "
-                    "use cycle_candidates_static"
+                    "use cycle_candidates_static",
+                    context="cycle_candidates_value",
+                    policy_mode="value",
                 )
             if (
                 safe_gather_policy_value is None
@@ -1084,18 +1089,24 @@ def _cycle_candidates_common(
             ):
                 safe_gather_policy_value = cnf2_cfg.safe_gather_policy_value
     if policy_mode not in ("static", "value"):
-        raise ValueError(f"unknown policy_mode={policy_mode!r}")
+        raise PrismPolicyModeError(
+            mode=policy_mode, allowed=("static", "value"), context="cycle_candidates"
+        )
     if policy_mode == "static":
         if safe_gather_policy_value is not None:
-            raise ValueError(
+            raise PrismPolicyBindingError(
                 "cycle_candidates_static received safe_gather_policy_value; "
-                "use cycle_candidates_value"
+                "use cycle_candidates_value",
+                context="cycle_candidates_static",
+                policy_mode="static",
             )
     else:
         if safe_gather_policy is not None:
-            raise ValueError(
+            raise PrismPolicyBindingError(
                 "cycle_candidates_value received safe_gather_policy; "
-                "use cycle_candidates_static"
+                "use cycle_candidates_static",
+                context="cycle_candidates_value",
+                policy_mode="value",
             )
     def _resolve_gate(flag_value, fn_value, default_fn):
         if flag_value is not None:
@@ -1106,7 +1117,10 @@ def _cycle_candidates_common(
 
     if cnf2_flags is not None:
         if cnf2_enabled_fn is not None or cnf2_slot1_enabled_fn is not None:
-            raise ValueError("Pass either cnf2_flags or cnf2_*_enabled_fn, not both.")
+            raise PrismPolicyBindingError(
+                "Pass either cnf2_flags or cnf2_*_enabled_fn, not both.",
+                context="cycle_candidates",
+            )
         enabled_value = _resolve_gate(
             cnf2_flags.enabled, None, _cnf2_enabled_default
         )
