@@ -13,6 +13,7 @@ from prism_vm_core.domains import _host_int, _host_int_value
 from prism_vm_core.guards import (
     GuardConfig,
     DEFAULT_GUARD_CONFIG,
+    make_safe_gather_fn,
     guard_null_row_cfg,
     guard_slot0_perm_cfg,
     guard_swizzle_args_cfg,
@@ -155,7 +156,13 @@ def _apply_perm_and_swizzle(
     guard_cfg: GuardConfig | None = None,
 ):
     # BSP_s renorm: layout-only; must commute with q/denote.
-    safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
+    if guard_cfg is None:
+        guard_cfg = DEFAULT_GUARD_CONFIG
+    safe_gather_fn = make_safe_gather_fn(
+        cfg=guard_cfg,
+        policy=safe_gather_policy,
+        safe_gather_fn=safe_gather_fn,
+    )
     inv_perm = _invert_perm(perm)
     new_ops = arena.opcode[perm]
     new_arg1 = arena.arg1[perm]
@@ -174,8 +181,6 @@ def _apply_perm_and_swizzle(
     # IMPLEMENTATION_PLAN.md.
     # Swizzle is renormalization only; denotation must not change (plan).
     # See IMPLEMENTATION_PLAN.md (m3 denotation invariance).
-    if guard_cfg is None:
-        guard_cfg = DEFAULT_GUARD_CONFIG
     guard_slot0_perm_cfg(perm, inv_perm, "swizzle.perm", cfg=guard_cfg)
     guard_null_row_cfg(
         new_ops, swizzled_arg1, swizzled_arg2, "swizzle.row0", cfg=guard_cfg
