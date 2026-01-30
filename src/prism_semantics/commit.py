@@ -15,7 +15,7 @@ from prism_core.safety import (
     POLICY_VALUE_CLAMP,
     POLICY_VALUE_DEFAULT,
 )
-from prism_core.modes import ValidateMode, coerce_validate_mode
+from prism_core.modes import ValidateMode, require_validate_mode
 from prism_core.di import call_with_optional_kwargs
 from prism_core.errors import PrismPolicyModeError, PrismPolicyBindingError
 from prism_core.guards import (
@@ -396,7 +396,7 @@ def _commit_stratum_common(
     policy_binding: PolicyBinding | None = None,
 ):
     # Collapseʰ: homomorphic projection q at the stratum boundary.
-    mode = coerce_validate_mode(validate_mode, context="commit_stratum")
+    mode = require_validate_mode(validate_mode, context="commit_stratum")
     if guards_enabled_fn() and mode == ValidateMode.NONE:
         mode = ValidateMode.STRICT
     if mode != ValidateMode.NONE:

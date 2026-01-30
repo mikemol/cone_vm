@@ -22,7 +22,12 @@ from prism_core.safety import (
     oob_any_value,
 )
 from prism_core.errors import PrismPolicyBindingError, PrismCnf2ModeConflictError
-from prism_core.modes import ValidateMode, coerce_validate_mode, Cnf2Mode, coerce_cnf2_mode
+from prism_core.modes import (
+    ValidateMode,
+    require_validate_mode,
+    Cnf2Mode,
+    coerce_cnf2_mode,
+)
 from prism_coord.coord import coord_xor_batch
 from prism_ledger.intern import intern_nodes
 from prism_ledger.config import InternConfig
@@ -669,7 +674,7 @@ def _cycle_candidates_core_common(
             jnp.sum(changed_mask.astype(jnp.int32))
         )
         cnf2_metrics_update_fn(rewrite_child, changed_count, int(count2_i))
-    mode = coerce_validate_mode(validate_mode, context="cycle_candidates")
+    mode = require_validate_mode(validate_mode, context="cycle_candidates")
     if guards_enabled_fn() and mode == ValidateMode.NONE:
         mode = ValidateMode.STRICT
     if policy_mode == PolicyMode.STATIC:

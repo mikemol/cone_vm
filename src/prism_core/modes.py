@@ -40,6 +40,22 @@ def coerce_validate_mode(
     )
 
 
+def require_validate_mode(
+    mode: ValidateMode | None, *, context: str | None = None
+) -> ValidateMode:
+    if isinstance(mode, ValidateMode):
+        return mode
+    raise PrismValidateModeError(
+        mode=mode,
+        allowed=(
+            ValidateMode.NONE.value,
+            ValidateMode.STRICT.value,
+            ValidateMode.HYPER.value,
+        ),
+        context=context,
+    )
+
+
 class BspMode(str, Enum):
     AUTO = "auto"
     INTRINSIC = "intrinsic"
@@ -116,4 +132,5 @@ __all__ = [
     "coerce_cnf2_mode",
     "ValidateMode",
     "coerce_validate_mode",
+    "require_validate_mode",
 ]
