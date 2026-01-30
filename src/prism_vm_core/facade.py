@@ -1072,3 +1072,8 @@ def cycle_candidates(
     if not bool(jax.device_get(ledger.corrupt)):
         host_raise_if_bad_fn(ledger, "Ledger capacity exceeded during cycle")
     return ledger, frontier_ids, strata, q_map
+
+
+# Explicit re-exports for static/value variants.
+cycle_candidates_static = _cycle_candidates_static
+cycle_candidates_value = _cycle_candidates_value
