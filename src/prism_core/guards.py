@@ -36,7 +36,9 @@ def guard_gather_index_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     fn = cfg.guard_gather_index_fn or _jax_safe.guard_gather_index
-    return fn(idx, size, label, guard=guard)
+    return call_with_optional_kwargs(
+        fn, {"guard": guard}, idx, size, label
+    )
 
 
 def safe_index_1d_cfg(
