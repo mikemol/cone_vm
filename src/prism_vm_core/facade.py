@@ -176,7 +176,17 @@ def arena_interact_config_with_policy(
     cfg: ArenaInteractConfig = DEFAULT_ARENA_INTERACT_CONFIG,
 ) -> ArenaInteractConfig:
     """Return an ArenaInteractConfig with safety_policy set."""
-    return replace(cfg, safe_gather_policy=safety_policy)
+    binding = resolve_policy_binding(
+        policy=safety_policy,
+        policy_value=None,
+        context="arena_interact_config_with_policy",
+    )
+    return replace(
+        cfg,
+        policy_binding=binding,
+        safe_gather_policy=None,
+        safe_gather_policy_value=None,
+    )
 
 
 def arena_interact_config_with_policy_value(
@@ -185,7 +195,17 @@ def arena_interact_config_with_policy_value(
     cfg: ArenaInteractConfig = DEFAULT_ARENA_INTERACT_CONFIG,
 ) -> ArenaInteractConfig:
     """Return an ArenaInteractConfig with safe_gather_policy_value set."""
-    return replace(cfg, safe_gather_policy_value=policy_value)
+    binding = resolve_policy_binding(
+        policy=None,
+        policy_value=policy_value,
+        context="arena_interact_config_with_policy_value",
+    )
+    return replace(
+        cfg,
+        policy_binding=binding,
+        safe_gather_policy=None,
+        safe_gather_policy_value=None,
+    )
 
 
 def arena_interact_config_with_guard(
@@ -204,12 +224,28 @@ def arena_cycle_config_with_policy(
     include_interact: bool = True,
 ) -> ArenaCycleConfig:
     """Return an ArenaCycleConfig with safety_policy set (and optionally its interact_cfg)."""
+    binding = resolve_policy_binding(
+        policy=safety_policy,
+        policy_value=None,
+        context="arena_cycle_config_with_policy",
+    )
     interact_cfg = cfg.interact_cfg
     if include_interact:
         if interact_cfg is None:
             interact_cfg = DEFAULT_ARENA_INTERACT_CONFIG
-        interact_cfg = replace(interact_cfg, safe_gather_policy=safety_policy)
-    return replace(cfg, safe_gather_policy=safety_policy, interact_cfg=interact_cfg)
+        interact_cfg = replace(
+            interact_cfg,
+            policy_binding=binding,
+            safe_gather_policy=None,
+            safe_gather_policy_value=None,
+        )
+    return replace(
+        cfg,
+        policy_binding=binding,
+        safe_gather_policy=None,
+        safe_gather_policy_value=None,
+        interact_cfg=interact_cfg,
+    )
 
 
 def arena_cycle_config_with_policy_value(
@@ -219,14 +255,26 @@ def arena_cycle_config_with_policy_value(
     include_interact: bool = True,
 ) -> ArenaCycleConfig:
     """Return an ArenaCycleConfig with safe_gather_policy_value set."""
+    binding = resolve_policy_binding(
+        policy=None,
+        policy_value=policy_value,
+        context="arena_cycle_config_with_policy_value",
+    )
     interact_cfg = cfg.interact_cfg
     if include_interact:
         if interact_cfg is None:
             interact_cfg = DEFAULT_ARENA_INTERACT_CONFIG
-        interact_cfg = replace(interact_cfg, safe_gather_policy_value=policy_value)
+        interact_cfg = replace(
+            interact_cfg,
+            policy_binding=binding,
+            safe_gather_policy=None,
+            safe_gather_policy_value=None,
+        )
     return replace(
         cfg,
-        safe_gather_policy_value=policy_value,
+        policy_binding=binding,
+        safe_gather_policy=None,
+        safe_gather_policy_value=None,
         interact_cfg=interact_cfg,
     )
 
@@ -444,7 +492,17 @@ def cnf2_config_with_policy(
     cfg: Cnf2Config = DEFAULT_CNF2_CONFIG,
 ) -> Cnf2Config:
     """Return a Cnf2Config with safe_gather_policy set."""
-    return replace(cfg, safe_gather_policy=safety_policy)
+    binding = resolve_policy_binding(
+        policy=safety_policy,
+        policy_value=None,
+        context="cnf2_config_with_policy",
+    )
+    return replace(
+        cfg,
+        policy_binding=binding,
+        safe_gather_policy=None,
+        safe_gather_policy_value=None,
+    )
 
 
 def cnf2_config_with_policy_value(
@@ -453,7 +511,17 @@ def cnf2_config_with_policy_value(
     cfg: Cnf2Config = DEFAULT_CNF2_CONFIG,
 ) -> Cnf2Config:
     """Return a Cnf2Config with safe_gather_policy_value set."""
-    return replace(cfg, safe_gather_policy_value=policy_value)
+    binding = resolve_policy_binding(
+        policy=None,
+        policy_value=policy_value,
+        context="cnf2_config_with_policy_value",
+    )
+    return replace(
+        cfg,
+        policy_binding=binding,
+        safe_gather_policy=None,
+        safe_gather_policy_value=None,
+    )
 
 
 def cnf2_config_with_guard(
