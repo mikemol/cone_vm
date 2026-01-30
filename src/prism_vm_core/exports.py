@@ -2,12 +2,15 @@
 
 import importlib
 
+from prism_core import errors as _errors
 from prism_core.errors import (
     PrismExportMissingError,
     PrismPolicyBindingError,
     PrismPolicyModeError,
     PrismValidateModeError,
     PrismBspModeError,
+    PrismCnf2ModeError,
+    PrismCnf2ModeConflictError,
     PrismSafetyModeError,
 )
 
@@ -33,6 +36,8 @@ __all__ = [
     "PrismPolicyModeError",
     "PrismValidateModeError",
     "PrismBspModeError",
+    "PrismCnf2ModeError",
+    "PrismCnf2ModeConflictError",
     "PrismSafetyModeError",
     "ManifestPtr",
     "LedgerId",
@@ -85,6 +90,8 @@ __all__ = [
     "coerce_validate_mode",
     "BspMode",
     "coerce_bsp_mode",
+    "Cnf2Mode",
+    "coerce_cnf2_mode",
     "PolicyValue",
     "POLICY_VALUE_CORRUPT",
     "POLICY_VALUE_CLAMP",
@@ -286,8 +293,10 @@ __all__ = [
     "op_interact",
     "op_interact_value",
     "op_interact_cfg",
+    "op_interact_bound_cfg",
     "op_interact_jit",
     "op_interact_jit_cfg",
+    "op_interact_jit_bound_cfg",
     "op_interact_value_jit",
     "cycle_intrinsic",
     "cycle_intrinsic_cfg",
@@ -296,8 +305,10 @@ __all__ = [
     "cycle",
     "cycle_value",
     "cycle_cfg",
+    "cycle_bound_cfg",
     "cycle_jit",
     "cycle_jit_cfg",
+    "cycle_jit_bound_cfg",
     "cycle_value_jit",
     "cycle_core",
     "cycle_core_value",
@@ -323,6 +334,8 @@ def _export_lookup(name: str):
         return getattr(_types, name)
     if hasattr(_repl, name):
         return getattr(_repl, name)
+    if hasattr(_errors, name):
+        return getattr(_errors, name)
     raise PrismExportMissingError(
         name=name, module=__name__, available=tuple(__all__)
     )

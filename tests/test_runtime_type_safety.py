@@ -2,6 +2,9 @@ import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+intern_nodes = harness.intern_nodes
 
 pytestmark = pytest.mark.m3
 
@@ -31,7 +34,7 @@ def test_intern_nodes_prefix_compare_handles_scalar_available():
     ops = jnp.array([pv.OP_SUC], dtype=jnp.int32)
     a1 = jnp.array([pv.ZERO_PTR], dtype=jnp.int32)
     a2 = jnp.array([0], dtype=jnp.int32)
-    ids, new_ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    ids, new_ledger = intern_nodes(ledger, ops, a1, a2)
     new_ledger.count.block_until_ready()
     assert ids.shape == (1,)
     assert int(new_ledger.count) >= int(ledger.count)

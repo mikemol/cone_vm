@@ -1,39 +1,26 @@
-import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+intern1 = harness.intern1
 
 pytestmark = pytest.mark.m4
 
 
 def _coord_leaf(ledger, op):
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([op], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    return int(ids[0]), ledger
+    node_id, ledger = intern1(ledger, op, 0, 0)
+    return int(node_id), ledger
 
 
 def _coord_pair(ledger, left_id, right_id):
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
-        jnp.array([left_id], dtype=jnp.int32),
-        jnp.array([right_id], dtype=jnp.int32),
-    )
-    return int(ids[0]), ledger
+    node_id, ledger = intern1(ledger, pv.OP_COORD_PAIR, left_id, right_id)
+    return int(node_id), ledger
 
 
 def _intern_binary(ledger, op, left_id, right_id):
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([op], dtype=jnp.int32),
-        jnp.array([left_id], dtype=jnp.int32),
-        jnp.array([right_id], dtype=jnp.int32),
-    )
-    return int(ids[0]), ledger
+    node_id, ledger = intern1(ledger, op, left_id, right_id)
+    return int(node_id), ledger
 
 
 def test_cd_lift_add_over_pair():

@@ -2,26 +2,19 @@ import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+intern1 = harness.intern1
+i32 = harness.i32
 
 pytestmark = pytest.mark.m2
 
 
 def test_stratum_no_within_refs_passes():
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    y_id = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    frontier = jnp.array([add_ids[0]], dtype=jnp.int32)
+    y_id, ledger = intern1(ledger, pv.OP_SUC, 1, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, 1, y_id)
+    frontier = i32([add_id])
     candidates = pv.emit_candidates(ledger, frontier)
     start = int(ledger.count)
     _, new_ledger, _ = pv.intern_candidates(ledger, candidates)

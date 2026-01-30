@@ -23,5 +23,5 @@ def test_strata_validator_random_programs():
     for _ in range(12):
         expr = _rand_expr(rng, 4)
         harness.denote_pretty_bsp_candidates(
-            expr, max_steps=64, validate_stratum=True
+            expr, max_steps=64, validate_mode=pv.ValidateMode.STRICT
         )

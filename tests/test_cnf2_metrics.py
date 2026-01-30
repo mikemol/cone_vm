@@ -3,6 +3,10 @@ import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+intern1 = harness.intern1
+committed_ids = harness.committed_ids
 
 
 pytestmark = [
@@ -14,20 +18,9 @@ pytestmark = [
 
 def _build_add_suc_frontier():
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_zero = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_zero], dtype=jnp.int32),
-        jnp.array([suc_zero], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([add_ids[0]], dtype=jnp.int32))
+    suc_zero, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, suc_zero, suc_zero)
+    frontier = committed_ids(add_id)
     return ledger, frontier
 
 

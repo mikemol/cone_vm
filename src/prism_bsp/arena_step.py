@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import jax
 import jax.numpy as jnp
 from jax import jit, lax
@@ -6,6 +8,7 @@ from prism_core import jax_safe as _jax_safe
 from prism_core.errors import PrismPolicyBindingError
 from prism_core.di import call_with_optional_kwargs
 from prism_core.guards import resolve_safe_gather_fn, resolve_safe_gather_value_fn
+from prism_core.safety import PolicyBinding
 from prism_metrics.metrics import _damage_metrics_update, _damage_tile_size
 from prism_vm_core.domains import _host_int_value
 from prism_vm_core.gating import _servo_enabled
@@ -336,6 +339,25 @@ def op_interact_cfg(
         scatter_drop_fn=scatter_drop_fn,
         guard_max_fn=guard_max_fn,
     )
+
+
+def op_interact_bound_cfg(
+    arena,
+    policy_binding: PolicyBinding,
+    *,
+    cfg: ArenaInteractConfig | None = None,
+):
+    """PolicyBinding-required wrapper for op_interact_cfg."""
+    if cfg is None:
+        cfg = ArenaInteractConfig(policy_binding=policy_binding)
+    else:
+        cfg = replace(
+            cfg,
+            policy_binding=policy_binding,
+            safe_gather_policy=None,
+            safe_gather_policy_value=None,
+        )
+    return op_interact_cfg(arena, cfg=cfg)
 
 
 def cycle_core(
@@ -813,13 +835,62 @@ def cycle_cfg(
     )
 
 
+def cycle_bound_cfg(
+    arena,
+    root_ptr,
+    policy_binding: PolicyBinding,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    morton=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+    *,
+    cfg: ArenaCycleConfig | None = None,
+):
+    """PolicyBinding-required wrapper for cycle_cfg."""
+    interact_cfg = None
+    if cfg is None:
+        cfg = ArenaCycleConfig(policy_binding=policy_binding)
+    else:
+        if cfg.interact_cfg is not None:
+            interact_cfg = replace(
+                cfg.interact_cfg,
+                policy_binding=policy_binding,
+                safe_gather_policy=None,
+                safe_gather_policy_value=None,
+            )
+        cfg = replace(
+            cfg,
+            policy_binding=policy_binding,
+            safe_gather_policy=None,
+            safe_gather_policy_value=None,
+            interact_cfg=interact_cfg,
+        )
+    return cycle_cfg(
+        arena,
+        root_ptr,
+        do_sort=do_sort,
+        use_morton=use_morton,
+        block_size=block_size,
+        morton=morton,
+        l2_block_size=l2_block_size,
+        l1_block_size=l1_block_size,
+        do_global=do_global,
+        cfg=cfg,
+    )
+
+
 __all__ = [
     "op_interact",
     "op_interact_value",
     "op_interact_cfg",
+    "op_interact_bound_cfg",
     "cycle_core",
     "cycle_core_value",
     "cycle",
     "cycle_value",
     "cycle_cfg",
+    "cycle_bound_cfg",
 ]

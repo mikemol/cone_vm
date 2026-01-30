@@ -9,18 +9,12 @@ pytestmark = pytest.mark.m3
 
 def test_fixed_point_after_simple_rewrite():
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
+    suc_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_SUC], [pv.ZERO_PTR], [0]
     )
     suc_id = int(suc_ids[0])
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([suc_id], dtype=jnp.int32),
+    add_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_ADD], [pv.ZERO_PTR], [suc_id]
     )
     add_id = int(add_ids[0])
 

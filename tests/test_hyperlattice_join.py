@@ -1,43 +1,23 @@
-import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
 from tests.min_prism import harness as mph
 
 pytestmark = pytest.mark.m3
 
+intern1 = harness.intern1
+
 
 def _intern_set_a(ledger):
-    suc0_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc0 = int(suc0_ids[0])
-    _, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([suc0], dtype=jnp.int32),
-    )
+    suc0, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    _, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, suc0)
     return ledger
 
 
 def _intern_set_b(ledger):
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-    )
-    mul_id = int(mul_ids[0])
-    _, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([mul_id], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    mul_id, ledger = intern1(ledger, pv.OP_MUL, pv.ZERO_PTR, pv.ZERO_PTR)
+    _, ledger = intern1(ledger, pv.OP_SUC, mul_id, 0)
     return ledger
 
 

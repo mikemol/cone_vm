@@ -156,7 +156,7 @@ class CommitStratumFn(Protocol):
         stratum: Stratum,
         prior_q=None,
         validate: bool = False,
-        validate_mode: ValidateMode | str = ValidateMode.STRICT,
+        validate_mode: ValidateMode | str = ValidateMode.NONE,
         *,
         intern_fn: InternFn | None = None,
         safe_gather_policy=None,

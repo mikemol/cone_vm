@@ -9,38 +9,21 @@ pytestmark = pytest.mark.m3
 
 def _build_sample_ledger():
     ledger = pv.init_ledger()
-    suc0_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
+    suc0_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_SUC], [pv.ZERO_PTR], [0]
     )
     suc0 = int(suc0_ids[0])
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([suc0], dtype=jnp.int32),
+    add_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_ADD], [pv.ZERO_PTR], [suc0]
     )
     add_id = int(add_ids[0])
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc0], dtype=jnp.int32),
-        jnp.array([suc0], dtype=jnp.int32),
+    mul_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_MUL], [suc0], [suc0]
     )
     mul_id = int(mul_ids[0])
-    _, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([add_id], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    _, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([mul_id], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+    _, ledger = mph.intern_nodes(ledger, [pv.OP_SUC], [add_id], [0])
+    _, ledger = mph.intern_nodes(
+        ledger, [pv.OP_ADD], [mul_id], [pv.ZERO_PTR]
     )
     return ledger
 

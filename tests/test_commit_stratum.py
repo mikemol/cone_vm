@@ -2,6 +2,11 @@ import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+i32 = harness.i32
+intern_nodes = harness.intern_nodes
+intern1 = harness.intern1
 
 pytestmark = [
     pytest.mark.m2,
@@ -12,46 +17,22 @@ pytestmark = [
 
 def test_commit_stratum_identity():
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    node_id = suc_ids[0]
+    node_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
     stratum = pv.Stratum(start=jnp.int32(node_id), count=jnp.int32(1))
     ledger2, canon_ids, q_map = pv.commit_stratum(
         ledger, stratum, validate=True
     )
     assert int(ledger2.count) == int(ledger.count)
     assert int(canon_ids.a[0]) == int(node_id)
-    mapped = q_map(pv._provisional_ids(jnp.array([node_id], dtype=jnp.int32)))
+    mapped = q_map(pv._provisional_ids(i32([node_id])))
     assert int(mapped.a[0]) == int(node_id)
 
 
 def test_commit_stratum_applies_prior_q_to_children():
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_zero = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_zero], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-    )
-    add_id = add_ids[0]
-    add_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-    )
-    add_zero = add_zero_ids[0]
+    suc_zero, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, suc_zero, pv.ZERO_PTR)
+    add_zero, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, pv.ZERO_PTR)
 
     def prior_q(ids: pv.ProvisionalIds) -> pv.CommittedIds:
         mapped = jnp.where(
@@ -64,33 +45,15 @@ def test_commit_stratum_applies_prior_q_to_children():
         ledger, stratum, prior_q=prior_q, validate=True
     )
     assert int(canon_ids.a[0]) == int(add_zero)
-    mapped = q_map(pv._provisional_ids(jnp.array([add_id], dtype=jnp.int32)))
+    mapped = q_map(pv._provisional_ids(i32([add_id])))
     assert int(mapped.a[0]) == int(add_zero)
 
 
 def test_commit_stratum_applies_prior_q_to_children_a2():
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_zero = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([suc_zero], dtype=jnp.int32),
-    )
-    add_id = add_ids[0]
-    add_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-    )
-    add_zero = add_zero_ids[0]
+    suc_zero, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, suc_zero)
+    add_zero, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, pv.ZERO_PTR)
 
     def prior_q(ids: pv.ProvisionalIds) -> pv.CommittedIds:
         mapped = jnp.where(
@@ -103,19 +66,13 @@ def test_commit_stratum_applies_prior_q_to_children_a2():
         ledger, stratum, prior_q=prior_q, validate=True
     )
     assert int(canon_ids.a[0]) == int(add_zero)
-    mapped = q_map(pv._provisional_ids(jnp.array([add_id], dtype=jnp.int32)))
+    mapped = q_map(pv._provisional_ids(i32([add_id])))
     assert int(mapped.a[0]) == int(add_zero)
 
 
 def test_commit_stratum_count_mismatch_fails(monkeypatch):
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    node_id = suc_ids[0]
+    node_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
     stratum = pv.Stratum(start=jnp.int32(node_id), count=jnp.int32(1))
     real_intern = pv.intern_nodes
 
@@ -145,20 +102,8 @@ def test_commit_stratum_validate_trips_on_within_refs():
 
 def test_commit_stratum_q_map_totality_on_mixed_ids():
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_zero = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-    )
-    node_id = add_ids[0]
+    suc_zero, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    node_id, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, pv.ZERO_PTR)
     node_id_i = int(node_id)
 
     def prior_q(ids: pv.ProvisionalIds) -> pv.CommittedIds:
@@ -181,20 +126,8 @@ def test_commit_stratum_q_map_totality_on_mixed_ids():
 
 def test_commit_stratum_q_map_preserves_input_order():
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_zero = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-    )
-    node_id = add_ids[0]
+    suc_zero, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    node_id, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, pv.ZERO_PTR)
     node_id_i = int(node_id)
 
     def prior_q(ids: pv.ProvisionalIds) -> pv.CommittedIds:
