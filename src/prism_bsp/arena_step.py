@@ -251,9 +251,14 @@ def cycle_core(
                     {"guard_cfg": guard_cfg, "safe_gather_fn": safe_gather_fn},
                     arena,
                 )
-        # Root remap is a pointer gather; guard in test mode.
+        # Root remap is a pointer gather; guard when guard_cfg is supplied.
+        safe_gather_root = safe_gather_fn
+        if guard_cfg is not None:
+            safe_gather_root = make_safe_gather_fn(
+                cfg=guard_cfg, safe_gather_fn=safe_gather_fn
+            )
         root_idx = jnp.where(root_arr != 0, root_arr, jnp.int32(0))
-        root_g = safe_gather_fn(inv_perm, root_idx, "cycle.root_remap")
+        root_g = safe_gather_root(inv_perm, root_idx, "cycle.root_remap")
         root_arr = jnp.where(root_arr != 0, root_g, 0)
         if _TEST_GUARDS and pre_hash != arena_root_hash_fn(arena, root_arr):
             raise RuntimeError("BSPˢ renormalization changed root structure")
