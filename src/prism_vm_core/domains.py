@@ -10,6 +10,7 @@ from prism_core.host import (
     _host_int,
     _host_int_value,
 )
+from prism_core.domains import _require_ptr_domain
 
 from prism_vm_core.ontology import (
     ArenaPtr,
@@ -18,12 +19,6 @@ from prism_vm_core.ontology import (
     ManifestPtr,
     ProvisionalIds,
 )
-
-
-def _require_ptr_domain(ptr, label: str, expected_type):
-    if not isinstance(ptr, expected_type):
-        raise TypeError(f"{label} expected {expected_type.__name__}")
-    return ptr
 
 
 class QMap(Protocol):
