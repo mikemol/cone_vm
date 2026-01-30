@@ -178,17 +178,12 @@ def op_interact_jit_cfg(
     """Return a jitted op_interact entrypoint for a fixed config."""
     if cfg is None:
         cfg = DEFAULT_ARENA_INTERACT_CONFIG
-    if (
-        cfg.safe_gather_policy is not None
-        and cfg.safe_gather_policy_value is not None
-    ):
-        raise PrismPolicyBindingError(
-            "op_interact_jit_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value",
-            context="op_interact_jit_cfg",
-            policy_mode="ambiguous",
-        )
-    if cfg.safe_gather_policy_value is not None:
+    binding = resolve_policy_binding(
+        policy=cfg.safe_gather_policy,
+        policy_value=cfg.safe_gather_policy_value,
+        context="op_interact_jit_cfg",
+    )
+    if binding.mode == PolicyMode.VALUE:
         return op_interact_value_jit(
             safe_gather_value_fn=resolve(
                 cfg.safe_gather_value_fn, _jax_safe.safe_gather_1d_value
@@ -201,7 +196,7 @@ def op_interact_jit_cfg(
         safe_gather_fn=resolve(cfg.safe_gather_fn, _jax_safe.safe_gather_1d),
         scatter_drop_fn=resolve(cfg.scatter_drop_fn, _jax_safe.scatter_drop),
         guard_max_fn=cfg.guard_max_fn,
-        safe_gather_policy=cfg.safe_gather_policy,
+        safe_gather_policy=binding.policy,
         guard_cfg=cfg.guard_cfg,
     )
 
@@ -851,17 +846,12 @@ def cycle_jit_cfg(
     """Return a jitted cycle entrypoint for a fixed config."""
     if cfg is None:
         cfg = DEFAULT_ARENA_CYCLE_CONFIG
-    if (
-        cfg.safe_gather_policy is not None
-        and cfg.safe_gather_policy_value is not None
-    ):
-        raise PrismPolicyBindingError(
-            "cycle_jit_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value",
-            context="cycle_jit_cfg",
-            policy_mode="ambiguous",
-        )
-    if cfg.safe_gather_policy_value is not None:
+    binding = resolve_policy_binding(
+        policy=cfg.safe_gather_policy,
+        policy_value=cfg.safe_gather_policy_value,
+        context="cycle_jit_cfg",
+    )
+    if binding.mode == PolicyMode.VALUE:
         return cycle_value_jit(
             do_sort=do_sort,
             use_morton=use_morton,
@@ -921,10 +911,10 @@ def cycle_jit_cfg(
     if op_interact_fn is None and cfg.interact_cfg is not None:
         op_interact_fn = op_interact_jit_cfg(cfg.interact_cfg)
     if op_interact_fn is None:
-        if cfg.safe_gather_policy is not None or cfg.guard_cfg is not None:
+        if binding.policy is not None or cfg.guard_cfg is not None:
             op_interact_fn = op_interact_jit(
                 safe_gather_fn=safe_gather_fn,
-                safe_gather_policy=cfg.safe_gather_policy,
+                safe_gather_policy=binding.policy,
                 guard_cfg=cfg.guard_cfg,
             )
         else:
@@ -948,7 +938,7 @@ def cycle_jit_cfg(
         safe_gather_fn=safe_gather_fn,
         op_interact_fn=op_interact_fn,
         test_guards=test_guards,
-        safe_gather_policy=cfg.safe_gather_policy,
+        safe_gather_policy=binding.policy,
         guard_cfg=cfg.guard_cfg,
     )
 
