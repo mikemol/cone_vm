@@ -291,9 +291,21 @@ def op_interact_cfg(
     """Interface/Control wrapper for op_interact with DI bundle."""
     scatter_drop_fn = cfg.scatter_drop_fn or _jax_safe.scatter_drop
     guard_max_fn = cfg.guard_max_fn or _guard_max
+    safe_gather_policy = cfg.safe_gather_policy
+    safe_gather_policy_value = cfg.safe_gather_policy_value
+    if cfg.policy_binding is not None:
+        if safe_gather_policy is not None or safe_gather_policy_value is not None:
+            raise PrismPolicyBindingError(
+                "op_interact_cfg received both policy_binding and "
+                "safe_gather_policy/safe_gather_policy_value",
+                context="op_interact_cfg",
+                policy_mode="ambiguous",
+            )
+        safe_gather_policy = cfg.policy_binding.policy
+        safe_gather_policy_value = cfg.policy_binding.policy_value
     if (
-        cfg.safe_gather_policy is not None
-        and cfg.safe_gather_policy_value is not None
+        safe_gather_policy is not None
+        and safe_gather_policy_value is not None
     ):
         raise PrismPolicyBindingError(
             "op_interact_cfg received both safe_gather_policy and "
@@ -301,21 +313,21 @@ def op_interact_cfg(
             context="op_interact_cfg",
             policy_mode="ambiguous",
         )
-    if cfg.safe_gather_policy_value is not None:
+    if safe_gather_policy_value is not None:
         safe_gather_value_fn = resolve_safe_gather_value_fn(
             safe_gather_value_fn=cfg.safe_gather_value_fn,
             guard_cfg=cfg.guard_cfg,
         )
         return op_interact_value(
             arena,
-            cfg.safe_gather_policy_value,
+            safe_gather_policy_value,
             safe_gather_value_fn=safe_gather_value_fn,
             scatter_drop_fn=scatter_drop_fn,
             guard_max_fn=guard_max_fn,
         )
     safe_gather_fn = resolve_safe_gather_fn(
         safe_gather_fn=cfg.safe_gather_fn,
-        policy=cfg.safe_gather_policy,
+        policy=safe_gather_policy,
         guard_cfg=cfg.guard_cfg,
     )
     return op_interact(
@@ -687,9 +699,21 @@ def cycle_cfg(
         cfg.op_sort_and_swizzle_servo_with_perm_fn
         or op_sort_and_swizzle_servo_with_perm
     )
+    safe_gather_policy = cfg.safe_gather_policy
+    safe_gather_policy_value = cfg.safe_gather_policy_value
+    if cfg.policy_binding is not None:
+        if safe_gather_policy is not None or safe_gather_policy_value is not None:
+            raise PrismPolicyBindingError(
+                "cycle_cfg received both policy_binding and "
+                "safe_gather_policy/safe_gather_policy_value",
+                context="cycle_cfg",
+                policy_mode="ambiguous",
+            )
+        safe_gather_policy = cfg.policy_binding.policy
+        safe_gather_policy_value = cfg.policy_binding.policy_value
     if (
-        cfg.safe_gather_policy is not None
-        and cfg.safe_gather_policy_value is not None
+        safe_gather_policy is not None
+        and safe_gather_policy_value is not None
     ):
         raise PrismPolicyBindingError(
             "cycle_cfg received both safe_gather_policy and safe_gather_policy_value",
@@ -698,11 +722,11 @@ def cycle_cfg(
         )
     safe_gather_fn = resolve_safe_gather_fn(
         safe_gather_fn=cfg.safe_gather_fn,
-        policy=cfg.safe_gather_policy,
+        policy=safe_gather_policy,
         guard_cfg=cfg.guard_cfg,
     )
     safe_gather_value_fn = cfg.safe_gather_value_fn
-    if cfg.safe_gather_policy_value is not None:
+    if safe_gather_policy_value is not None:
         if safe_gather_value_fn is None:
             safe_gather_value_fn = _jax_safe.safe_gather_1d_value
         if cfg.op_sort_and_swizzle_with_perm_fn is None:
@@ -730,15 +754,15 @@ def cycle_cfg(
     if op_interact_fn is None and cfg.interact_cfg is not None:
         op_interact_fn = lambda a: op_interact_cfg(a, cfg=cfg.interact_cfg)
     if op_interact_fn is None:
-        if cfg.safe_gather_policy_value is not None:
+        if safe_gather_policy_value is not None:
             op_interact_fn = op_interact_value
         else:
             op_interact_fn = lambda a: op_interact(a, safe_gather_fn=safe_gather_fn)
-    if cfg.safe_gather_policy_value is not None and safe_gather_value_fn is not None:
+    if safe_gather_policy_value is not None and safe_gather_value_fn is not None:
         return cycle_value(
             arena,
             root_ptr,
-            cfg.safe_gather_policy_value,
+            safe_gather_policy_value,
             do_sort=do_sort,
             use_morton=use_morton,
             block_size=block_size,

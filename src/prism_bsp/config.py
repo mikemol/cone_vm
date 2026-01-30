@@ -6,7 +6,7 @@ from typing import Callable
 from prism_coord.config import CoordConfig
 from prism_core.compact import CompactConfig
 from prism_core.guards import GuardConfig
-from prism_core.safety import SafetyPolicy
+from prism_core.safety import SafetyPolicy, PolicyBinding
 from prism_ledger.config import InternConfig
 from prism_core.protocols import (
     PolicyValue,
@@ -103,6 +103,7 @@ class ArenaInteractConfig:
     safe_gather_value_fn: SafeGatherValueFn | None = None
     safe_gather_policy: SafetyPolicy | None = None
     safe_gather_policy_value: PolicyValue | None = None
+    policy_binding: PolicyBinding | None = None
     guard_cfg: GuardConfig | None = None
     scatter_drop_fn: ScatterDropFn | None = None
     guard_max_fn: GuardMaxFn | None = None
@@ -128,6 +129,7 @@ class ArenaCycleConfig:
     safe_gather_value_fn: SafeGatherValueFn | None = None
     safe_gather_policy: SafetyPolicy | None = None
     safe_gather_policy_value: PolicyValue | None = None
+    policy_binding: PolicyBinding | None = None
     guard_cfg: GuardConfig | None = None
     arena_root_hash_fn: ArenaRootHashFn | None = None
     damage_tile_size_fn: DamageTileSizeFn | None = None
