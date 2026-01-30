@@ -68,10 +68,11 @@ def safe_gather_1d_cfg(
     *,
     guard=None,
     policy=None,
+    return_ok: bool = False,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     return _safe_gather_1d_cfg(
-        arr, idx, label, guard=guard, policy=policy, cfg=cfg
+        arr, idx, label, guard=guard, policy=policy, cfg=cfg, return_ok=return_ok
     )
 
 

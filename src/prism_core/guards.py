@@ -70,13 +70,14 @@ def safe_gather_1d_cfg(
     *,
     guard=None,
     policy=None,
+    return_ok: bool = False,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Guard-configured wrapper for safe_gather_1d (shared)."""
     size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
     guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
     return _jax_safe.safe_gather_1d(
-        arr, idx, label, guard=False, policy=policy
+        arr, idx, label, guard=False, policy=policy, return_ok=return_ok
     )
 
 
