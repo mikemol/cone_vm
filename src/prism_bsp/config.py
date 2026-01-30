@@ -7,6 +7,7 @@ from prism_coord.config import CoordConfig
 from prism_core.compact import CompactConfig
 from prism_core.guards import GuardConfig
 from prism_core.safety import SafetyPolicy, PolicyBinding
+from prism_core.modes import Cnf2Mode
 from prism_ledger.config import InternConfig
 from prism_core.protocols import (
     PolicyValue,
@@ -64,6 +65,7 @@ class Cnf2Config:
     arguments override config values (DI precedence).
     """
 
+    cnf2_mode: Cnf2Mode | str | None = None
     flags: Cnf2Flags | None = None
     intern_cfg: InternConfig | None = None
     coord_cfg: CoordConfig | None = None

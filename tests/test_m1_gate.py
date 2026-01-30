@@ -7,6 +7,10 @@ from tests import harness
 
 pytestmark = pytest.mark.m1
 
+i32 = harness.i32
+intern_nodes = harness.intern_nodes
+intern1 = harness.intern1
+
 
 def _skip_if_no_debug_callback():
     if not pv._HAS_DEBUG_CALLBACK:
@@ -44,12 +48,7 @@ def test_intern_corrupt_flag_trips():
     assert hasattr(pv, "MAX_ID"), "MAX_ID must be defined for hard-cap mode"
     ledger = pv.init_ledger()
     ledger = ledger._replace(count=jnp.array(pv.MAX_ID + 1, dtype=jnp.int32))
-    ids, new_ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    ids, new_ledger = intern_nodes(ledger, [pv.OP_SUC], [pv.ZERO_PTR], [0])
     assert pv.ledger_has_corrupt(new_ledger)
     assert not bool(new_ledger.oom)
     assert int(ids[0]) == 0
@@ -57,12 +56,7 @@ def test_intern_corrupt_flag_trips():
 
 def test_intern_corrupt_flag_trips_on_a1_overflow():
     ledger = pv.init_ledger()
-    ids, new_ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.MAX_ID + 1], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    ids, new_ledger = intern_nodes(ledger, [pv.OP_SUC], [pv.MAX_ID + 1], [0])
     assert pv.ledger_has_corrupt(new_ledger)
     assert not bool(new_ledger.oom)
     assert int(ids[0]) == 0
@@ -70,12 +64,7 @@ def test_intern_corrupt_flag_trips_on_a1_overflow():
 
 def test_intern_corrupt_flag_trips_on_a2_overflow():
     ledger = pv.init_ledger()
-    ids, new_ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.MAX_ID + 1], dtype=jnp.int32),
-    )
+    ids, new_ledger = intern_nodes(ledger, [pv.OP_SUC], [pv.ZERO_PTR], [pv.MAX_ID + 1])
     assert pv.ledger_has_corrupt(new_ledger)
     assert not bool(new_ledger.oom)
     assert int(ids[0]) == 0
@@ -84,11 +73,8 @@ def test_intern_corrupt_flag_trips_on_a2_overflow():
 def test_null_is_not_internable():
     ledger = pv.init_ledger()
     pre_count = int(ledger.count)
-    ids, new_ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_NULL], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.MAX_ID], dtype=jnp.int32),
+    ids, new_ledger = intern_nodes(
+        ledger, [pv.OP_NULL], [pv.ZERO_PTR], [pv.MAX_ID]
     )
     new_ledger.count.block_until_ready()
     assert int(ids[0]) == 0
@@ -99,12 +85,7 @@ def test_null_is_not_internable():
 
 def test_corrupt_is_sticky_and_non_mutating():
     ledger = pv.init_ledger()
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.MAX_ID + 1], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    ids, ledger = intern_nodes(ledger, [pv.OP_SUC], [pv.MAX_ID + 1], [0])
     ledger.count.block_until_ready()
     assert pv.ledger_has_corrupt(ledger)
     assert int(ids[0]) == 0
@@ -117,12 +98,7 @@ def test_corrupt_is_sticky_and_non_mutating():
         ledger.keys_b4_sorted[:pre_count],
         ledger.ids_sorted[:pre_count],
     )
-    ids2, ledger2 = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    ids2, ledger2 = intern_nodes(ledger, [pv.OP_SUC], [pv.ZERO_PTR], [0])
     ledger2.count.block_until_ready()
     assert pv.ledger_has_corrupt(ledger2)
     assert int(ledger2.count) == pre_count
@@ -144,11 +120,11 @@ def test_zero_row_guard_trips():
     _skip_if_no_debug_callback()
     ledger = pv.init_ledger()
     ledger = ledger._replace(opcode=ledger.opcode.at[1].set(pv.OP_ADD))
-    ops = jnp.array([pv.OP_SUC], dtype=jnp.int32)
-    a1 = jnp.array([pv.ZERO_PTR], dtype=jnp.int32)
-    a2 = jnp.array([0], dtype=jnp.int32)
+    ops = i32([pv.OP_SUC])
+    a1 = i32([pv.ZERO_PTR])
+    a2 = i32([0])
     with pytest.raises(RuntimeError, match=r"intern_nodes.row1"):
-        ids, new_ledger = pv.intern_nodes(ledger, ops, a1, a2)
+        ids, new_ledger = intern_nodes(ledger, ops, a1, a2)
         new_ledger.count.block_until_ready()
 
 
@@ -175,12 +151,7 @@ def test_intern_stop_path_on_oom_is_non_mutating():
     ledger = pv.init_ledger()
     snapshot = _seed_snapshot(ledger)
     ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
-    ids, new_ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    ids, new_ledger = intern_nodes(ledger, [pv.OP_SUC], [pv.ZERO_PTR], [0])
     assert not bool(new_ledger.corrupt)
     assert bool(new_ledger.oom)
     assert int(new_ledger.count) == int(ledger.count)
@@ -193,12 +164,7 @@ def test_intern_stop_path_on_oom_is_sticky():
     snapshot = _seed_snapshot(ledger)
     ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
     for _ in range(2):
-        ids, ledger = pv.intern_nodes(
-            ledger,
-            jnp.array([pv.OP_SUC], dtype=jnp.int32),
-            jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-            jnp.array([0], dtype=jnp.int32),
-        )
+        ids, ledger = intern_nodes(ledger, [pv.OP_SUC], [pv.ZERO_PTR], [0])
         assert not bool(ledger.corrupt)
         assert bool(ledger.oom)
         assert int(ids[0]) == 0
@@ -207,13 +173,13 @@ def test_intern_stop_path_on_oom_is_sticky():
 
 def test_intern_stop_path_lookup_returns_existing_id():
     ledger = pv.init_ledger()
-    ops = jnp.array([pv.OP_SUC], dtype=jnp.int32)
-    a1 = jnp.array([pv.ZERO_PTR], dtype=jnp.int32)
-    a2 = jnp.array([0], dtype=jnp.int32)
-    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    ops = i32([pv.OP_SUC])
+    a1 = i32([pv.ZERO_PTR])
+    a2 = i32([0])
+    ids, ledger = intern_nodes(ledger, ops, a1, a2)
     existing_id = int(ids[0])
     ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
-    ids2, ledger2 = pv.intern_nodes(ledger, ops, a1, a2)
+    ids2, ledger2 = intern_nodes(ledger, ops, a1, a2)
     assert int(ids2[0]) == existing_id
     assert bool(ledger2.oom)
     assert int(ledger2.count) == int(ledger.count)
@@ -224,12 +190,7 @@ def test_intern_overflow_trips_corrupt_without_partial_alloc():
     snapshot = _seed_snapshot(ledger)
     assert pv.MAX_COUNT == int(ledger.opcode.shape[0])
     ledger = ledger._replace(count=jnp.array(pv.MAX_COUNT, dtype=jnp.int32))
-    ids, new_ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    ids, new_ledger = intern_nodes(ledger, [pv.OP_SUC], [pv.ZERO_PTR], [0])
     assert pv.ledger_has_corrupt(new_ledger)
     assert not bool(new_ledger.oom)
     assert int(new_ledger.count) == int(ledger.count)
@@ -240,11 +201,11 @@ def test_intern_overflow_trips_corrupt_without_partial_alloc():
 def test_intern_spawn_clipping_trips_corrupt(monkeypatch):
     ledger = pv.init_ledger()
     snapshot = _seed_snapshot(ledger)
-    ops = jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32)
-    a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
-    a2 = jnp.array([0, 0], dtype=jnp.int32)
+    ops = i32([pv.OP_SUC, pv.OP_SUC])
+    a1 = i32([pv.ZERO_PTR, pv.ZERO_PTR])
+    a2 = i32([0, 0])
     with jax.disable_jit():
-        ids, new_ledger = pv.intern_nodes(
+        ids, new_ledger = intern_nodes(
             ledger, ops, a1, a2, force_spawn_clip=True
         )
     assert pv.ledger_has_corrupt(new_ledger)
@@ -257,11 +218,8 @@ def test_intern_spawn_clipping_trips_corrupt(monkeypatch):
 @pytest.mark.parametrize("bad_a1, bad_a2", [(-1, 0), (0, -1)])
 def test_intern_corrupt_flag_trips_on_negative_child_id(bad_a1, bad_a2):
     ledger = pv.init_ledger()
-    ids, new_ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([bad_a1], dtype=jnp.int32),
-        jnp.array([bad_a2], dtype=jnp.int32),
+    ids, new_ledger = intern_nodes(
+        ledger, [pv.OP_SUC], [bad_a1], [bad_a2]
     )
     assert bool(new_ledger.corrupt)
     assert not bool(new_ledger.oom)
@@ -271,12 +229,7 @@ def test_intern_corrupt_flag_trips_on_negative_child_id(bad_a1, bad_a2):
 @pytest.mark.parametrize("bad_op", [-1, 256])
 def test_intern_corrupt_flag_trips_on_opcode_out_of_range(bad_op):
     ledger = pv.init_ledger()
-    ids, new_ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([bad_op], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    ids, new_ledger = intern_nodes(ledger, [bad_op], [pv.ZERO_PTR], [0])
     assert bool(new_ledger.corrupt)
     assert not bool(new_ledger.oom)
     assert int(ids[0]) == 0
@@ -298,10 +251,10 @@ def test_intern_raises_on_oom_host():
 
 def test_ledger_full_key_equality():
     ledger = pv.init_ledger()
-    ops = jnp.array([pv.OP_ADD, pv.OP_ADD], dtype=jnp.int32)
-    a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
-    a2 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR + 1], dtype=jnp.int32)
-    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    ops = i32([pv.OP_ADD, pv.OP_ADD])
+    a1 = i32([pv.ZERO_PTR, pv.ZERO_PTR])
+    a2 = i32([pv.ZERO_PTR, pv.ZERO_PTR + 1])
+    ids, ledger = intern_nodes(ledger, ops, a1, a2)
     assert int(ids[0]) != int(ids[1])
     assert int(ledger.count) == 4
 
@@ -318,21 +271,21 @@ def test_ledger_full_key_equality():
 )
 def test_ledger_full_key_equality_distinguishes_each_key_byte(a1_vals, a2_vals):
     ledger = pv.init_ledger()
-    ops = jnp.array([pv.OP_ADD, pv.OP_ADD], dtype=jnp.int32)
-    a1 = jnp.array(a1_vals, dtype=jnp.int32)
-    a2 = jnp.array(a2_vals, dtype=jnp.int32)
-    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    ops = i32([pv.OP_ADD, pv.OP_ADD])
+    a1 = i32(a1_vals)
+    a2 = i32(a2_vals)
+    ids, ledger = intern_nodes(ledger, ops, a1, a2)
     assert int(ids[0]) != int(ids[1])
     assert int(ledger.count) == 4
 
 
 def test_ledger_full_key_equality_under_full_range_buckets(monkeypatch):
     ledger = pv.init_ledger()
-    ops = jnp.array([pv.OP_ADD, pv.OP_ADD, pv.OP_ADD], dtype=jnp.int32)
-    a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
-    a2 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR + 1, pv.ZERO_PTR], dtype=jnp.int32)
+    ops = i32([pv.OP_ADD, pv.OP_ADD, pv.OP_ADD])
+    a1 = i32([pv.ZERO_PTR, pv.ZERO_PTR, pv.ZERO_PTR])
+    a2 = i32([pv.ZERO_PTR, pv.ZERO_PTR + 1, pv.ZERO_PTR])
     with jax.disable_jit():
-        ids, ledger = pv.intern_nodes(
+        ids, ledger = intern_nodes(
             ledger, ops, a1, a2, op_buckets_full_range=True
         )
     assert int(ids[0]) == int(ids[2])
@@ -364,10 +317,10 @@ def test_ledger_full_key_equality_full_range_bucket_permutation(monkeypatch):
     a2 = jnp.array([1, 2, 1, 3, 2], dtype=jnp.int32)
     perm = jnp.array([4, 1, 3, 0, 2], dtype=jnp.int32)
     with jax.disable_jit():
-        ids_a, ledger_a = pv.intern_nodes(
+        ids_a, ledger_a = intern_nodes(
             pv.init_ledger(), ops, a1, a2, op_buckets_full_range=True
         )
-        ids_b, ledger_b = pv.intern_nodes(
+        ids_b, ledger_b = intern_nodes(
             pv.init_ledger(),
             ops[perm],
             a1[perm],
@@ -383,10 +336,10 @@ def test_ledger_full_key_equality_full_range_bucket_permutation(monkeypatch):
 def test_key_width_no_alias():
     assert pv.MAX_ID >= 0x101
     ledger = pv.init_ledger()
-    ops = jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32)
-    a1 = jnp.array([1, 1 + 256], dtype=jnp.int32)
-    a2 = jnp.array([0, 0], dtype=jnp.int32)
-    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    ops = i32([pv.OP_SUC, pv.OP_SUC])
+    a1 = i32([1, 1 + 256])
+    a2 = i32([0, 0])
+    ids, ledger = intern_nodes(ledger, ops, a1, a2)
     assert int(ids[0]) != int(ids[1])
     assert int(ledger.count) == 4
 
@@ -394,9 +347,9 @@ def test_key_width_no_alias():
 def test_key_width_no_alias_under_canonicalize():
     assert pv.MAX_ID >= 0x102
     ledger = pv.init_ledger()
-    ops = jnp.array([pv.OP_ADD, pv.OP_ADD], dtype=jnp.int32)
-    a1 = jnp.array([1, 1], dtype=jnp.int32)
-    a2 = jnp.array([2, 2 + 256], dtype=jnp.int32)
-    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    ops = i32([pv.OP_ADD, pv.OP_ADD])
+    a1 = i32([1, 1])
+    a2 = i32([2, 2 + 256])
+    ids, ledger = intern_nodes(ledger, ops, a1, a2)
     assert int(ids[0]) != int(ids[1])
     assert int(ledger.count) == 4

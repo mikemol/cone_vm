@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from enum import Enum
 
-from prism_core.errors import PrismValidateModeError, PrismBspModeError
+from prism_core.errors import (
+    PrismValidateModeError,
+    PrismBspModeError,
+    PrismCnf2ModeError,
+)
 
 
 class ValidateMode(str, Enum):
+    NONE = "none"
     STRICT = "strict"
     HYPER = "hyper"
 
@@ -14,17 +19,23 @@ def coerce_validate_mode(
     mode: ValidateMode | str | None, *, context: str | None = None
 ) -> ValidateMode:
     if mode is None:
-        return ValidateMode.STRICT
+        return ValidateMode.NONE
     if isinstance(mode, ValidateMode):
         return mode
     if isinstance(mode, str):
+        if mode == ValidateMode.NONE.value:
+            return ValidateMode.NONE
         if mode == ValidateMode.STRICT.value:
             return ValidateMode.STRICT
         if mode == ValidateMode.HYPER.value:
             return ValidateMode.HYPER
     raise PrismValidateModeError(
         mode=mode,
-        allowed=(ValidateMode.STRICT.value, ValidateMode.HYPER.value),
+        allowed=(
+            ValidateMode.NONE.value,
+            ValidateMode.STRICT.value,
+            ValidateMode.HYPER.value,
+        ),
         context=context,
     )
 
@@ -63,9 +74,46 @@ def coerce_bsp_mode(
     )
 
 
+class Cnf2Mode(str, Enum):
+    AUTO = "auto"
+    OFF = "off"
+    BASE = "base"
+    SLOT1 = "slot1"
+
+
+def coerce_cnf2_mode(
+    mode: Cnf2Mode | str | None, *, context: str | None = None
+) -> Cnf2Mode:
+    if mode is None or mode == "" or mode == Cnf2Mode.AUTO:
+        return Cnf2Mode.AUTO
+    if isinstance(mode, Cnf2Mode):
+        return mode
+    if isinstance(mode, str):
+        if mode == Cnf2Mode.AUTO.value:
+            return Cnf2Mode.AUTO
+        if mode == Cnf2Mode.OFF.value:
+            return Cnf2Mode.OFF
+        if mode == Cnf2Mode.BASE.value:
+            return Cnf2Mode.BASE
+        if mode == Cnf2Mode.SLOT1.value:
+            return Cnf2Mode.SLOT1
+    raise PrismCnf2ModeError(
+        mode=mode,
+        allowed=(
+            Cnf2Mode.OFF.value,
+            Cnf2Mode.BASE.value,
+            Cnf2Mode.SLOT1.value,
+            Cnf2Mode.AUTO.value,
+        ),
+        context=context,
+    )
+
+
 __all__ = [
     "BspMode",
     "coerce_bsp_mode",
+    "Cnf2Mode",
+    "coerce_cnf2_mode",
     "ValidateMode",
     "coerce_validate_mode",
 ]

@@ -10,32 +10,18 @@ pytestmark = pytest.mark.m3
 
 def _build_ledger_with_tail():
     ledger = pv.init_ledger()
-    suc0_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
+    suc0_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_SUC], [pv.ZERO_PTR], [0]
     )
     suc0 = int(suc0_ids[0])
-    suc1_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([suc0], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    suc1_ids, ledger = mph.intern_nodes(ledger, [pv.OP_SUC], [suc0], [0])
     suc1 = int(suc1_ids[0])
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc0], dtype=jnp.int32),
-        jnp.array([suc1], dtype=jnp.int32),
+    add_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_ADD], [suc0], [suc1]
     )
     add_id = int(add_ids[0])
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc1], dtype=jnp.int32),
-        jnp.array([suc0], dtype=jnp.int32),
+    mul_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_MUL], [suc1], [suc0]
     )
     mul_id = int(mul_ids[0])
     # Tail nodes that should be irrelevant to the frontier.
@@ -46,12 +32,7 @@ def _build_ledger_with_tail():
         (mul_id, add_id),
     ]
     for a1, a2 in tail_pairs:
-        _, ledger = pv.intern_nodes(
-            ledger,
-            jnp.array([pv.OP_SORT], dtype=jnp.int32),
-            jnp.array([a1], dtype=jnp.int32),
-            jnp.array([a2], dtype=jnp.int32),
-        )
+        _, ledger = mph.intern_nodes(ledger, [pv.OP_SORT], [a1], [a2])
     frontier = jnp.array([add_id], dtype=jnp.int32)
     keys = list(mph.canon_state_ledger(ledger)[0])
     frontier_key = mph.structural_key_for_id(ledger, add_id)
@@ -62,32 +43,18 @@ def _build_ledger_with_tail():
 
 def _build_ledger_with_tail_multi_frontier():
     ledger = pv.init_ledger()
-    suc0_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
+    suc0_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_SUC], [pv.ZERO_PTR], [0]
     )
     suc0 = int(suc0_ids[0])
-    suc1_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([suc0], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    suc1_ids, ledger = mph.intern_nodes(ledger, [pv.OP_SUC], [suc0], [0])
     suc1 = int(suc1_ids[0])
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc0], dtype=jnp.int32),
-        jnp.array([suc1], dtype=jnp.int32),
+    add_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_ADD], [suc0], [suc1]
     )
     add_id = int(add_ids[0])
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc0], dtype=jnp.int32),
-        jnp.array([suc1], dtype=jnp.int32),
+    mul_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_MUL], [suc0], [suc1]
     )
     mul_id = int(mul_ids[0])
     tail_pairs = [
@@ -97,12 +64,7 @@ def _build_ledger_with_tail_multi_frontier():
         (mul_id, add_id),
     ]
     for a1, a2 in tail_pairs:
-        _, ledger = pv.intern_nodes(
-            ledger,
-            jnp.array([pv.OP_SORT], dtype=jnp.int32),
-            jnp.array([a1], dtype=jnp.int32),
-            jnp.array([a2], dtype=jnp.int32),
-        )
+        _, ledger = mph.intern_nodes(ledger, [pv.OP_SORT], [a1], [a2])
     frontier = jnp.array([add_id, mul_id], dtype=jnp.int32)
     keys = list(mph.canon_state_ledger(ledger)[0])
     frontier_keys = [

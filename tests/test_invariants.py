@@ -4,6 +4,10 @@ import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+i32 = harness.i32
+intern_nodes = harness.intern_nodes
 
 
 def _small_add_manifest(cap):
@@ -112,11 +116,11 @@ def test_arena_capacity_guard():
 def test_ledger_capacity_guard():
     ledger = pv.init_ledger()
     ledger = ledger._replace(count=jnp.array(pv.MAX_ID, dtype=jnp.int32))
-    ids, new_ledger = pv.intern_nodes(
+    ids, new_ledger = intern_nodes(
         ledger,
-        jnp.array([pv.OP_SUC, pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0, pv.ZERO_PTR], dtype=jnp.int32),
+        [pv.OP_SUC, pv.OP_ADD],
+        [pv.ZERO_PTR, pv.ZERO_PTR],
+        [0, pv.ZERO_PTR],
     )
     assert pv._host_bool_value(new_ledger.corrupt)
     assert not pv._host_bool_value(new_ledger.oom)
@@ -128,10 +132,10 @@ def test_ledger_capacity_guard():
 def test_intern_nodes_early_out_on_oom_returns_zero_ids():
     ledger = pv.init_ledger()
     ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
-    ops = jnp.array([pv.OP_ZERO, pv.OP_SUC], dtype=jnp.int32)
-    a1 = jnp.array([0, pv.ZERO_PTR], dtype=jnp.int32)
-    a2 = jnp.array([0, 0], dtype=jnp.int32)
-    ids, new_ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    ops = i32([pv.OP_ZERO, pv.OP_SUC])
+    a1 = i32([0, pv.ZERO_PTR])
+    a2 = i32([0, 0])
+    ids, new_ledger = intern_nodes(ledger, ops, a1, a2)
     new_ledger.count.block_until_ready()
     assert pv._host_bool_value(new_ledger.oom) == pv._host_bool_value(ledger.oom)
     assert pv._host_bool_value(new_ledger.corrupt) == pv._host_bool_value(ledger.corrupt)
@@ -144,10 +148,10 @@ def test_intern_nodes_early_out_on_oom_returns_zero_ids():
 def test_intern_nodes_early_out_on_corrupt_returns_zero_ids():
     ledger = pv.init_ledger()
     ledger = ledger._replace(corrupt=jnp.array(True, dtype=jnp.bool_))
-    ops = jnp.array([pv.OP_ZERO, pv.OP_SUC], dtype=jnp.int32)
-    a1 = jnp.array([0, pv.ZERO_PTR], dtype=jnp.int32)
-    a2 = jnp.array([0, 0], dtype=jnp.int32)
-    ids, new_ledger = pv.intern_nodes(ledger, ops, a1, a2)
+    ops = i32([pv.OP_ZERO, pv.OP_SUC])
+    a1 = i32([0, pv.ZERO_PTR])
+    a2 = i32([0, 0])
+    ids, new_ledger = intern_nodes(ledger, ops, a1, a2)
     new_ledger.count.block_until_ready()
     assert pv._host_bool_value(new_ledger.oom) == pv._host_bool_value(ledger.oom)
     assert pv._host_bool_value(new_ledger.corrupt) == pv._host_bool_value(ledger.corrupt)
@@ -351,11 +355,11 @@ def test_compact_candidates_preserves_order():
 @pytest.mark.m1
 def test_intern_nodes_opcode_bucket():
     ledger = pv.init_ledger()
-    ops = jnp.array([pv.OP_ADD, pv.OP_MUL], dtype=jnp.int32)
-    a1 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
-    a2 = jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32)
-    ids, ledger = pv.intern_nodes(ledger, ops, a1, a2)
-    ids2, _ = pv.intern_nodes(ledger, ops, a1, a2)
+    ops = i32([pv.OP_ADD, pv.OP_MUL])
+    a1 = i32([pv.ZERO_PTR, pv.ZERO_PTR])
+    a2 = i32([pv.ZERO_PTR, pv.ZERO_PTR])
+    ids, ledger = intern_nodes(ledger, ops, a1, a2)
+    ids2, _ = intern_nodes(ledger, ops, a1, a2)
     assert int(ids[0]) != int(ids[1])
     assert int(ids2[0]) == int(ids[0])
     assert int(ids2[1]) == int(ids[1])
@@ -443,24 +447,13 @@ def test_baseline_eval_commutative_nodes_are_canonicalized():
 @pytest.mark.m1
 def test_mul_commutative_interning():
     ledger = pv.init_ledger()
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    ids, ledger = intern_nodes(ledger, [pv.OP_SUC], [pv.ZERO_PTR], [0])
     suc_id = int(ids[0])
-    ids1, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([suc_id], dtype=jnp.int32),
+    ids1, ledger = intern_nodes(
+        ledger, [pv.OP_MUL], [pv.ZERO_PTR], [suc_id]
     )
-    ids2, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc_id], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+    ids2, ledger = intern_nodes(
+        ledger, [pv.OP_MUL], [suc_id], [pv.ZERO_PTR]
     )
     assert int(ids1[0]) == int(ids2[0])
 
@@ -468,24 +461,13 @@ def test_mul_commutative_interning():
 @pytest.mark.m1
 def test_add_commutative_interning():
     ledger = pv.init_ledger()
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    ids, ledger = intern_nodes(ledger, [pv.OP_SUC], [pv.ZERO_PTR], [0])
     suc_id = int(ids[0])
-    ids1, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([suc_id], dtype=jnp.int32),
+    ids1, ledger = intern_nodes(
+        ledger, [pv.OP_ADD], [pv.ZERO_PTR], [suc_id]
     )
-    ids2, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_id], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+    ids2, ledger = intern_nodes(
+        ledger, [pv.OP_ADD], [suc_id], [pv.ZERO_PTR]
     )
     assert int(ids1[0]) == int(ids2[0])
 

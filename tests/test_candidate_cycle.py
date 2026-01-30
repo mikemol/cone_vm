@@ -3,6 +3,13 @@ import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+i32 = harness.i32
+i32v = harness.i32v
+intern_nodes = harness.intern_nodes
+intern1 = harness.intern1
+committed_ids = harness.committed_ids
 
 
 pytestmark = [
@@ -22,73 +29,26 @@ def _commit_frontier(frontier_prov, q_map):
 
 def _build_suc_add_suc_frontier():
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_zero = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_zero], dtype=jnp.int32),
-        jnp.array([suc_zero], dtype=jnp.int32),
-    )
-    add_id = add_ids[0]
-    root_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([add_id], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([root_ids[0]], dtype=jnp.int32))
+    suc_zero, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, suc_zero, suc_zero)
+    root_id, ledger = intern1(ledger, pv.OP_SUC, add_id, 0)
+    frontier = committed_ids(root_id)
     return ledger, frontier
 
 
 def _build_frontier_permutation_sample():
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
+    suc_ids, ledger = intern_nodes(
+        ledger, [pv.OP_SUC, pv.OP_SUC], [pv.ZERO_PTR, pv.ZERO_PTR], [0, 0]
     )
     suc_x_id = suc_ids[0]
     y_id = suc_ids[1]
-    add_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    add_suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    mul_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    mul_suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    frontier = jnp.array(
-        [
-            add_zero_ids[0],
-            add_suc_ids[0],
-            mul_zero_ids[0],
-            mul_suc_ids[0],
-            suc_x_id,
-        ],
-        dtype=jnp.int32,
+    add_zero_id, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, y_id)
+    add_suc_id, ledger = intern1(ledger, pv.OP_ADD, suc_x_id, y_id)
+    mul_zero_id, ledger = intern1(ledger, pv.OP_MUL, pv.ZERO_PTR, y_id)
+    mul_suc_id, ledger = intern1(ledger, pv.OP_MUL, suc_x_id, y_id)
+    frontier = i32(
+        [add_zero_id, add_suc_id, mul_zero_id, mul_suc_id, suc_x_id]
     )
     return ledger, frontier
 
@@ -116,16 +76,16 @@ def _assert_ledger_snapshot(ledger, snapshot):
 def test_cycle_candidates_rejects_when_cnf2_disabled(monkeypatch):
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    frontier = pv._committed_ids(jnp.array([pv.ZERO_PTR], dtype=jnp.int32))
+    frontier = committed_ids(pv.ZERO_PTR)
     with pytest.raises(RuntimeError, match="cycle_candidates disabled until m2"):
-        pv.cycle_candidates(ledger, frontier, cnf2_enabled_fn=lambda: False)
+        pv.cycle_candidates(ledger, frontier, cnf2_mode=pv.Cnf2Mode.OFF)
 
 
 def test_cycle_candidates_empty_frontier_no_mutation():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
     snapshot = _ledger_snapshot(ledger)
-    frontier = pv._committed_ids(jnp.zeros((0,), dtype=jnp.int32))
+    frontier = committed_ids([])
     out_ledger, frontier_prov, strata, q_map = pv.cycle_candidates(
         ledger, frontier
     )
@@ -144,23 +104,12 @@ def test_cycle_candidates_add_zero():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
 
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    y_id = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([add_ids[0]], dtype=jnp.int32))
+    y_id, ledger = intern1(ledger, pv.OP_SUC, 1, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, 1, y_id)
+    frontier = committed_ids(add_id)
     start_count = int(ledger.count)
     ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
-        ledger, frontier, validate_stratum=True
+        ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
     stratum0, stratum1, stratum2 = strata
@@ -178,20 +127,9 @@ def test_cycle_candidates_add_zero_right():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
 
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    y_id = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([add_ids[0]], dtype=jnp.int32))
+    y_id, ledger = intern1(ledger, pv.OP_SUC, 1, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, y_id, 1)
+    frontier = committed_ids(add_id)
     ledger, next_frontier_prov, _, q_map = pv.cycle_candidates(
         ledger, frontier
     )
@@ -203,16 +141,11 @@ def test_cycle_candidates_add_zero_right():
 def test_cycle_candidates_mul_zero():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([mul_ids[0]], dtype=jnp.int32))
+    mul_id, ledger = intern1(ledger, pv.OP_MUL, 1, 1)
+    frontier = committed_ids(mul_id)
     start_count = int(ledger.count)
     ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
-        ledger, frontier, validate_stratum=True
+        ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
     stratum0, stratum1, stratum2 = strata
@@ -230,30 +163,13 @@ def test_cycle_candidates_mul_zero():
 def test_cycle_candidates_add_suc():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_x_id = suc_ids[0]
-    y_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    y_id = y_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([add_ids[0]], dtype=jnp.int32))
+    suc_x_id, ledger = intern1(ledger, pv.OP_SUC, 1, 0)
+    y_id, ledger = intern1(ledger, pv.OP_SUC, 1, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, suc_x_id, y_id)
+    frontier = committed_ids(add_id)
     start_count = int(ledger.count)
     ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
-        ledger, frontier, validate_stratum=True
+        ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
     stratum0, stratum1, stratum2 = strata
@@ -274,23 +190,13 @@ def test_cycle_candidates_add_suc():
 def test_cycle_candidates_slot1_visibility_boundaries():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1, 1], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
-    )
+    suc_ids, ledger = intern_nodes(ledger, [pv.OP_SUC, pv.OP_SUC], [1, 1], [0, 0])
     suc_x_id = suc_ids[0]
     y_id = suc_ids[1]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([add_ids[0]], dtype=jnp.int32))
+    add_id, ledger = intern1(ledger, pv.OP_ADD, suc_x_id, y_id)
+    frontier = committed_ids(add_id)
     ledger, _, strata, _ = pv.cycle_candidates(
-        ledger, frontier, validate_stratum=True
+        ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     stratum0, stratum1, _ = strata
     assert int(stratum0.count) > 0
@@ -309,33 +215,16 @@ def test_cycle_candidates_slot1_visibility_boundaries():
 def test_cycle_candidates_slot1_visibility_across_cycles():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1, 1], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
-    )
+    suc_ids, ledger = intern_nodes(ledger, [pv.OP_SUC, pv.OP_SUC], [1, 1], [0, 0])
     suc_x_id = suc_ids[0]
     y_id = suc_ids[1]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(
-        jnp.array([add_ids[0], mul_ids[0]], dtype=jnp.int32)
-    )
+    add_id, ledger = intern1(ledger, pv.OP_ADD, suc_x_id, y_id)
+    mul_id, ledger = intern1(ledger, pv.OP_MUL, suc_x_id, y_id)
+    frontier = committed_ids([add_id, mul_id])
     saw_slot1 = False
     for _ in range(3):
         ledger, frontier_prov, strata, q_map = pv.cycle_candidates(
-            ledger, frontier, validate_stratum=True
+            ledger, frontier, validate_mode=pv.ValidateMode.STRICT
         )
         stratum0, stratum1, _ = strata
         if int(stratum1.count) == 0:
@@ -363,30 +252,13 @@ def test_cycle_candidates_slot1_visibility_across_cycles():
 def test_cycle_candidates_add_suc_right():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    base_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-    )
-    base_id = base_ids[0]
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_id = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([base_id], dtype=jnp.int32),
-        jnp.array([suc_id], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([add_ids[0]], dtype=jnp.int32))
+    base_id, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, pv.ZERO_PTR)
+    suc_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, base_id, suc_id)
+    frontier = committed_ids(add_id)
     start_count = int(ledger.count)
     ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
-        ledger, frontier, validate_stratum=True
+        ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
     stratum0, stratum1, stratum2 = strata
@@ -407,27 +279,10 @@ def test_cycle_candidates_add_suc_right():
 def test_cycle_candidates_mul_suc():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_x_id = suc_ids[0]
-    y_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    y_id = y_ids[0]
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([mul_ids[0]], dtype=jnp.int32))
+    suc_x_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    y_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    mul_id, ledger = intern1(ledger, pv.OP_MUL, suc_x_id, y_id)
+    frontier = committed_ids(mul_id)
     start_count = int(ledger.count)
     ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
         ledger, frontier
@@ -454,27 +309,10 @@ def test_cycle_candidates_mul_suc():
 def test_cycle_candidates_mul_suc_right():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    base_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-    )
-    base_id = base_ids[0]
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_id = suc_ids[0]
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([base_id], dtype=jnp.int32),
-        jnp.array([suc_id], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([mul_ids[0]], dtype=jnp.int32))
+    base_id, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, pv.ZERO_PTR)
+    suc_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    mul_id, ledger = intern1(ledger, pv.OP_MUL, base_id, suc_id)
+    frontier = committed_ids(mul_id)
     start_count = int(ledger.count)
     ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
         ledger, frontier
@@ -500,13 +338,8 @@ def test_cycle_candidates_mul_suc_right():
 def test_cycle_candidates_noop_on_suc():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([suc_ids[0]], dtype=jnp.int32))
+    suc_id, ledger = intern1(ledger, pv.OP_SUC, 1, 0)
+    frontier = committed_ids(suc_id)
     start_count = int(ledger.count)
     ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
         ledger, frontier
@@ -514,7 +347,7 @@ def test_cycle_candidates_noop_on_suc():
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
     stratum0, stratum1, stratum2 = strata
     assert int(next_frontier.a.shape[0]) == 1
-    assert int(next_frontier.a[0]) == int(suc_ids[0])
+    assert int(next_frontier.a[0]) == int(suc_id)
     assert int(stratum0.start) == start_count
     assert int(stratum0.count) == 0
     assert int(stratum1.start) == start_count + int(stratum0.count)
@@ -526,56 +359,21 @@ def test_cycle_candidates_noop_on_suc():
 def test_cycle_candidates_validate_stratum_random_frontier():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1, 1], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
-    )
+    suc_ids, ledger = intern_nodes(ledger, [pv.OP_SUC, pv.OP_SUC], [1, 1], [0, 0])
     suc_x_id = suc_ids[0]
     y_id = suc_ids[1]
-    add_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    add_suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    mul_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    mul_suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    pool = jnp.array(
-        [
-            add_zero_ids[0],
-            add_suc_ids[0],
-            mul_zero_ids[0],
-            mul_suc_ids[0],
-            suc_x_id,
-            y_id,
-        ],
-        dtype=jnp.int32,
-    )
+    add_zero_id, ledger = intern1(ledger, pv.OP_ADD, 1, y_id)
+    add_suc_id, ledger = intern1(ledger, pv.OP_ADD, suc_x_id, y_id)
+    mul_zero_id, ledger = intern1(ledger, pv.OP_MUL, 1, y_id)
+    mul_suc_id, ledger = intern1(ledger, pv.OP_MUL, suc_x_id, y_id)
+    pool = i32([add_zero_id, add_suc_id, mul_zero_id, mul_suc_id, suc_x_id, y_id])
     key = jax.random.PRNGKey(0)
     for _ in range(4):
         key, subkey = jax.random.split(key)
         idx = jax.random.randint(subkey, (5,), 0, pool.shape[0])
-        frontier = pv._committed_ids(pool[idx])
+        frontier = committed_ids(pool[idx])
         ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
-            ledger, frontier, validate_stratum=True
+            ledger, frontier, validate_mode=pv.ValidateMode.STRICT
         )
         next_frontier = _commit_frontier(next_frontier_prov, q_map)
         stratum0, stratum1, stratum2 = strata
@@ -588,20 +386,9 @@ def test_cycle_candidates_validate_stratum_random_frontier():
 def test_cycle_candidates_validate_stratum_trips_on_within_refs(monkeypatch):
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_id = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_id], dtype=jnp.int32),
-        jnp.array([suc_id], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([add_ids[0]], dtype=jnp.int32))
+    suc_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, suc_id, suc_id)
+    frontier = committed_ids(add_id)
     real_intern = pv.intern_nodes
 
     def bad_intern(ledger_in, batch_or_ops, a1=None, a2=None):
@@ -616,7 +403,7 @@ def test_cycle_candidates_validate_stratum_trips_on_within_refs(monkeypatch):
 
     with pytest.raises(ValueError, match="Stratum contains within-tier references"):
         pv.cycle_candidates(
-            ledger, frontier, validate_stratum=True, intern_fn=bad_intern
+            ledger, frontier, validate_mode=pv.ValidateMode.STRICT, intern_fn=bad_intern
         )
 
 
@@ -624,31 +411,13 @@ def test_cycle_candidates_validate_stratum_trips_on_within_refs(monkeypatch):
 def test_cycle_candidates_wrap_microstrata_validate():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_zero = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_zero], dtype=jnp.int32),
-        jnp.array([suc_zero], dtype=jnp.int32),
-    )
-    root = add_ids[0]
+    suc_zero, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    root, ledger = intern1(ledger, pv.OP_ADD, suc_zero, suc_zero)
     for _ in range(2):
-        root_ids, ledger = pv.intern_nodes(
-            ledger,
-            jnp.array([pv.OP_SUC], dtype=jnp.int32),
-            jnp.array([root], dtype=jnp.int32),
-            jnp.array([0], dtype=jnp.int32),
-        )
-        root = root_ids[0]
-    frontier = pv._committed_ids(jnp.array([root], dtype=jnp.int32))
+        root, ledger = intern1(ledger, pv.OP_SUC, root, 0)
+    frontier = committed_ids(root)
     ledger2, _, strata, _ = pv.cycle_candidates(
-        ledger, frontier, validate_stratum=True
+        ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     stratum2 = strata[2]
     assert int(stratum2.count) > 1
@@ -665,12 +434,12 @@ def test_cycle_candidates_frontier_permutation_invariant():
     frontier_perm = frontier_b[perm]
 
     ledger_a, next_frontier_prov_a, _, q_map_a = pv.cycle_candidates(
-        ledger_a, pv._committed_ids(frontier_a)
+        ledger_a, committed_ids(frontier_a)
     )
     next_frontier_a = pv.apply_q(q_map_a, next_frontier_prov_a).a
 
     ledger_b, next_frontier_prov_b, _, q_map_b = pv.cycle_candidates(
-        ledger_b, pv._committed_ids(frontier_perm)
+        ledger_b, committed_ids(frontier_perm)
     )
     next_frontier_b = pv.apply_q(q_map_b, next_frontier_prov_b).a
     assert bool(jnp.array_equal(next_frontier_a, next_frontier_b[inv_perm]))
@@ -693,13 +462,8 @@ def test_cycle_candidates_emits_from_pre_step_ledger(monkeypatch):
 def test_cycle_candidates_stop_path_on_corrupt():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([suc_ids[0]], dtype=jnp.int32))
+    suc_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    frontier = committed_ids(suc_id)
     snapshot = _ledger_snapshot(ledger)
     ledger = ledger._replace(corrupt=jnp.array(True, dtype=jnp.bool_))
 
@@ -720,13 +484,8 @@ def test_cycle_candidates_stop_path_on_corrupt():
 def test_cycle_candidates_stop_path_on_oom():
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([suc_ids[0]], dtype=jnp.int32))
+    suc_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    frontier = committed_ids(suc_id)
     snapshot = _ledger_snapshot(ledger)
     ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
 
@@ -738,13 +497,8 @@ def test_cycle_candidates_stop_path_on_oom():
 def test_cycle_candidates_stop_path_on_oom_is_non_mutating(monkeypatch):
     _require_cycle_candidates()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    frontier = pv._committed_ids(jnp.array([suc_ids[0]], dtype=jnp.int32))
+    suc_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    frontier = committed_ids(suc_id)
     snapshot = _ledger_snapshot(ledger)
     ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
     out_ledger, frontier_prov, strata, q_map = pv.cycle_candidates(
@@ -776,7 +530,7 @@ def test_cycle_candidates_q_map_composes_across_strata():
         ops = ledger.opcode[prov_ids]
         a1 = q_map(pv._provisional_ids(ledger.arg1[prov_ids])).a
         a2 = q_map(pv._provisional_ids(ledger.arg2[prov_ids])).a
-        expected, _ = pv.intern_nodes(ledger, ops, a1, a2)
+        expected, _ = intern_nodes(ledger, ops, a1, a2)
         return expected
 
     for stratum in strata:

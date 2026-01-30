@@ -1,33 +1,25 @@
-import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+intern1 = harness.intern1
+committed_ids = harness.committed_ids
 
 pytestmark = pytest.mark.m4
 
 
 def _coord_leaf(ledger, op):
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([op], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    return int(ids[0]), ledger
+    node_id, ledger = intern1(ledger, op, 0, 0)
+    return int(node_id), ledger
 
 
 def _coord_frontier_with_op(op):
     ledger = pv.init_ledger()
     left, ledger = _coord_leaf(ledger, pv.OP_COORD_ONE)
     right, ledger = _coord_leaf(ledger, pv.OP_COORD_ONE)
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([op], dtype=jnp.int32),
-        jnp.array([left], dtype=jnp.int32),
-        jnp.array([right], dtype=jnp.int32),
-    )
-    root_id = int(ids[0])
-    frontier = pv._committed_ids(jnp.array([root_id], dtype=jnp.int32))
+    root_id, ledger = intern1(ledger, op, left, right)
+    frontier = committed_ids(root_id)
     return ledger, frontier, left, right, root_id
 
 

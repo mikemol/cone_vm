@@ -2,6 +2,9 @@ import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+intern_nodes = harness.intern_nodes
 
 pytestmark = [
     pytest.mark.m2,
@@ -29,11 +32,8 @@ def test_intern_candidates_compacts_enabled():
     ledger = pv.init_ledger()
     ids, new_ledger, count = pv.intern_candidates(ledger, candidates)
     assert int(count) == 2
-    expected_ids, expected_ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL, pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([2, 3], dtype=jnp.int32),
-        jnp.array([8, 7], dtype=jnp.int32),
+    expected_ids, expected_ledger = intern_nodes(
+        ledger, [pv.OP_MUL, pv.OP_SUC], [2, 3], [8, 7]
     )
     assert int(new_ledger.count) == int(expected_ledger.count)
     assert bool(jnp.array_equal(ids[: int(count)], expected_ids))

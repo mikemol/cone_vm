@@ -11,6 +11,36 @@ STATUS_BUDGET_EXHAUSTED = "budget_exhausted"
 STATUS_ERROR = "error"
 
 
+def i32(values):
+    """Return int32 JAX array from a list/tuple/array of values."""
+    return jnp.asarray(values, dtype=jnp.int32)
+
+
+def i32v(*values):
+    """Return int32 JAX 1D array from varargs."""
+    return jnp.array(values, dtype=jnp.int32)
+
+
+def intern_nodes(ledger, ops, a1s, a2s):
+    """Intern nodes using Python lists/arrays; returns (ids, ledger)."""
+    return pv.intern_nodes(ledger, i32(ops), i32(a1s), i32(a2s))
+
+
+def intern1(ledger, op, a1, a2):
+    """Intern a single node; returns (id, ledger)."""
+    ids, ledger = intern_nodes(ledger, [op], [a1], [a2])
+    return ids[0], ledger
+
+
+def committed_ids(*values):
+    """Build CommittedIds from values or a single iterable."""
+    if len(values) == 1 and isinstance(values[0], (list, tuple, jnp.ndarray)):
+        arr = i32(values[0])
+    else:
+        arr = i32v(*values)
+    return pv._committed_ids(arr)
+
+
 def make_cycle_intrinsic_jit(**kwargs):
     """Build a jitted intrinsic cycle entrypoint with fixed DI."""
     return pv.cycle_intrinsic_jit(**kwargs)
@@ -317,7 +347,7 @@ def normalize_bsp_candidates(
     expr,
     max_steps=64,
     vm=None,
-    validate_stratum=False,
+    validate_mode=pv.ValidateMode.NONE,
     *,
     cycle_candidates_fn=None,
     cycle_candidates_kwargs=None,
@@ -329,7 +359,7 @@ def normalize_bsp_candidates(
     )
     if cycle_candidates_fn is None:
         cycle_candidates_fn = pv.cycle_candidates
-        cycle_candidates_kwargs = {"validate_stratum": validate_stratum}
+        cycle_candidates_kwargs = {"validate_mode": validate_mode}
     if cycle_candidates_kwargs is None:
         cycle_candidates_kwargs = {}
     last = None
@@ -353,13 +383,13 @@ def normalize_bsp_candidates(
     return STATUS_BUDGET_EXHAUSTED, vm, pv._ledger_id(pv._host_int_value(frontier.a[0]))
 
 
-def run_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False, **kwargs):
+def run_bsp_candidates(expr, max_steps=64, vm=None, validate_mode=pv.ValidateMode.NONE, **kwargs):
     try:
         status, vm, ptr = normalize_bsp_candidates(
             expr,
             max_steps=max_steps,
             vm=vm,
-            validate_stratum=validate_stratum,
+            validate_mode=validate_mode,
             **kwargs,
         )
     except Exception:
@@ -367,12 +397,12 @@ def run_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False, **kw
     return status, vm.decode(ptr)
 
 
-def denote_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False, **kwargs):
+def denote_bsp_candidates(expr, max_steps=64, vm=None, validate_mode=pv.ValidateMode.NONE, **kwargs):
     status, vm, ptr = normalize_bsp_candidates(
         expr,
         max_steps=max_steps,
         vm=vm,
-        validate_stratum=validate_stratum,
+        validate_mode=validate_mode,
         **kwargs,
     )
     if status != STATUS_CONVERGED:
@@ -382,12 +412,12 @@ def denote_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False, *
     return vm, ptr
 
 
-def pretty_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False, **kwargs):
+def pretty_bsp_candidates(expr, max_steps=64, vm=None, validate_mode=pv.ValidateMode.NONE, **kwargs):
     status, pretty = run_bsp_candidates(
         expr,
         max_steps=max_steps,
         vm=vm,
-        validate_stratum=validate_stratum,
+        validate_mode=validate_mode,
         **kwargs,
     )
     if status != STATUS_CONVERGED:
@@ -398,13 +428,13 @@ def pretty_bsp_candidates(expr, max_steps=64, vm=None, validate_stratum=False, *
 
 
 def denote_pretty_bsp_candidates(
-    expr, max_steps=64, vm=None, validate_stratum=False, **kwargs
+    expr, max_steps=64, vm=None, validate_mode=pv.ValidateMode.NONE, **kwargs
 ):
     vm, ptr = denote_bsp_candidates(
         expr,
         max_steps=max_steps,
         vm=vm,
-        validate_stratum=validate_stratum,
+        validate_mode=validate_mode,
         **kwargs,
     )
     return vm.decode(ptr)
@@ -423,10 +453,10 @@ def assert_baseline_equals_bsp_intrinsic(expr, max_steps=64):
     assert pretty_base == pretty_bsp
 
 
-def assert_baseline_equals_bsp_candidates(expr, max_steps=64, validate_stratum=False):
+def assert_baseline_equals_bsp_candidates(expr, max_steps=64, validate_mode=pv.ValidateMode.NONE):
     pretty_base = denote_pretty_baseline(expr, max_steps=max_steps)
     pretty_bsp = denote_pretty_bsp_candidates(
-        expr, max_steps=max_steps, validate_stratum=validate_stratum
+        expr, max_steps=max_steps, validate_mode=validate_mode
     )
     assert pretty_base == pretty_bsp
 

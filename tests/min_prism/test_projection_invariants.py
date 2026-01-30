@@ -9,19 +9,11 @@ pytestmark = pytest.mark.m3
 
 def _build_suc_over_mul():
     ledger = pv.init_ledger()
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
+    mul_ids, ledger = mph.intern_nodes(
+        ledger, [pv.OP_MUL], [pv.ZERO_PTR], [pv.ZERO_PTR]
     )
     mul_id = int(mul_ids[0])
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([mul_id], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
+    suc_ids, ledger = mph.intern_nodes(ledger, [pv.OP_SUC], [mul_id], [0])
     suc_id = int(suc_ids[0])
     return ledger, suc_id, mul_id
 

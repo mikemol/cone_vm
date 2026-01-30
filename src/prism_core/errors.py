@@ -39,7 +39,7 @@ class PrismPolicyBindingError(ValueError):
 @dataclass(frozen=True)
 class PrismValidateModeError(ValueError):
     mode: object
-    allowed: tuple[str, ...] = ("strict", "hyper")
+    allowed: tuple[str, ...] = ("none", "strict", "hyper")
     context: str | None = None
 
     def __str__(self) -> str:
@@ -54,6 +54,25 @@ class PrismBspModeError(ValueError):
 
     def __str__(self) -> str:
         return f"Unknown bsp_mode={self.mode!r}"
+
+
+@dataclass(frozen=True)
+class PrismCnf2ModeError(ValueError):
+    mode: object
+    allowed: tuple[str, ...] = ("off", "base", "slot1", "auto")
+    context: str | None = None
+
+    def __str__(self) -> str:
+        return f"Unknown cnf2_mode={self.mode!r}"
+
+
+@dataclass(frozen=True)
+class PrismCnf2ModeConflictError(ValueError):
+    message: str
+    context: str | None = None
+
+    def __str__(self) -> str:
+        return self.message
 
 
 @dataclass(frozen=True)
@@ -78,6 +97,8 @@ __all__ = [
     "PrismPolicyBindingError",
     "PrismValidateModeError",
     "PrismBspModeError",
+    "PrismCnf2ModeError",
+    "PrismCnf2ModeConflictError",
     "PrismSafetyModeError",
     "_available_tuple",
 ]

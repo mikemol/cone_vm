@@ -6,6 +6,29 @@ import prism_vm as pv
 _COMMUTATIVE_OPS = {pv.OP_ADD, pv.OP_MUL}
 
 
+def i32(values):
+    return jnp.asarray(values, dtype=jnp.int32)
+
+
+def i32v(*values):
+    if len(values) == 1 and isinstance(values[0], (list, tuple)):
+        values = tuple(values[0])
+    return i32(list(values))
+
+
+def intern_nodes(ledger, ops, a1s, a2s, **kwargs):
+    return pv.intern_nodes(ledger, i32(ops), i32(a1s), i32(a2s), **kwargs)
+
+
+def intern1(ledger, op, a1, a2, **kwargs):
+    ids, ledger = intern_nodes(ledger, [op], [a1], [a2], **kwargs)
+    return int(ids[0]), ledger
+
+
+def committed_ids(values):
+    return pv._committed_ids(i32(values))
+
+
 def make_cycle_intrinsic_jit(**kwargs):
     """Build a jitted intrinsic cycle entrypoint with fixed DI."""
     return pv.cycle_intrinsic_jit(**kwargs)
@@ -199,12 +222,7 @@ def _rebuild_ledger_from_keys(keys):
             return 1
         a1 = emit(k1) if k1 in keys else 0
         a2 = emit(k2) if k2 in keys else 0
-        ids_out, new_ledger = pv.intern_nodes(
-            new_ledger,
-            jnp.array([op], dtype=jnp.int32),
-            jnp.array([a1], dtype=jnp.int32),
-            jnp.array([a2], dtype=jnp.int32),
-        )
+        ids_out, new_ledger = intern_nodes(new_ledger, [op], [a1], [a2])
         key_map[key] = int(ids_out[0])
         return key_map[key]
 

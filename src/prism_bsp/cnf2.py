@@ -22,8 +22,8 @@ from prism_core.safety import (
     oob_any,
     oob_any_value,
 )
-from prism_core.errors import PrismPolicyBindingError
-from prism_core.modes import ValidateMode
+from prism_core.errors import PrismPolicyBindingError, PrismCnf2ModeConflictError
+from prism_core.modes import ValidateMode, coerce_validate_mode, Cnf2Mode, coerce_cnf2_mode
 from prism_coord.coord import coord_xor_batch
 from prism_ledger.intern import intern_nodes
 from prism_ledger.config import InternConfig
@@ -324,7 +324,7 @@ def _cycle_candidates_core_common(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     policy_mode: PolicyMode | str,
@@ -359,7 +359,9 @@ def _cycle_candidates_core_common(
             return override
         return current
 
+    cnf2_mode = None
     if cfg is not None:
+        cnf2_mode = cfg.cnf2_mode
         guard_cfg = cfg.guard_cfg if guard_cfg is None else guard_cfg
         intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
         if cfg.coord_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
@@ -447,6 +449,21 @@ def _cycle_candidates_core_common(
             context="cycle_candidates_core",
             policy_mode="value",
         )
+    if cnf2_mode is not None:
+        mode = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates_core")
+        if mode != Cnf2Mode.AUTO:
+            if (
+                cfg is not None
+                and cfg.flags is not None
+            ) or cnf2_enabled_fn is not _cnf2_enabled or cnf2_slot1_enabled_fn is not _cnf2_slot1_enabled:
+                raise PrismCnf2ModeConflictError(
+                    "cycle_candidates_core received cnf2_mode alongside cnf2_flags or cnf2_*_enabled_fn",
+                    context="cycle_candidates_core",
+                )
+            enabled_value = mode in (Cnf2Mode.BASE, Cnf2Mode.SLOT1)
+            slot1_value = mode == Cnf2Mode.SLOT1
+            cnf2_enabled_fn = lambda: enabled_value
+            cnf2_slot1_enabled_fn = lambda: slot1_value
     if intern_cfg is not None and intern_fn is intern_nodes:
         intern_fn = partial(intern_nodes, cfg=intern_cfg)
     if intern_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
@@ -652,7 +669,12 @@ def _cycle_candidates_core_common(
             jnp.sum(changed_mask.astype(jnp.int32))
         )
         cnf2_metrics_update_fn(rewrite_child, changed_count, int(count2_i))
-    validate = validate_stratum or guards_enabled_fn()
+    mode = coerce_validate_mode(validate_mode, context="cycle_candidates")
+    if validate_stratum and mode == ValidateMode.NONE:
+        mode = ValidateMode.STRICT
+    if guards_enabled_fn() and mode == ValidateMode.NONE:
+        mode = ValidateMode.STRICT
+    validate = mode != ValidateMode.NONE
     if policy_mode == PolicyMode.STATIC:
         commit_optional = {
             "safe_gather_policy": safe_gather_policy,
@@ -671,7 +693,7 @@ def _cycle_candidates_core_common(
         ledger2,
         stratum0,
         validate=validate,
-        validate_mode=validate_mode,
+        validate_mode=mode,
         intern_fn=intern_fn,
     )
     ledger2, _, q_map = call_with_optional_kwargs(
@@ -681,7 +703,7 @@ def _cycle_candidates_core_common(
         stratum1,
         prior_q=q_map,
         validate=validate,
-        validate_mode=validate_mode,
+        validate_mode=mode,
         intern_fn=intern_fn,
     )
     # Wrapper strata are micro-strata in s=2; commit in order for hyperstrata visibility.
@@ -696,7 +718,7 @@ def _cycle_candidates_core_common(
             micro_stratum,
             prior_q=q_map,
             validate=validate,
-            validate_mode=validate_mode,
+            validate_mode=mode,
             intern_fn=intern_fn,
         )
     next_frontier = _provisional_ids(next_frontier)
@@ -745,7 +767,7 @@ def _cycle_candidates_core_static(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy: SafetyPolicy,
@@ -807,7 +829,7 @@ def _cycle_candidates_core_value(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy_value: PolicyValue,
@@ -884,7 +906,7 @@ def cycle_candidates_static(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy: SafetyPolicy | None = None,
@@ -971,7 +993,7 @@ def cycle_candidates_value(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy_value: PolicyValue | None = None,
@@ -1061,7 +1083,7 @@ def cycle_candidates(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy: SafetyPolicy | None = None,
@@ -1161,7 +1183,7 @@ def cycle_candidates_bound(
     frontier_ids,
     policy_binding: PolicyBinding,
     validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
     guard_cfg: GuardConfig | None = None,

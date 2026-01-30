@@ -40,8 +40,14 @@ from prism_core.modes import (
     coerce_validate_mode,
     BspMode,
     coerce_bsp_mode,
+    Cnf2Mode,
+    coerce_cnf2_mode,
 )
-from prism_core.errors import PrismPolicyModeError, PrismPolicyBindingError
+from prism_core.errors import (
+    PrismPolicyModeError,
+    PrismPolicyBindingError,
+    PrismCnf2ModeConflictError,
+)
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
 from prism_bsp.config import (
@@ -95,8 +101,10 @@ from prism_bsp.arena_step import (
     cycle_core_value as _cycle_core_value,
     cycle_value as _cycle_value,
     op_interact as _op_interact,
+    op_interact_bound_cfg,
     op_interact_cfg,
     op_interact_value as _op_interact_value,
+    cycle_bound_cfg,
     cycle_cfg,
 )
 from prism_bsp.intrinsic import cycle_intrinsic as _cycle_intrinsic, cycle_intrinsic_cfg
@@ -603,6 +611,7 @@ from prism_vm_core.jit_entrypoints import (
     cycle_intrinsic_jit_cfg,
     cycle_jit as _cycle_jit_factory,
     cycle_jit_cfg,
+    cycle_jit_bound_cfg,
     emit_candidates_jit,
     emit_candidates_jit_cfg,
     compact_candidates_jit,
@@ -618,6 +627,7 @@ from prism_vm_core.jit_entrypoints import (
     intern_nodes_jit,
     op_interact_jit,
     op_interact_jit_cfg,
+    op_interact_jit_bound_cfg,
     op_interact_value_jit,
     cycle_value_jit,
 )
@@ -641,6 +651,8 @@ ValidateMode = ValidateMode
 coerce_validate_mode = coerce_validate_mode
 BspMode = BspMode
 coerce_bsp_mode = coerce_bsp_mode
+Cnf2Mode = Cnf2Mode
+coerce_cnf2_mode = coerce_cnf2_mode
 PolicyValue = PolicyValue
 POLICY_VALUE_CORRUPT = POLICY_VALUE_CORRUPT
 POLICY_VALUE_CLAMP = POLICY_VALUE_CLAMP
@@ -1048,7 +1060,7 @@ def commit_stratum_static(
     stratum,
     prior_q=None,
     validate: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     *,
     safe_gather_policy: SafetyPolicy | None = None,
@@ -1076,7 +1088,7 @@ def commit_stratum_value(
     stratum,
     prior_q=None,
     validate: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     *,
     safe_gather_policy_value: PolicyValue | None = None,
@@ -1104,7 +1116,7 @@ def commit_stratum(
     stratum,
     prior_q=None,
     validate: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     *,
     safe_gather_policy: SafetyPolicy | None = None,
@@ -1171,6 +1183,7 @@ def _cycle_candidates_common(
     guard_cfg: GuardConfig | None,
     cnf2_cfg: Cnf2Config | None,
     cnf2_flags: Cnf2Flags | None,
+    cnf2_mode: Cnf2Mode | str | None,
     cnf2_enabled_fn,
     cnf2_slot1_enabled_fn,
 ):
@@ -1183,6 +1196,16 @@ def _cycle_candidates_common(
     elif cnf2_cfg is None and cnf2_flags is not None:
         cnf2_cfg = Cnf2Config(flags=cnf2_flags)
     if cnf2_cfg is not None:
+        if cnf2_mode is None and cnf2_cfg.cnf2_mode is not None:
+            cnf2_mode = cnf2_cfg.cnf2_mode
+        elif cnf2_mode is not None and cnf2_cfg.cnf2_mode is not None:
+            mode_a = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates")
+            mode_b = coerce_cnf2_mode(cnf2_cfg.cnf2_mode, context="cycle_candidates")
+            if mode_a != mode_b:
+                raise PrismCnf2ModeConflictError(
+                    "cycle_candidates received both cnf2_mode and cfg.cnf2_mode",
+                    context="cycle_candidates",
+                )
         if intern_cfg is None:
             intern_cfg = cnf2_cfg.intern_cfg
         if guard_cfg is None and cnf2_cfg.guard_cfg is not None:
@@ -1262,6 +1285,19 @@ def _cycle_candidates_common(
             return bool(fn_value())
         return bool(default_fn())
 
+    if cnf2_mode is not None:
+        mode = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates")
+        if mode != Cnf2Mode.AUTO:
+            if cnf2_flags is not None or cnf2_enabled_fn is not None or cnf2_slot1_enabled_fn is not None:
+                raise PrismCnf2ModeConflictError(
+                    "cycle_candidates received cnf2_mode alongside cnf2_flags or cnf2_*_enabled_fn",
+                    context="cycle_candidates",
+                )
+            enabled_value = mode in (Cnf2Mode.BASE, Cnf2Mode.SLOT1)
+            slot1_value = mode == Cnf2Mode.SLOT1
+            cnf2_enabled_fn = lambda: enabled_value
+            cnf2_slot1_enabled_fn = lambda: slot1_value
+            cnf2_flags = None
     if cnf2_flags is not None:
         if cnf2_enabled_fn is not None or cnf2_slot1_enabled_fn is not None:
             raise PrismPolicyBindingError(
@@ -1332,7 +1368,7 @@ def cycle_candidates_static(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     *,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
@@ -1342,6 +1378,7 @@ def cycle_candidates_static(
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
+    cnf2_mode: Cnf2Mode | str | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
@@ -1361,6 +1398,7 @@ def cycle_candidates_static(
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,
+        cnf2_mode=cnf2_mode,
         cnf2_enabled_fn=cnf2_enabled_fn,
         cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
     )
@@ -1370,7 +1408,7 @@ def cycle_candidates_value(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     *,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
@@ -1380,6 +1418,7 @@ def cycle_candidates_value(
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
+    cnf2_mode: Cnf2Mode | str | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
@@ -1399,6 +1438,7 @@ def cycle_candidates_value(
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,
+        cnf2_mode=cnf2_mode,
         cnf2_enabled_fn=cnf2_enabled_fn,
         cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
     )
@@ -1408,7 +1448,7 @@ def cycle_candidates(
     ledger,
     frontier_ids,
     validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     *,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
@@ -1419,6 +1459,7 @@ def cycle_candidates(
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
+    cnf2_mode: Cnf2Mode | str | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
@@ -1442,13 +1483,14 @@ def cycle_candidates(
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
             host_raise_if_bad_fn=host_raise_if_bad_fn,
-            safe_gather_policy_value=binding.policy_value,
-            guard_cfg=guard_cfg,
-            cnf2_cfg=cnf2_cfg,
-            cnf2_flags=cnf2_flags,
-            cnf2_enabled_fn=cnf2_enabled_fn,
-            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-        )
+        safe_gather_policy_value=binding.policy_value,
+        guard_cfg=guard_cfg,
+        cnf2_cfg=cnf2_cfg,
+        cnf2_flags=cnf2_flags,
+        cnf2_mode=cnf2_mode,
+        cnf2_enabled_fn=cnf2_enabled_fn,
+        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+    )
     return cycle_candidates_static(
         ledger,
         frontier_ids,
@@ -1462,6 +1504,7 @@ def cycle_candidates(
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,
+        cnf2_mode=cnf2_mode,
         cnf2_enabled_fn=cnf2_enabled_fn,
         cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
     )
@@ -1472,7 +1515,7 @@ def cycle_candidates_bound(
     frontier_ids,
     policy_binding: PolicyBinding,
     validate_stratum: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    validate_mode: ValidateMode | str = ValidateMode.NONE,
     *,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
@@ -1481,6 +1524,7 @@ def cycle_candidates_bound(
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
+    cnf2_mode: Cnf2Mode | str | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
@@ -1509,6 +1553,7 @@ def cycle_candidates_bound(
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,
+        cnf2_mode=cnf2_mode,
         cnf2_enabled_fn=cnf2_enabled_fn,
         cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
     )

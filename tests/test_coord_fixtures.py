@@ -1,10 +1,12 @@
 from pathlib import Path
 import re
 
-import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+intern1 = harness.intern1
 
 pytestmark = pytest.mark.m4
 
@@ -13,13 +15,8 @@ TOKEN_RE = re.compile(r"[A-Za-z_]+|==|[(),]")
 
 
 def _coord_leaf(ledger, op):
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([op], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    return int(ids[0]), ledger
+    node_id, ledger = intern1(ledger, op, 0, 0)
+    return int(node_id), ledger
 
 
 def _parse_coord_expr(tokens, ledger):
@@ -39,13 +36,8 @@ def _parse_coord_expr(tokens, ledger):
         right, ledger = _parse_coord_expr(tokens, ledger)
         if not tokens or tokens.pop(0) != ")":
             raise ValueError("expected ')' after pair")
-        ids, ledger = pv.intern_nodes(
-            ledger,
-            jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
-            jnp.array([left], dtype=jnp.int32),
-            jnp.array([right], dtype=jnp.int32),
-        )
-        return int(ids[0]), ledger
+        node_id, ledger = intern1(ledger, pv.OP_COORD_PAIR, left, right)
+        return int(node_id), ledger
     if tok == "xor":
         if not tokens or tokens.pop(0) != "(":
             raise ValueError("expected '(' after xor")
@@ -101,13 +93,7 @@ def test_coord_noop_fixture():
     for line in _load_fixture_lines("coord_noop.txt"):
         ledger = pv.init_ledger()
         op, a1, a2 = ops[line]
-        ids, ledger = pv.intern_nodes(
-            ledger,
-            jnp.array([op], dtype=jnp.int32),
-            jnp.array([a1], dtype=jnp.int32),
-            jnp.array([a2], dtype=jnp.int32),
-        )
-        node_id = int(ids[0])
+        node_id, ledger = intern1(ledger, op, a1, a2)
         count_before = int(ledger.count)
         norm_id, ledger = pv.coord_norm(ledger, node_id)
         assert int(norm_id) == node_id

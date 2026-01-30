@@ -3,6 +3,12 @@ import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+i32 = harness.i32
+i32v = harness.i32v
+intern_nodes = harness.intern_nodes
+intern1 = harness.intern1
 
 pytestmark = [
     pytest.mark.m2,
@@ -19,48 +25,16 @@ def _require_candidate_api():
 
 def _build_frontier_sample():
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
+    suc_ids, ledger = intern_nodes(
+        ledger, [pv.OP_SUC, pv.OP_SUC], [pv.ZERO_PTR, pv.ZERO_PTR], [0, 0]
     )
     suc_x_id = suc_ids[0]
     y_id = suc_ids[1]
-    add_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    add_suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    mul_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    mul_suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    frontier = jnp.array(
-        [
-            add_zero_ids[0],
-            add_suc_ids[0],
-            mul_zero_ids[0],
-            mul_suc_ids[0],
-            suc_x_id,
-        ],
-        dtype=jnp.int32,
-    )
+    add_zero_id, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, y_id)
+    add_suc_id, ledger = intern1(ledger, pv.OP_ADD, suc_x_id, y_id)
+    mul_zero_id, ledger = intern1(ledger, pv.OP_MUL, pv.ZERO_PTR, y_id)
+    mul_suc_id, ledger = intern1(ledger, pv.OP_MUL, suc_x_id, y_id)
+    frontier = i32([add_zero_id, add_suc_id, mul_zero_id, mul_suc_id, suc_x_id])
     return ledger, frontier
 
 
@@ -140,7 +114,7 @@ def test_candidate_emit_frontier_permutation_invariant():
         ops = jnp.where(enabled, compacted.opcode, jnp.int32(0))
         a1 = jnp.where(enabled, compacted.arg1, jnp.int32(0))
         a2 = jnp.where(enabled, compacted.arg2, jnp.int32(0))
-        ids_compact, _ = pv.intern_nodes(base_ledger, ops, a1, a2)
+        ids_compact, _ = intern_nodes(base_ledger, ops, a1, a2)
         size = cands.enabled.shape[0]
         ids_full = pv._scatter_compacted_ids(comp_idx, ids_compact, count, size)
         idx0 = jnp.arange(frontier_len, dtype=jnp.int32) * 2
@@ -191,20 +165,9 @@ def test_candidate_compaction_enabled_only():
 def test_candidate_emit_add_zero_values():
     _require_candidate_api()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    y_id = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    candidates = pv.emit_candidates(ledger, jnp.array([add_ids[0]], dtype=jnp.int32))
+    y_id, ledger = intern1(ledger, pv.OP_SUC, 1, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, 1, y_id)
+    candidates = pv.emit_candidates(ledger, i32([add_id]))
     assert int(candidates.enabled[0]) == 1
     assert int(candidates.enabled[1]) == 0
     assert int(candidates.opcode[0]) == int(ledger.opcode[y_id])
@@ -215,13 +178,8 @@ def test_candidate_emit_add_zero_values():
 def test_candidate_emit_mul_zero_values():
     _require_candidate_api()
     ledger = pv.init_ledger()
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-    )
-    candidates = pv.emit_candidates(ledger, jnp.array([mul_ids[0]], dtype=jnp.int32))
+    mul_id, ledger = intern1(ledger, pv.OP_MUL, 1, 1)
+    candidates = pv.emit_candidates(ledger, i32([mul_id]))
     assert int(candidates.enabled[0]) == 1
     assert int(candidates.enabled[1]) == 0
     assert int(candidates.opcode[0]) == pv.OP_ZERO
@@ -242,28 +200,11 @@ def test_scatter_compacted_ids_does_not_wrap():
 def test_candidate_emit_add_suc_values():
     _require_candidate_api()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    x_id = jnp.int32(1)
-    suc_x_id = suc_ids[0]
-    y_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    y_id = y_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    candidates = pv.emit_candidates(ledger, jnp.array([add_ids[0]], dtype=jnp.int32))
+    x_id = 1
+    suc_x_id, ledger = intern1(ledger, pv.OP_SUC, x_id, 0)
+    y_id, ledger = intern1(ledger, pv.OP_SUC, x_id, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, suc_x_id, y_id)
+    candidates = pv.emit_candidates(ledger, i32([add_id]))
     assert int(candidates.enabled[0]) == 1
     assert int(candidates.enabled[1]) == 0
     assert int(candidates.opcode[0]) == pv.OP_ADD
@@ -274,27 +215,10 @@ def test_candidate_emit_add_suc_values():
 def test_candidate_emit_add_suc_right_values():
     _require_candidate_api()
     ledger = pv.init_ledger()
-    base_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-    )
-    base_id = base_ids[0]
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_id = suc_ids[0]
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([base_id], dtype=jnp.int32),
-        jnp.array([suc_id], dtype=jnp.int32),
-    )
-    candidates = pv.emit_candidates(ledger, jnp.array([add_ids[0]], dtype=jnp.int32))
+    base_id, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, pv.ZERO_PTR)
+    suc_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, base_id, suc_id)
+    candidates = pv.emit_candidates(ledger, i32([add_id]))
     assert int(candidates.enabled[0]) == 1
     assert int(candidates.enabled[1]) == 0
     assert int(candidates.opcode[0]) == pv.OP_ADD
@@ -305,27 +229,10 @@ def test_candidate_emit_add_suc_right_values():
 def test_candidate_emit_mul_suc_values():
     _require_candidate_api()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_x_id = suc_ids[0]
-    y_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    y_id = y_ids[0]
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    candidates = pv.emit_candidates(ledger, jnp.array([mul_ids[0]], dtype=jnp.int32))
+    suc_x_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    y_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    mul_id, ledger = intern1(ledger, pv.OP_MUL, suc_x_id, y_id)
+    candidates = pv.emit_candidates(ledger, i32([mul_id]))
     assert int(candidates.enabled[0]) == 1
     assert int(candidates.enabled[1]) == 0
     assert int(candidates.opcode[0]) == pv.OP_MUL
@@ -336,27 +243,10 @@ def test_candidate_emit_mul_suc_values():
 def test_candidate_emit_mul_suc_right_values():
     _require_candidate_api()
     ledger = pv.init_ledger()
-    base_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-    )
-    base_id = base_ids[0]
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    suc_id = suc_ids[0]
-    mul_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([base_id], dtype=jnp.int32),
-        jnp.array([suc_id], dtype=jnp.int32),
-    )
-    candidates = pv.emit_candidates(ledger, jnp.array([mul_ids[0]], dtype=jnp.int32))
+    base_id, ledger = intern1(ledger, pv.OP_ADD, pv.ZERO_PTR, pv.ZERO_PTR)
+    suc_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    mul_id, ledger = intern1(ledger, pv.OP_MUL, base_id, suc_id)
+    candidates = pv.emit_candidates(ledger, i32([mul_id]))
     assert int(candidates.enabled[0]) == 1
     assert int(candidates.enabled[1]) == 0
     assert int(candidates.opcode[0]) == pv.OP_MUL
@@ -367,47 +257,13 @@ def test_candidate_emit_mul_suc_right_values():
 def test_candidate_slot1_disabled_for_all_frontier_nodes():
     _require_candidate_api()
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([1, 1], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
-    )
+    suc_ids, ledger = intern_nodes(ledger, [pv.OP_SUC, pv.OP_SUC], [1, 1], [0, 0])
     suc_x_id = suc_ids[0]
     y_id = suc_ids[1]
-    add_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    add_suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    mul_zero_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([1], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    mul_suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_MUL], dtype=jnp.int32),
-        jnp.array([suc_x_id], dtype=jnp.int32),
-        jnp.array([y_id], dtype=jnp.int32),
-    )
-    frontier = jnp.array(
-        [
-            add_zero_ids[0],
-            add_suc_ids[0],
-            mul_zero_ids[0],
-            mul_suc_ids[0],
-            suc_x_id,
-        ],
-        dtype=jnp.int32,
-    )
+    add_zero_id, ledger = intern1(ledger, pv.OP_ADD, 1, y_id)
+    add_suc_id, ledger = intern1(ledger, pv.OP_ADD, suc_x_id, y_id)
+    mul_zero_id, ledger = intern1(ledger, pv.OP_MUL, 1, y_id)
+    mul_suc_id, ledger = intern1(ledger, pv.OP_MUL, suc_x_id, y_id)
+    frontier = i32([add_zero_id, add_suc_id, mul_zero_id, mul_suc_id, suc_x_id])
     candidates = pv.emit_candidates(ledger, frontier)
     assert int(jnp.sum(candidates.enabled[1::2])) == 0

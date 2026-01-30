@@ -1,7 +1,11 @@
-import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+i32 = harness.i32
+intern_nodes = harness.intern_nodes
+intern1 = harness.intern1
 
 pytestmark = pytest.mark.m4
 
@@ -17,11 +21,8 @@ def test_coord_opcodes_exist():
 
 def test_coord_pointer_equality():
     ledger = pv.init_ledger()
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_COORD_ZERO, pv.OP_COORD_ZERO], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
+    ids, ledger = intern_nodes(
+        ledger, [pv.OP_COORD_ZERO, pv.OP_COORD_ZERO], [0, 0], [0, 0]
     )
     assert int(ids[0]) == int(ids[1])
 
@@ -40,43 +41,32 @@ def test_coord_xor_parity_cancel():
 def test_coord_leaf_requires_zero_args():
     ledger = pv.init_ledger()
     with pytest.raises(RuntimeError, match="key_safe_normalize.coord_leaf_args"):
-        ids, _ = pv.intern_nodes(
-            ledger,
-            jnp.array([pv.OP_COORD_ZERO, pv.OP_COORD_ZERO], dtype=jnp.int32),
-            jnp.array([0, 7], dtype=jnp.int32),
-            jnp.array([0, 9], dtype=jnp.int32),
+        ids, _ = intern_nodes(
+            ledger, [pv.OP_COORD_ZERO, pv.OP_COORD_ZERO], [0, 7], [0, 9]
         )
         ids.block_until_ready()
 
 
 def test_coord_pair_dedup():
     ledger = pv.init_ledger()
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_COORD_ZERO, pv.OP_COORD_ONE], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
+    ids, ledger = intern_nodes(
+        ledger, [pv.OP_COORD_ZERO, pv.OP_COORD_ONE], [0, 0], [0, 0]
     )
     zero_id = int(ids[0])
     one_id = int(ids[1])
-    pair_ids, ledger = pv.intern_nodes(
+    pair_ids, ledger = intern_nodes(
         ledger,
-        jnp.array([pv.OP_COORD_PAIR, pv.OP_COORD_PAIR], dtype=jnp.int32),
-        jnp.array([zero_id, zero_id], dtype=jnp.int32),
-        jnp.array([one_id, one_id], dtype=jnp.int32),
+        [pv.OP_COORD_PAIR, pv.OP_COORD_PAIR],
+        [zero_id, zero_id],
+        [one_id, one_id],
     )
     assert int(pair_ids[0]) == int(pair_ids[1])
     assert int(ledger.count) == 5
 
 
 def _coord_leaf(ledger, op):
-    ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([op], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    return int(ids[0]), ledger
+    node_id, ledger = intern1(ledger, op, 0, 0)
+    return int(node_id), ledger
 
 
 def _require_coord_norm():
@@ -92,13 +82,7 @@ def test_coord_norm_idempotent():
     ledger = pv.init_ledger()
     left, ledger = _coord_leaf(ledger, pv.OP_COORD_ZERO)
     right, ledger = _coord_leaf(ledger, pv.OP_COORD_ONE)
-    pair_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
-        jnp.array([left], dtype=jnp.int32),
-        jnp.array([right], dtype=jnp.int32),
-    )
-    coord_id = int(pair_ids[0])
+    coord_id, ledger = intern1(ledger, pv.OP_COORD_PAIR, left, right)
     norm1, ledger = pv.coord_norm(ledger, coord_id)
     norm2, ledger = pv.coord_norm(ledger, norm1)
     assert int(norm1) == int(norm2)
@@ -122,20 +106,8 @@ def test_coord_norm_commutes_with_xor():
     ledger = pv.init_ledger()
     one_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ONE)
     zero_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ZERO)
-    pair_a_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
-        jnp.array([one_id], dtype=jnp.int32),
-        jnp.array([zero_id], dtype=jnp.int32),
-    )
-    pair_b_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
-        jnp.array([zero_id], dtype=jnp.int32),
-        jnp.array([one_id], dtype=jnp.int32),
-    )
-    pair_a = int(pair_a_ids[0])
-    pair_b = int(pair_b_ids[0])
+    pair_a, ledger = intern1(ledger, pv.OP_COORD_PAIR, one_id, zero_id)
+    pair_b, ledger = intern1(ledger, pv.OP_COORD_PAIR, zero_id, one_id)
     xor_raw, ledger = pv.coord_xor(ledger, pair_a, pair_b)
     norm_raw, ledger = pv.coord_norm(ledger, xor_raw)
     norm_left, ledger = pv.coord_norm(ledger, pair_a)
@@ -150,30 +122,12 @@ def test_coord_xor_distributes_over_pair():
     ledger = pv.init_ledger()
     one_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ONE)
     zero_id, ledger = _coord_leaf(ledger, pv.OP_COORD_ZERO)
-    pair_a_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
-        jnp.array([one_id], dtype=jnp.int32),
-        jnp.array([zero_id], dtype=jnp.int32),
-    )
-    pair_b_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
-        jnp.array([zero_id], dtype=jnp.int32),
-        jnp.array([one_id], dtype=jnp.int32),
-    )
-    pair_a = int(pair_a_ids[0])
-    pair_b = int(pair_b_ids[0])
+    pair_a, ledger = intern1(ledger, pv.OP_COORD_PAIR, one_id, zero_id)
+    pair_b, ledger = intern1(ledger, pv.OP_COORD_PAIR, zero_id, one_id)
     xor_pair, ledger = pv.coord_xor(ledger, pair_a, pair_b)
     xor_left, ledger = pv.coord_xor(ledger, one_id, zero_id)
     xor_right, ledger = pv.coord_xor(ledger, zero_id, one_id)
-    expected_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_COORD_PAIR], dtype=jnp.int32),
-        jnp.array([xor_left], dtype=jnp.int32),
-        jnp.array([xor_right], dtype=jnp.int32),
-    )
-    expected = int(expected_ids[0])
+    expected, ledger = intern1(ledger, pv.OP_COORD_PAIR, xor_left, xor_right)
     norm_xor, ledger = pv.coord_norm(ledger, xor_pair)
     norm_expected, ledger = pv.coord_norm(ledger, expected)
     assert int(norm_xor) == int(norm_expected)

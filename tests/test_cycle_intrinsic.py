@@ -3,6 +3,11 @@ import jax.numpy as jnp
 import pytest
 
 import prism_vm as pv
+from tests import harness
+
+i32 = harness.i32
+intern_nodes = harness.intern_nodes
+intern1 = harness.intern1
 
 pytestmark = [
     pytest.mark.m1,
@@ -34,13 +39,8 @@ def _assert_ledger_snapshot(ledger, snapshot):
 def test_cycle_intrinsic_stop_path_on_corrupt():
     assert hasattr(pv, "cycle_intrinsic")
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    frontier = jnp.array([suc_ids[0]], dtype=jnp.int32)
+    suc_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    frontier = i32([suc_id])
     ledger = ledger._replace(corrupt=jnp.array(True, dtype=jnp.bool_))
     snapshot = _ledger_snapshot(ledger)
     with pytest.raises(RuntimeError, match="CORRUPT"):
@@ -51,13 +51,8 @@ def test_cycle_intrinsic_stop_path_on_corrupt():
 def test_cycle_intrinsic_stop_path_on_oom():
     assert hasattr(pv, "cycle_intrinsic")
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0], dtype=jnp.int32),
-    )
-    frontier = jnp.array([suc_ids[0]], dtype=jnp.int32)
+    suc_id, ledger = intern1(ledger, pv.OP_SUC, pv.ZERO_PTR, 0)
+    frontier = i32([suc_id])
     ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
     snapshot = _ledger_snapshot(ledger)
     with pytest.raises(RuntimeError, match="Ledger capacity exceeded"):
@@ -69,19 +64,11 @@ def test_cycle_intrinsic_stop_path_on_oom():
 def test_cycle_intrinsic_does_not_mutate_preexisting_rows():
     assert hasattr(pv, "cycle_intrinsic")
     ledger = pv.init_ledger()
-    suc_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_SUC, pv.OP_SUC], dtype=jnp.int32),
-        jnp.array([pv.ZERO_PTR, pv.ZERO_PTR], dtype=jnp.int32),
-        jnp.array([0, 0], dtype=jnp.int32),
+    suc_ids, ledger = intern_nodes(
+        ledger, [pv.OP_SUC, pv.OP_SUC], [pv.ZERO_PTR, pv.ZERO_PTR], [0, 0]
     )
-    add_ids, ledger = pv.intern_nodes(
-        ledger,
-        jnp.array([pv.OP_ADD], dtype=jnp.int32),
-        jnp.array([suc_ids[0]], dtype=jnp.int32),
-        jnp.array([suc_ids[1]], dtype=jnp.int32),
-    )
-    frontier = jnp.array([add_ids[0]], dtype=jnp.int32)
+    add_id, ledger = intern1(ledger, pv.OP_ADD, suc_ids[0], suc_ids[1])
+    frontier = i32([add_id])
     start_count = int(ledger.count)
     pre_ops = jax.device_get(ledger.opcode[:start_count])
     pre_a1 = jax.device_get(ledger.arg1[:start_count])
