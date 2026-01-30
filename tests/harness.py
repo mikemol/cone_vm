@@ -101,6 +101,66 @@ def make_ic_compact_active_pairs_jit_cfg(**kwargs):
     return ic.compact_active_pairs_jit_cfg(**kwargs)
 
 
+def make_ic_wire_jax_jit(**kwargs):
+    """Build a jitted IC wire entrypoint with fixed DI."""
+    return ic.wire_jax_jit(**kwargs)
+
+
+def make_ic_wire_jax_jit_cfg(**kwargs):
+    """Build a jitted IC wire entrypoint from a config."""
+    return ic.wire_jax_jit_cfg(**kwargs)
+
+
+def make_ic_wire_jax_safe_jit(**kwargs):
+    """Build a jitted IC NULL-safe wire entrypoint with fixed DI."""
+    return ic.wire_jax_safe_jit(**kwargs)
+
+
+def make_ic_wire_jax_safe_jit_cfg(**kwargs):
+    """Build a jitted IC NULL-safe wire entrypoint from a config."""
+    return ic.wire_jax_safe_jit_cfg(**kwargs)
+
+
+def make_ic_wire_ptrs_jit(**kwargs):
+    """Build a jitted IC ptr wire entrypoint with fixed DI."""
+    return ic.wire_ptrs_jit(**kwargs)
+
+
+def make_ic_wire_ptrs_jit_cfg(**kwargs):
+    """Build a jitted IC ptr wire entrypoint from a config."""
+    return ic.wire_ptrs_jit_cfg(**kwargs)
+
+
+def make_ic_wire_pairs_jit(**kwargs):
+    """Build a jitted IC wire-pairs entrypoint with fixed DI."""
+    return ic.wire_pairs_jit(**kwargs)
+
+
+def make_ic_wire_pairs_jit_cfg(**kwargs):
+    """Build a jitted IC wire-pairs entrypoint from a config."""
+    return ic.wire_pairs_jit_cfg(**kwargs)
+
+
+def make_ic_wire_ptr_pairs_jit(**kwargs):
+    """Build a jitted IC ptr wire-pairs entrypoint with fixed DI."""
+    return ic.wire_ptr_pairs_jit(**kwargs)
+
+
+def make_ic_wire_ptr_pairs_jit_cfg(**kwargs):
+    """Build a jitted IC ptr wire-pairs entrypoint from a config."""
+    return ic.wire_ptr_pairs_jit_cfg(**kwargs)
+
+
+def make_ic_wire_star_jit(**kwargs):
+    """Build a jitted IC wire-star entrypoint with fixed DI."""
+    return ic.wire_star_jit(**kwargs)
+
+
+def make_ic_wire_star_jit_cfg(**kwargs):
+    """Build a jitted IC wire-star entrypoint from a config."""
+    return ic.wire_star_jit_cfg(**kwargs)
+
+
 def tokenize(expr):
     return TOKEN_RE.findall(expr)
 

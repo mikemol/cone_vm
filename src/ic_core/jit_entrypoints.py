@@ -10,7 +10,16 @@ from ic_core.engine import (
     ic_apply_active_pairs,
     ic_reduce,
 )
-from ic_core.graph import ic_find_active_pairs, ic_compact_active_pairs
+from ic_core.graph import (
+    ic_compact_active_pairs,
+    ic_find_active_pairs,
+    ic_wire_jax,
+    ic_wire_jax_safe,
+    ic_wire_pairs_jax,
+    ic_wire_ptr_pairs_jax,
+    ic_wire_ptrs_jax,
+    ic_wire_star_jax,
+)
 
 
 @cached_jit
@@ -130,6 +139,182 @@ def compact_active_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
     return compact_active_pairs_jit(cfg)
 
 
+@cached_jit
+def _wire_jax_jit(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+
+    def _impl(state, node_a, port_a, node_b, port_b):
+        return ic_wire_jax(
+            state,
+            node_a,
+            port_a,
+            node_b,
+            port_b,
+            safety_policy=cfg.safety_policy,
+            safe_index_fn=safe_index_fn,
+        )
+
+    return _impl
+
+
+def wire_jax_jit(cfg: ICGraphConfig | None = None):
+    """Return a jitted ic_wire_jax entrypoint for fixed DI."""
+    if cfg is None:
+        cfg = DEFAULT_GRAPH_CONFIG
+    return _wire_jax_jit(cfg)
+
+
+def wire_jax_jit_cfg(cfg: ICGraphConfig | None = None):
+    """Alias for wire_jax_jit (config-first naming)."""
+    return wire_jax_jit(cfg)
+
+
+@cached_jit
+def _wire_jax_safe_jit(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+
+    def _impl(state, node_a, port_a, node_b, port_b):
+        return ic_wire_jax_safe(
+            state,
+            node_a,
+            port_a,
+            node_b,
+            port_b,
+            safety_policy=cfg.safety_policy,
+            safe_index_fn=safe_index_fn,
+        )
+
+    return _impl
+
+
+def wire_jax_safe_jit(cfg: ICGraphConfig | None = None):
+    """Return a jitted ic_wire_jax_safe entrypoint for fixed DI."""
+    if cfg is None:
+        cfg = DEFAULT_GRAPH_CONFIG
+    return _wire_jax_safe_jit(cfg)
+
+
+def wire_jax_safe_jit_cfg(cfg: ICGraphConfig | None = None):
+    """Alias for wire_jax_safe_jit (config-first naming)."""
+    return wire_jax_safe_jit(cfg)
+
+
+@cached_jit
+def _wire_ptrs_jit(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+
+    def _impl(state, ptr_a, ptr_b):
+        return ic_wire_ptrs_jax(
+            state,
+            ptr_a,
+            ptr_b,
+            safety_policy=cfg.safety_policy,
+            safe_index_fn=safe_index_fn,
+        )
+
+    return _impl
+
+
+def wire_ptrs_jit(cfg: ICGraphConfig | None = None):
+    """Return a jitted ic_wire_ptrs_jax entrypoint for fixed DI."""
+    if cfg is None:
+        cfg = DEFAULT_GRAPH_CONFIG
+    return _wire_ptrs_jit(cfg)
+
+
+def wire_ptrs_jit_cfg(cfg: ICGraphConfig | None = None):
+    """Alias for wire_ptrs_jit (config-first naming)."""
+    return wire_ptrs_jit(cfg)
+
+
+@cached_jit
+def _wire_pairs_jit(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+
+    def _impl(state, node_a, port_a, node_b, port_b):
+        return ic_wire_pairs_jax(
+            state,
+            node_a,
+            port_a,
+            node_b,
+            port_b,
+            safety_policy=cfg.safety_policy,
+            safe_index_fn=safe_index_fn,
+        )
+
+    return _impl
+
+
+def wire_pairs_jit(cfg: ICGraphConfig | None = None):
+    """Return a jitted ic_wire_pairs_jax entrypoint for fixed DI."""
+    if cfg is None:
+        cfg = DEFAULT_GRAPH_CONFIG
+    return _wire_pairs_jit(cfg)
+
+
+def wire_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
+    """Alias for wire_pairs_jit (config-first naming)."""
+    return wire_pairs_jit(cfg)
+
+
+@cached_jit
+def _wire_ptr_pairs_jit(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+
+    def _impl(state, ptr_a, ptr_b):
+        return ic_wire_ptr_pairs_jax(
+            state,
+            ptr_a,
+            ptr_b,
+            safety_policy=cfg.safety_policy,
+            safe_index_fn=safe_index_fn,
+        )
+
+    return _impl
+
+
+def wire_ptr_pairs_jit(cfg: ICGraphConfig | None = None):
+    """Return a jitted ic_wire_ptr_pairs_jax entrypoint for fixed DI."""
+    if cfg is None:
+        cfg = DEFAULT_GRAPH_CONFIG
+    return _wire_ptr_pairs_jit(cfg)
+
+
+def wire_ptr_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
+    """Alias for wire_ptr_pairs_jit (config-first naming)."""
+    return wire_ptr_pairs_jit(cfg)
+
+
+@cached_jit
+def _wire_star_jit(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+
+    def _impl(state, center_node, center_port, leaf_nodes, leaf_ports):
+        return ic_wire_star_jax(
+            state,
+            center_node,
+            center_port,
+            leaf_nodes,
+            leaf_ports,
+            safety_policy=cfg.safety_policy,
+            safe_index_fn=safe_index_fn,
+        )
+
+    return _impl
+
+
+def wire_star_jit(cfg: ICGraphConfig | None = None):
+    """Return a jitted ic_wire_star_jax entrypoint for fixed DI."""
+    if cfg is None:
+        cfg = DEFAULT_GRAPH_CONFIG
+    return _wire_star_jit(cfg)
+
+
+def wire_star_jit_cfg(cfg: ICGraphConfig | None = None):
+    """Alias for wire_star_jit (config-first naming)."""
+    return wire_star_jit(cfg)
+
+
 __all__ = [
     "apply_active_pairs_jit",
     "apply_active_pairs_jit_cfg",
@@ -139,4 +324,16 @@ __all__ = [
     "find_active_pairs_jit_cfg",
     "compact_active_pairs_jit",
     "compact_active_pairs_jit_cfg",
+    "wire_jax_jit",
+    "wire_jax_jit_cfg",
+    "wire_jax_safe_jit",
+    "wire_jax_safe_jit_cfg",
+    "wire_ptrs_jit",
+    "wire_ptrs_jit_cfg",
+    "wire_pairs_jit",
+    "wire_pairs_jit_cfg",
+    "wire_ptr_pairs_jit",
+    "wire_ptr_pairs_jit_cfg",
+    "wire_star_jit",
+    "wire_star_jit_cfg",
 ]
