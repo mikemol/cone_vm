@@ -9,7 +9,13 @@ from __future__ import annotations
 from dataclasses import replace
 from functools import partial
 
-from prism_core.safety import SafetyPolicy
+from prism_core.errors import PrismPolicyBindingError
+from prism_core.safety import (
+    DEFAULT_SAFETY_POLICY,
+    PolicyBinding,
+    PolicyMode,
+    SafetyPolicy,
+)
 from prism_core.guards import resolve_safe_index_fn
 from prism_core.alloc import (
     AllocConfig,
@@ -142,9 +148,28 @@ from ic_core.rules import (
 
 
 def _resolve_safe_index_fn(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn
+    safety_policy = cfg.safety_policy
+    if cfg.policy_binding is not None:
+        if safety_policy is not None:
+            raise PrismPolicyBindingError(
+                "graph config received both policy_binding and safety_policy",
+                context="ic_graph_config",
+                policy_mode="ambiguous",
+            )
+        if cfg.policy_binding.mode == PolicyMode.VALUE:
+            raise PrismPolicyBindingError(
+                "ic graph config does not support value-mode policy_binding",
+                context="ic_graph_config",
+                policy_mode=PolicyMode.VALUE,
+            )
+        safety_policy = cfg.policy_binding.policy
+    if safety_policy is None:
+        if safe_index_fn is None or not getattr(safe_index_fn, "_prism_policy_bound", False):
+            safety_policy = DEFAULT_SAFETY_POLICY
     return resolve_safe_index_fn(
         safe_index_fn=cfg.safe_index_fn,
-        policy=cfg.safety_policy,
+        policy=safety_policy,
         guard_cfg=cfg.guard_cfg,
     )
 
@@ -175,7 +200,16 @@ def graph_config_with_policy(
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICGraphConfig:
     """Return a graph config with safety_policy set."""
-    return replace(cfg, safety_policy=safety_policy)
+    return replace(cfg, safety_policy=safety_policy, policy_binding=None)
+
+
+def graph_config_with_policy_binding(
+    policy_binding: PolicyBinding | None,
+    *,
+    cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
+) -> ICGraphConfig:
+    """Return a graph config with policy_binding set (clears safety_policy)."""
+    return replace(cfg, policy_binding=policy_binding, safety_policy=None)
 
 
 def graph_config_with_index_fn(
@@ -520,6 +554,7 @@ __all__ = [
     "DEFAULT_ENGINE_CONFIG",
     "DEFAULT_GRAPH_CONFIG",
     "graph_config_with_policy",
+    "graph_config_with_policy_binding",
     "graph_config_with_index_fn",
     "graph_config_with_compact_cfg",
     "graph_config_with_guard",

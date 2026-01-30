@@ -3,7 +3,9 @@ from __future__ import annotations
 from functools import partial
 
 from prism_core.di import cached_jit
+from prism_core.errors import PrismPolicyBindingError
 from prism_core.guards import resolve_safe_index_fn
+from prism_core.safety import DEFAULT_SAFETY_POLICY, PolicyMode, resolve_policy_binding
 from ic_core.config import ICGraphConfig, ICEngineConfig, DEFAULT_GRAPH_CONFIG
 from ic_core.engine import (
     DEFAULT_ENGINE_CONFIG,
@@ -23,9 +25,38 @@ from ic_core.graph import (
 )
 
 def _resolve_safe_index_fn(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn
+    safety_policy = cfg.safety_policy
+    if cfg.policy_binding is not None:
+        if safety_policy is not None:
+            raise PrismPolicyBindingError(
+                "graph config received both policy_binding and safety_policy",
+                context="ic_graph_config",
+                policy_mode="ambiguous",
+            )
+        if cfg.policy_binding.mode == PolicyMode.VALUE:
+            raise PrismPolicyBindingError(
+                "ic graph config does not support value-mode policy_binding",
+                context="ic_graph_config",
+                policy_mode=PolicyMode.VALUE,
+            )
+        safety_policy = cfg.policy_binding.policy
+    policy = safety_policy
+    if policy is None:
+        if safe_index_fn is None or not getattr(safe_index_fn, "_prism_policy_bound", False):
+            policy = DEFAULT_SAFETY_POLICY
+        else:
+            policy = None
+    if policy is not None:
+        binding = resolve_policy_binding(
+            policy=policy,
+            policy_value=None,
+            context="ic_graph_config",
+        )
+        policy = binding.policy
     return resolve_safe_index_fn(
-        safe_index_fn=cfg.safe_index_fn,
-        policy=cfg.safety_policy,
+        safe_index_fn=safe_index_fn,
+        policy=policy,
         guard_cfg=cfg.guard_cfg,
     )
 
