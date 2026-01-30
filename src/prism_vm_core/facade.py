@@ -31,7 +31,12 @@ from prism_core.safety import (
     oob_mask,
     oob_mask_value,
 )
-from prism_core.modes import ValidateMode, coerce_validate_mode
+from prism_core.modes import (
+    ValidateMode,
+    coerce_validate_mode,
+    BspMode,
+    coerce_bsp_mode,
+)
 from prism_core.errors import PrismPolicyModeError, PrismPolicyBindingError
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -545,6 +550,8 @@ PolicyMode = PolicyMode
 coerce_policy_mode = coerce_policy_mode
 ValidateMode = ValidateMode
 coerce_validate_mode = coerce_validate_mode
+BspMode = BspMode
+coerce_bsp_mode = coerce_bsp_mode
 PolicyValue = PolicyValue
 POLICY_VALUE_CORRUPT = POLICY_VALUE_CORRUPT
 POLICY_VALUE_CLAMP = POLICY_VALUE_CLAMP
