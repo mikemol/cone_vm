@@ -1,9 +1,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
 import jax.numpy as jnp
 from typing import TypeAlias
+
+from prism_core.errors import PrismPolicyModeError
+
+
+class PolicyMode(str, Enum):
+    STATIC = "static"
+    VALUE = "value"
+
+
+def coerce_policy_mode(mode: PolicyMode | str, *, context: str | None = None) -> PolicyMode:
+    """Normalize a policy mode to PolicyMode, raising on unknown values."""
+    if isinstance(mode, PolicyMode):
+        return mode
+    if isinstance(mode, str):
+        if mode == PolicyMode.STATIC.value:
+            return PolicyMode.STATIC
+        if mode == PolicyMode.VALUE.value:
+            return PolicyMode.VALUE
+    raise PrismPolicyModeError(mode=mode, allowed=(PolicyMode.STATIC.value, PolicyMode.VALUE.value), context=context)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +82,8 @@ def oob_any_value(ok, *, policy_value: PolicyValue):
 
 
 __all__ = [
+    "PolicyMode",
+    "coerce_policy_mode",
     "SafetyPolicy",
     "DEFAULT_SAFETY_POLICY",
     "PolicyValue",
