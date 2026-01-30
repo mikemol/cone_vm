@@ -2,7 +2,9 @@
 
 from prism_bsp.arena_step import cycle, op_interact
 from prism_bsp.cnf2 import (
+    compact_candidates_result,
     compact_candidates,
+    compact_candidates_with_index_result,
     compact_candidates_with_index,
     cycle_candidates,
     emit_candidates,
@@ -37,7 +39,9 @@ __all__ = [
     "RANK_HOT",
     "RANK_WARM",
     "compact_candidates",
+    "compact_candidates_result",
     "compact_candidates_with_index",
+    "compact_candidates_with_index_result",
     "cycle",
     "cycle_candidates",
     "cycle_intrinsic",

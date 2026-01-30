@@ -144,14 +144,13 @@ def emit_candidates_cfg(
     return emit_candidates_fn(ledger, frontier_ids)
 
 
-def compact_candidates(
+def compact_candidates_result(
     candidates, *, candidate_indices_fn=_candidate_indices
 ):
     enabled = candidates.enabled.astype(jnp.int32)
     result = candidate_indices_fn(enabled)
     idx = result.idx
     valid = result.valid
-    count = result.count
     safe_idx = jnp.where(valid, idx, 0)
 
     compacted = CandidateBuffer(
@@ -160,7 +159,16 @@ def compact_candidates(
         arg1=candidates.arg1[safe_idx],
         arg2=candidates.arg2[safe_idx],
     )
-    return compacted, count
+    return compacted, result
+
+
+def compact_candidates(
+    candidates, *, candidate_indices_fn=_candidate_indices
+):
+    compacted, result = compact_candidates_result(
+        candidates, candidate_indices_fn=candidate_indices_fn
+    )
+    return compacted, result.count
 
 
 def compact_candidates_cfg(
@@ -175,22 +183,22 @@ def compact_candidates_cfg(
     return compact_candidates(candidates, candidate_indices_fn=candidate_indices_fn)
 
 
+def compact_candidates_with_index_result(
+    candidates, *, candidate_indices_fn=_candidate_indices
+):
+    compacted, result = compact_candidates_result(
+        candidates, candidate_indices_fn=candidate_indices_fn
+    )
+    return compacted, result, result.idx
+
+
 def compact_candidates_with_index(
     candidates, *, candidate_indices_fn=_candidate_indices
 ):
-    enabled = candidates.enabled.astype(jnp.int32)
-    result = candidate_indices_fn(enabled)
-    idx = result.idx
-    valid = result.valid
-    count = result.count
-    safe_idx = jnp.where(valid, idx, 0)
-    compacted = CandidateBuffer(
-        enabled=valid.astype(jnp.int32),
-        opcode=candidates.opcode[safe_idx],
-        arg1=candidates.arg1[safe_idx],
-        arg2=candidates.arg2[safe_idx],
+    compacted, result, idx = compact_candidates_with_index_result(
+        candidates, candidate_indices_fn=candidate_indices_fn
     )
-    return compacted, count, idx
+    return compacted, result.count, idx
 
 
 def compact_candidates_with_index_cfg(
@@ -669,8 +677,10 @@ def _apply_q_optional_ok(apply_q_fn, q_map, ids):
 __all__ = [
     "emit_candidates",
     "emit_candidates_cfg",
+    "compact_candidates_result",
     "compact_candidates",
     "compact_candidates_cfg",
+    "compact_candidates_with_index_result",
     "compact_candidates_with_index",
     "compact_candidates_with_index_cfg",
     "scatter_compacted_ids_cfg",
