@@ -1026,6 +1026,7 @@ def commit_stratum_static(
     *,
     safe_gather_policy: SafetyPolicy | None = None,
     guard_cfg: GuardConfig | None = None,
+    policy_binding: PolicyBinding | None = None,
 ):
     """Static-policy wrapper for commit_stratum injection."""
     if intern_fn is None:
@@ -1039,6 +1040,7 @@ def commit_stratum_static(
         intern_fn=intern_fn,
         safe_gather_policy=safe_gather_policy,
         guard_cfg=guard_cfg,
+        policy_binding=policy_binding,
     )
 
 
@@ -1052,6 +1054,7 @@ def commit_stratum_value(
     *,
     safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
+    policy_binding: PolicyBinding | None = None,
 ):
     """Policy-value wrapper for commit_stratum injection."""
     if intern_fn is None:
@@ -1065,6 +1068,7 @@ def commit_stratum_value(
         intern_fn=intern_fn,
         safe_gather_policy_value=safe_gather_policy_value,
         guard_cfg=guard_cfg,
+        policy_binding=policy_binding,
     )
 
 
@@ -1079,17 +1083,28 @@ def commit_stratum(
     safe_gather_policy: SafetyPolicy | None = None,
     safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
+    policy_binding: PolicyBinding | None = None,
 ):
     """Interface/Control wrapper for commit_stratum injection.
 
     Axis: Interface/Control. Commutes with q. Erased by q.
     Test: tests/test_commit_stratum.py
     """
-    binding = resolve_policy_binding(
-        policy=safe_gather_policy,
-        policy_value=safe_gather_policy_value,
-        context="commit_stratum",
-    )
+    if policy_binding is not None:
+        if safe_gather_policy is not None or safe_gather_policy_value is not None:
+            raise PrismPolicyBindingError(
+                "commit_stratum received both policy_binding and "
+                "safe_gather_policy/safe_gather_policy_value",
+                context="commit_stratum",
+                policy_mode="ambiguous",
+            )
+        binding = policy_binding
+    else:
+        binding = resolve_policy_binding(
+            policy=safe_gather_policy,
+            policy_value=safe_gather_policy_value,
+            context="commit_stratum",
+        )
     if binding.mode == PolicyMode.VALUE:
         return commit_stratum_value(
             ledger,
@@ -1098,7 +1113,7 @@ def commit_stratum(
             validate=validate,
             validate_mode=validate_mode,
             intern_fn=intern_fn,
-            safe_gather_policy_value=binding.policy_value,
+            policy_binding=binding,
             guard_cfg=guard_cfg,
         )
     return commit_stratum_static(
@@ -1108,7 +1123,7 @@ def commit_stratum(
         validate=validate,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
-        safe_gather_policy=binding.policy,
+        policy_binding=binding,
         guard_cfg=guard_cfg,
     )
 
