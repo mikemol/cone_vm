@@ -190,6 +190,15 @@ def graph_config_with_compact_cfg(
     return replace(cfg, compact_cfg=compact_cfg)
 
 
+def engine_config_with_compact_result_fn(
+    compact_pairs_result_fn,
+    *,
+    cfg: ICEngineConfig = DEFAULT_ENGINE_CONFIG,
+) -> ICEngineConfig:
+    """Return an engine config with compact_pairs_result_fn set."""
+    return replace(cfg, compact_pairs_result_fn=compact_pairs_result_fn)
+
+
 def graph_config_with_guard(
     *,
     safety_policy: SafetyPolicy | None = None,
@@ -502,6 +511,7 @@ __all__ = [
     "graph_config_with_index_fn",
     "graph_config_with_compact_cfg",
     "graph_config_with_guard",
+    "engine_config_with_compact_result_fn",
     "rule_config_with_alloc",
     "ICGuardConfig",
     "DEFAULT_IC_GUARD_CONFIG",
