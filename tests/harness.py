@@ -101,6 +101,16 @@ def make_ic_compact_active_pairs_jit_cfg(**kwargs):
     return ic.compact_active_pairs_jit_cfg(**kwargs)
 
 
+def make_ic_compact_active_pairs_result_jit(**kwargs):
+    """Build a jitted IC compact-result active-pairs entrypoint with fixed DI."""
+    return ic.compact_active_pairs_result_jit(**kwargs)
+
+
+def make_ic_compact_active_pairs_result_jit_cfg(**kwargs):
+    """Build a jitted IC compact-result active-pairs entrypoint from a config."""
+    return ic.compact_active_pairs_result_jit_cfg(**kwargs)
+
+
 def make_ic_wire_jax_jit(**kwargs):
     """Build a jitted IC wire entrypoint with fixed DI."""
     return ic.wire_jax_jit(**kwargs)

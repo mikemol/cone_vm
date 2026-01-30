@@ -446,15 +446,33 @@ def ic_compact_active_pairs(
     compact_cfg: CompactConfig | None = None,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Return compacted active pair indices and a count."""
+    result, active = ic_compact_active_pairs_result(
+        state,
+        safety_policy=safety_policy,
+        safe_index_fn=safe_index_fn,
+        compact_cfg=compact_cfg,
+    )
+    compacted = jnp.where(result.valid, result.idx, jnp.uint32(0))
+    return compacted, result.count, active
+
+
+@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn", "compact_cfg"))
+def ic_compact_active_pairs_result(
+    state: ICState,
+    *,
+    safety_policy: SafetyPolicy | None = None,
+    safe_index_fn=safe_index_1d,
+    compact_cfg: CompactConfig | None = None,
+) -> Tuple[CompactResult, jnp.ndarray]:
+    """Return CompactResult for active pairs and the active mask."""
     _, active = ic_find_active_pairs(
         state,
         safety_policy=safety_policy,
         safe_index_fn=safe_index_fn,
         compact_cfg=compact_cfg,
     )
-    idx, valid, count = _compact_mask(active, compact_cfg=compact_cfg)
-    compacted = jnp.where(valid, idx, jnp.uint32(0))
-    return compacted, count, active
+    result = _compact_mask(active, compact_cfg=compact_cfg)
+    return result, active
 
 
 __all__ = [
@@ -480,5 +498,6 @@ __all__ = [
     "ic_wire_star_jax",
     "ic_find_active_pairs",
     "ic_compact_active_pairs",
+    "ic_compact_active_pairs_result",
     "ic_alloc",
 ]
