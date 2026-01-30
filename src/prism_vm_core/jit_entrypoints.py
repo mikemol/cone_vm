@@ -11,7 +11,11 @@ import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.di import bind_optional_kwargs, cached_jit, resolve
-from prism_core.guards import GuardConfig, resolve_safe_gather_fn
+from prism_core.guards import (
+    GuardConfig,
+    resolve_safe_gather_fn,
+    resolve_safe_gather_value_fn,
+)
 from prism_core.safety import SafetyPolicy
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
@@ -36,7 +40,12 @@ from prism_bsp.cnf2 import (
     compact_candidates_with_index_result as _compact_candidates_with_index_result,
     intern_candidates as _intern_candidates,
 )
-from prism_bsp.arena_step import cycle_core as _cycle_core, op_interact as _op_interact
+from prism_bsp.arena_step import (
+    cycle_core as _cycle_core,
+    cycle_value as _cycle_value,
+    op_interact as _op_interact,
+    op_interact_value as _op_interact_value,
+)
 from prism_bsp.intrinsic import _cycle_intrinsic_jit as _cycle_intrinsic_jit_impl
 from prism_bsp.space import (
     _servo_update,
@@ -98,6 +107,20 @@ def _op_interact_jit(safe_gather_fn, scatter_drop_fn, guard_max_fn):
     return _impl
 
 
+@cached_jit
+def _op_interact_value_jit(safe_gather_value_fn, scatter_drop_fn, guard_max_fn):
+    def _impl(arena, policy_value):
+        return _op_interact_value(
+            arena,
+            policy_value,
+            safe_gather_value_fn=safe_gather_value_fn,
+            scatter_drop_fn=scatter_drop_fn,
+            guard_max_fn=guard_max_fn,
+        )
+
+    return _impl
+
+
 def op_interact_jit(
     *,
     safe_gather_fn=_jax_safe.safe_gather_1d,
@@ -117,12 +140,46 @@ def op_interact_jit(
     return _op_interact_jit(safe_gather_fn, scatter_drop_fn, guard_max_fn)
 
 
+def op_interact_value_jit(
+    *,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
+    scatter_drop_fn=_jax_safe.scatter_drop,
+    guard_max_fn=None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Return a jitted op_interact entrypoint that accepts policy_value."""
+    if guard_max_fn is None:
+        from prism_vm_core.guards import _guard_max as guard_max_fn  # type: ignore
+    safe_gather_value_fn = resolve_safe_gather_value_fn(
+        safe_gather_value_fn=safe_gather_value_fn,
+        guard_cfg=guard_cfg,
+    )
+    return _op_interact_value_jit(safe_gather_value_fn, scatter_drop_fn, guard_max_fn)
+
+
 def op_interact_jit_cfg(
     cfg: ArenaInteractConfig | None = None,
 ):
     """Return a jitted op_interact entrypoint for a fixed config."""
     if cfg is None:
         cfg = DEFAULT_ARENA_INTERACT_CONFIG
+    if (
+        cfg.safe_gather_policy is not None
+        and cfg.safe_gather_policy_value is not None
+    ):
+        raise ValueError(
+            "op_interact_jit_cfg received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if cfg.safe_gather_policy_value is not None:
+        return op_interact_value_jit(
+            safe_gather_value_fn=resolve(
+                cfg.safe_gather_value_fn, _jax_safe.safe_gather_1d_value
+            ),
+            scatter_drop_fn=resolve(cfg.scatter_drop_fn, _jax_safe.scatter_drop),
+            guard_max_fn=cfg.guard_max_fn,
+            guard_cfg=cfg.guard_cfg,
+        )
     return op_interact_jit(
         safe_gather_fn=resolve(cfg.safe_gather_fn, _jax_safe.safe_gather_1d),
         scatter_drop_fn=resolve(cfg.scatter_drop_fn, _jax_safe.scatter_drop),
@@ -302,6 +359,7 @@ def cycle_candidates_jit(
     emit_candidates_fn: EmitCandidatesFn | None = None,
     host_raise_if_bad_fn: HostRaiseFn | None = None,
     safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: jnp.ndarray | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
@@ -331,6 +389,11 @@ def cycle_candidates_jit(
             emit_candidates_fn = cnf2_cfg.emit_candidates_fn
         if safe_gather_policy is None and cnf2_cfg.safe_gather_policy is not None:
             safe_gather_policy = cnf2_cfg.safe_gather_policy
+        if (
+            safe_gather_policy_value is None
+            and cnf2_cfg.safe_gather_policy_value is not None
+        ):
+            safe_gather_policy_value = cnf2_cfg.safe_gather_policy_value
         if guard_cfg is None and cnf2_cfg.guard_cfg is not None:
             guard_cfg = cnf2_cfg.guard_cfg
         if cnf2_enabled_fn is None and cnf2_cfg.cnf2_enabled_fn is not None:
@@ -360,6 +423,11 @@ def cycle_candidates_jit(
         cnf2_slot1_enabled_fn = lambda: slot1_value
     if host_raise_if_bad_fn is None:
         host_raise_if_bad_fn = _host_raise_if_bad
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "cycle_candidates_jit received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
     if not cnf2_enabled_fn():
         raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
 
@@ -372,6 +440,7 @@ def cycle_candidates_jit(
             validate_mode=validate_mode,
             cfg=cnf2_cfg,
             safe_gather_policy=safe_gather_policy,
+            safe_gather_policy_value=safe_gather_policy_value,
             guard_cfg=guard_cfg,
             intern_fn=intern_fn,
             intern_cfg=intern_cfg,
@@ -497,6 +566,105 @@ def cycle_jit(
     )
 
 
+@cached_jit
+def _cycle_value_jit(
+    do_sort,
+    use_morton,
+    block_size,
+    l2_block_size,
+    l1_block_size,
+    do_global,
+    op_rank_fn,
+    servo_enabled_value,
+    servo_update_fn,
+    op_morton_fn,
+    op_sort_and_swizzle_with_perm_fn,
+    op_sort_and_swizzle_morton_with_perm_fn,
+    op_sort_and_swizzle_blocked_with_perm_fn,
+    op_sort_and_swizzle_hierarchical_with_perm_fn,
+    op_sort_and_swizzle_servo_with_perm_fn,
+    safe_gather_value_fn,
+    guard_cfg,
+):
+    cycle_value_fn = bind_optional_kwargs(_cycle_value, guard_cfg=guard_cfg)
+
+    def _impl(arena, root_ptr, policy_value):
+        return cycle_value_fn(
+            arena,
+            root_ptr,
+            policy_value,
+            do_sort=do_sort,
+            use_morton=use_morton,
+            block_size=block_size,
+            morton=None,
+            l2_block_size=l2_block_size,
+            l1_block_size=l1_block_size,
+            do_global=do_global,
+            op_rank_fn=op_rank_fn,
+            servo_enabled_fn=lambda: servo_enabled_value,
+            servo_update_fn=servo_update_fn,
+            op_morton_fn=op_morton_fn,
+            op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_fn,
+            op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_fn,
+            op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_fn,
+            op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
+            op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
+            safe_gather_value_fn=safe_gather_value_fn,
+            arena_root_hash_fn=_noop_root_hash,
+            damage_tile_size_fn=_noop_tile_size,
+            damage_metrics_update_fn=_noop_metrics,
+        )
+
+    return _impl
+
+
+def cycle_value_jit(
+    *,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+    op_rank_fn=op_rank,
+    servo_enabled_fn=_servo_enabled,
+    servo_update_fn=_servo_update,
+    op_morton_fn=op_morton,
+    op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm,
+    op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm,
+    op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm,
+    op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm,
+    op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Return a jitted cycle entrypoint that accepts policy_value."""
+    servo_enabled_value = bool(servo_enabled_fn())
+    safe_gather_value_fn = resolve_safe_gather_value_fn(
+        safe_gather_value_fn=safe_gather_value_fn,
+        guard_cfg=guard_cfg,
+    )
+    return _cycle_value_jit(
+        do_sort,
+        use_morton,
+        block_size,
+        l2_block_size,
+        l1_block_size,
+        do_global,
+        op_rank_fn,
+        servo_enabled_value,
+        servo_update_fn,
+        op_morton_fn,
+        op_sort_and_swizzle_with_perm_fn,
+        op_sort_and_swizzle_morton_with_perm_fn,
+        op_sort_and_swizzle_blocked_with_perm_fn,
+        op_sort_and_swizzle_hierarchical_with_perm_fn,
+        op_sort_and_swizzle_servo_with_perm_fn,
+        safe_gather_value_fn,
+        guard_cfg,
+    )
+
+
 def cycle_jit_cfg(
     *,
     do_sort=True,
@@ -511,6 +679,46 @@ def cycle_jit_cfg(
     """Return a jitted cycle entrypoint for a fixed config."""
     if cfg is None:
         cfg = DEFAULT_ARENA_CYCLE_CONFIG
+    if (
+        cfg.safe_gather_policy is not None
+        and cfg.safe_gather_policy_value is not None
+    ):
+        raise ValueError(
+            "cycle_jit_cfg received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if cfg.safe_gather_policy_value is not None:
+        return cycle_value_jit(
+            do_sort=do_sort,
+            use_morton=use_morton,
+            block_size=block_size,
+            l2_block_size=l2_block_size,
+            l1_block_size=l1_block_size,
+            do_global=do_global,
+            op_rank_fn=cfg.op_rank_fn or op_rank,
+            servo_enabled_fn=cfg.servo_enabled_fn or _servo_enabled,
+            servo_update_fn=cfg.servo_update_fn or _servo_update,
+            op_morton_fn=cfg.op_morton_fn or op_morton,
+            op_sort_and_swizzle_with_perm_fn=(
+                cfg.op_sort_and_swizzle_with_perm_fn or op_sort_and_swizzle_with_perm
+            ),
+            op_sort_and_swizzle_morton_with_perm_fn=(
+                cfg.op_sort_and_swizzle_morton_with_perm_fn or op_sort_and_swizzle_morton_with_perm
+            ),
+            op_sort_and_swizzle_blocked_with_perm_fn=(
+                cfg.op_sort_and_swizzle_blocked_with_perm_fn or op_sort_and_swizzle_blocked_with_perm
+            ),
+            op_sort_and_swizzle_hierarchical_with_perm_fn=(
+                cfg.op_sort_and_swizzle_hierarchical_with_perm_fn or op_sort_and_swizzle_hierarchical_with_perm
+            ),
+            op_sort_and_swizzle_servo_with_perm_fn=(
+                cfg.op_sort_and_swizzle_servo_with_perm_fn or op_sort_and_swizzle_servo_with_perm
+            ),
+            safe_gather_value_fn=resolve(
+                cfg.safe_gather_value_fn, _jax_safe.safe_gather_1d_value
+            ),
+            guard_cfg=cfg.guard_cfg,
+        )
     op_rank_fn = cfg.op_rank_fn or op_rank
     servo_enabled_fn = cfg.servo_enabled_fn or _servo_enabled
     servo_update_fn = cfg.servo_update_fn or _servo_update
@@ -621,6 +829,7 @@ __all__ = [
     "intern_nodes_jit",
     "op_interact_jit",
     "op_interact_jit_cfg",
+    "op_interact_value_jit",
     "emit_candidates_jit",
     "emit_candidates_jit_cfg",
     "compact_candidates_jit",
@@ -636,6 +845,7 @@ __all__ = [
     "cycle_candidates_jit",
     "cycle_jit",
     "cycle_jit_cfg",
+    "cycle_value_jit",
     "cycle_intrinsic_jit",
     "cycle_intrinsic_jit_cfg",
     "coord_norm_batch_jit",

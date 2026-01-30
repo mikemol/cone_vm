@@ -4,7 +4,7 @@ from jax import jit, lax
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.di import call_with_optional_kwargs
-from prism_core.guards import resolve_safe_gather_fn
+from prism_core.guards import resolve_safe_gather_fn, resolve_safe_gather_value_fn
 from prism_metrics.metrics import _damage_metrics_update, _damage_tile_size
 from prism_vm_core.domains import _host_int_value
 from prism_vm_core.gating import _servo_enabled
@@ -34,19 +34,11 @@ from prism_bsp.config import (
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
 
 
-@jax.jit(
-    static_argnames=(
-        "safe_gather_fn",
-        "scatter_drop_fn",
-        "guard_max_fn",
-    )
-)
-def op_interact(
+def _op_interact_core(
     arena,
-    *,
-    safe_gather_fn=_jax_safe.safe_gather_1d,
-    scatter_drop_fn=_jax_safe.scatter_drop,
-    guard_max_fn=_guard_max,
+    safe_gather_fn,
+    scatter_drop_fn,
+    guard_max_fn,
 ):
     ops = arena.opcode
     a1 = arena.arg1
@@ -142,17 +134,77 @@ def op_interact(
     )
 
 
+@jax.jit(
+    static_argnames=(
+        "safe_gather_fn",
+        "scatter_drop_fn",
+        "guard_max_fn",
+    )
+)
+def op_interact(
+    arena,
+    *,
+    safe_gather_fn=_jax_safe.safe_gather_1d,
+    scatter_drop_fn=_jax_safe.scatter_drop,
+    guard_max_fn=_guard_max,
+):
+    return _op_interact_core(arena, safe_gather_fn, scatter_drop_fn, guard_max_fn)
+
+
+@jax.jit(
+    static_argnames=(
+        "safe_gather_value_fn",
+        "scatter_drop_fn",
+        "guard_max_fn",
+    )
+)
+def op_interact_value(
+    arena,
+    policy_value,
+    *,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
+    scatter_drop_fn=_jax_safe.scatter_drop,
+    guard_max_fn=_guard_max,
+):
+    def _safe_gather(arr, idx, label):
+        return safe_gather_value_fn(
+            arr, idx, label, policy_value=policy_value
+        )
+
+    return _op_interact_core(arena, _safe_gather, scatter_drop_fn, guard_max_fn)
+
+
 def op_interact_cfg(
     arena, *, cfg: ArenaInteractConfig = DEFAULT_ARENA_INTERACT_CONFIG
 ):
     """Interface/Control wrapper for op_interact with DI bundle."""
+    scatter_drop_fn = cfg.scatter_drop_fn or _jax_safe.scatter_drop
+    guard_max_fn = cfg.guard_max_fn or _guard_max
+    if (
+        cfg.safe_gather_policy is not None
+        and cfg.safe_gather_policy_value is not None
+    ):
+        raise ValueError(
+            "op_interact_cfg received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if cfg.safe_gather_policy_value is not None:
+        safe_gather_value_fn = resolve_safe_gather_value_fn(
+            safe_gather_value_fn=cfg.safe_gather_value_fn,
+            guard_cfg=cfg.guard_cfg,
+        )
+        return op_interact_value(
+            arena,
+            cfg.safe_gather_policy_value,
+            safe_gather_value_fn=safe_gather_value_fn,
+            scatter_drop_fn=scatter_drop_fn,
+            guard_max_fn=guard_max_fn,
+        )
     safe_gather_fn = resolve_safe_gather_fn(
         safe_gather_fn=cfg.safe_gather_fn,
         policy=cfg.safe_gather_policy,
         guard_cfg=cfg.guard_cfg,
     )
-    scatter_drop_fn = cfg.scatter_drop_fn or _jax_safe.scatter_drop
-    guard_max_fn = cfg.guard_max_fn or _guard_max
     return op_interact(
         arena,
         safe_gather_fn=safe_gather_fn,
@@ -317,6 +369,73 @@ def cycle(
         op_interact_fn=op_interact_fn,
     )
 
+
+def cycle_value(
+    arena,
+    root_ptr,
+    policy_value,
+    do_sort=True,
+    use_morton=False,
+    block_size=None,
+    morton=None,
+    l2_block_size=None,
+    l1_block_size=None,
+    do_global=False,
+    *,
+    op_rank_fn=op_rank,
+    servo_enabled_fn=_servo_enabled,
+    servo_update_fn=_servo_update,
+    op_morton_fn=op_morton,
+    op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm,
+    op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm,
+    op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm,
+    op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm,
+    op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm,
+    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
+    guard_cfg=None,
+    arena_root_hash_fn=_arena_root_hash_host,
+    damage_tile_size_fn=_damage_tile_size,
+    damage_metrics_update_fn=_damage_metrics_update,
+    op_interact_fn=None,
+):
+    def _safe_gather(arr, idx, label):
+        return safe_gather_value_fn(
+            arr, idx, label, policy_value=policy_value
+        )
+
+    if op_interact_fn is None:
+        op_interact_fn = lambda a: op_interact_value(
+            a,
+            policy_value,
+            safe_gather_value_fn=safe_gather_value_fn,
+        )
+    return cycle_core(
+        arena,
+        root_ptr,
+        do_sort=do_sort,
+        use_morton=use_morton,
+        block_size=block_size,
+        morton=morton,
+        l2_block_size=l2_block_size,
+        l1_block_size=l1_block_size,
+        do_global=do_global,
+        op_rank_fn=op_rank_fn,
+        servo_enabled_fn=servo_enabled_fn,
+        servo_update_fn=servo_update_fn,
+        op_morton_fn=op_morton_fn,
+        op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_fn,
+        op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_fn,
+        op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_fn,
+        op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
+        op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
+        safe_gather_fn=_safe_gather,
+        guard_cfg=guard_cfg,
+        arena_root_hash_fn=arena_root_hash_fn,
+        damage_tile_size_fn=damage_tile_size_fn,
+        damage_metrics_update_fn=damage_metrics_update_fn,
+        op_interact_fn=op_interact_fn,
+    )
+
 def cycle_cfg(
     arena,
     root_ptr,
@@ -355,11 +474,24 @@ def cycle_cfg(
         cfg.op_sort_and_swizzle_servo_with_perm_fn
         or op_sort_and_swizzle_servo_with_perm
     )
+    if (
+        cfg.safe_gather_policy is not None
+        and cfg.safe_gather_policy_value is not None
+    ):
+        raise ValueError(
+            "cycle_cfg received both safe_gather_policy and safe_gather_policy_value"
+        )
     safe_gather_fn = resolve_safe_gather_fn(
         safe_gather_fn=cfg.safe_gather_fn,
         policy=cfg.safe_gather_policy,
         guard_cfg=cfg.guard_cfg,
     )
+    safe_gather_value_fn = None
+    if cfg.safe_gather_policy_value is not None:
+        safe_gather_value_fn = resolve_safe_gather_value_fn(
+            safe_gather_value_fn=cfg.safe_gather_value_fn,
+            guard_cfg=cfg.guard_cfg,
+        )
     arena_root_hash_fn = cfg.arena_root_hash_fn or _arena_root_hash_host
     damage_tile_size_fn = cfg.damage_tile_size_fn or _damage_tile_size
     damage_metrics_update_fn = cfg.damage_metrics_update_fn or _damage_metrics_update
@@ -367,7 +499,42 @@ def cycle_cfg(
     if op_interact_fn is None and cfg.interact_cfg is not None:
         op_interact_fn = lambda a: op_interact_cfg(a, cfg=cfg.interact_cfg)
     if op_interact_fn is None:
-        op_interact_fn = lambda a: op_interact(a, safe_gather_fn=safe_gather_fn)
+        if cfg.safe_gather_policy_value is not None and safe_gather_value_fn is not None:
+            op_interact_fn = lambda a: op_interact_value(
+                a,
+                cfg.safe_gather_policy_value,
+                safe_gather_value_fn=safe_gather_value_fn,
+            )
+        else:
+            op_interact_fn = lambda a: op_interact(a, safe_gather_fn=safe_gather_fn)
+    if cfg.safe_gather_policy_value is not None and safe_gather_value_fn is not None:
+        return cycle_value(
+            arena,
+            root_ptr,
+            cfg.safe_gather_policy_value,
+            do_sort=do_sort,
+            use_morton=use_morton,
+            block_size=block_size,
+            morton=morton,
+            l2_block_size=l2_block_size,
+            l1_block_size=l1_block_size,
+            do_global=do_global,
+            op_rank_fn=op_rank_fn,
+            servo_enabled_fn=servo_enabled_fn,
+            servo_update_fn=servo_update_fn,
+            op_morton_fn=op_morton_fn,
+            op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_fn,
+            op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_fn,
+            op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_fn,
+            op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
+            op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
+            safe_gather_value_fn=safe_gather_value_fn,
+            guard_cfg=cfg.guard_cfg,
+            arena_root_hash_fn=arena_root_hash_fn,
+            damage_tile_size_fn=damage_tile_size_fn,
+            damage_metrics_update_fn=damage_metrics_update_fn,
+            op_interact_fn=op_interact_fn,
+        )
     return cycle_core(
         arena,
         root_ptr,
@@ -397,8 +564,10 @@ def cycle_cfg(
 
 __all__ = [
     "op_interact",
+    "op_interact_value",
     "op_interact_cfg",
     "cycle_core",
     "cycle",
+    "cycle_value",
     "cycle_cfg",
 ]

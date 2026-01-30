@@ -8,7 +8,13 @@ from prism_core.compact import CompactConfig
 from prism_core.guards import GuardConfig
 from prism_core.safety import SafetyPolicy
 from prism_ledger.config import InternConfig
-from prism_core.protocols import SafeGatherFn, SafeGatherOkFn
+from prism_core.protocols import (
+    PolicyValue,
+    SafeGatherFn,
+    SafeGatherOkFn,
+    SafeGatherOkValueFn,
+    SafeGatherValueFn,
+)
 from prism_vm_core.protocols import (
     ApplyQFn,
     ArenaRootHashFn,
@@ -72,12 +78,14 @@ class Cnf2Config:
     apply_q_fn: ApplyQFn | None = None
     identity_q_fn: IdentityQFn | None = None
     safe_gather_ok_fn: SafeGatherOkFn | None = None
+    safe_gather_ok_value_fn: SafeGatherOkValueFn | None = None
     guard_cfg: GuardConfig | None = None
     host_bool_value_fn: HostBoolValueFn | None = None
     host_int_value_fn: HostIntValueFn | None = None
     guards_enabled_fn: GuardsEnabledFn | None = None
     ledger_roots_hash_host_fn: LedgerRootsHashFn | None = None
     safe_gather_policy: SafetyPolicy | None = None
+    safe_gather_policy_value: PolicyValue | None = None
     cnf2_enabled_fn: Callable[[], bool] | None = None
     cnf2_slot1_enabled_fn: Callable[[], bool] | None = None
     cnf2_metrics_enabled_fn: Callable[[], bool] | None = None
@@ -92,7 +100,9 @@ class ArenaInteractConfig:
     """Arena interact DI bundle."""
 
     safe_gather_fn: SafeGatherFn | None = None
+    safe_gather_value_fn: SafeGatherValueFn | None = None
     safe_gather_policy: SafetyPolicy | None = None
+    safe_gather_policy_value: PolicyValue | None = None
     guard_cfg: GuardConfig | None = None
     scatter_drop_fn: ScatterDropFn | None = None
     guard_max_fn: GuardMaxFn | None = None
@@ -115,7 +125,9 @@ class ArenaCycleConfig:
     op_sort_and_swizzle_hierarchical_with_perm_fn: OpSortWithPermFn | None = None
     op_sort_and_swizzle_servo_with_perm_fn: OpSortWithPermFn | None = None
     safe_gather_fn: SafeGatherFn | None = None
+    safe_gather_value_fn: SafeGatherValueFn | None = None
     safe_gather_policy: SafetyPolicy | None = None
+    safe_gather_policy_value: PolicyValue | None = None
     guard_cfg: GuardConfig | None = None
     arena_root_hash_fn: ArenaRootHashFn | None = None
     damage_tile_size_fn: DamageTileSizeFn | None = None

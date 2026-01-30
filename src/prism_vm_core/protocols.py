@@ -5,7 +5,15 @@ from typing import Protocol, Tuple, runtime_checkable
 import jax.numpy as jnp
 
 from prism_core.compact import CompactResult
-from prism_core.protocols import SafeGatherFn, SafeGatherOkFn, SafeIndexFn
+from prism_core.protocols import (
+    PolicyValue,
+    SafeGatherFn,
+    SafeGatherOkFn,
+    SafeGatherOkValueFn,
+    SafeGatherValueFn,
+    SafeIndexFn,
+    SafeIndexValueFn,
+)
 from prism_vm_core.structures import Arena, CandidateBuffer, Ledger, NodeBatch, Stratum
 
 
@@ -169,6 +177,7 @@ class IdentityQFn(Protocol):
 
 
 __all__ = [
+    "PolicyValue",
     "InternFn",
     "EmitCandidatesFn",
     "HostRaiseFn",
@@ -178,7 +187,10 @@ __all__ = [
     "ScatterDropFn",
     "SafeGatherFn",
     "SafeGatherOkFn",
+    "SafeGatherValueFn",
+    "SafeGatherOkValueFn",
     "SafeIndexFn",
+    "SafeIndexValueFn",
     "GuardMaxFn",
     "OpRankFn",
     "ServoEnabledFn",

@@ -2,7 +2,15 @@ import os
 import jax
 import jax.numpy as jnp
 
-from prism_core.safety import DEFAULT_SAFETY_POLICY, SafetyPolicy, oob_mask
+from prism_core.safety import (
+    DEFAULT_SAFETY_POLICY,
+    POLICY_VALUE_CLAMP,
+    POLICY_VALUE_CORRUPT,
+    POLICY_VALUE_DROP,
+    PolicyValue,
+    SafetyPolicy,
+    oob_mask,
+)
 
 TEST_GUARDS = os.environ.get("PRISM_TEST_GUARDS", "").strip().lower() in (
     "1",
@@ -154,6 +162,55 @@ def safe_gather_1d_ok(
     return values, ok, corrupt
 
 
+def safe_gather_1d_value(
+    arr,
+    idx,
+    label="safe_gather_1d_value",
+    guard=None,
+    *,
+    policy_value: PolicyValue,
+    return_ok: bool = False,
+):
+    """Guarded gather that accepts policy as a JAX value."""
+    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
+    idx_i = jnp.asarray(idx, dtype=jnp.int32)
+    policy_val = jnp.asarray(policy_value, dtype=jnp.int32)
+    guard_gather_index(idx_i, size, label, guard=guard)
+    ok = (idx_i >= 0) & (idx_i < size)
+    idx_safe = jnp.clip(idx_i, 0, size - 1)
+    drop_mask = policy_val == POLICY_VALUE_DROP
+    clamp_mask = policy_val == POLICY_VALUE_CLAMP
+    idx_safe = jnp.where(drop_mask, jnp.where(ok, idx_safe, jnp.int32(0)), idx_safe)
+    values = arr[idx_safe]
+    values = jnp.where(drop_mask & (~ok), jnp.zeros_like(values), values)
+    ok = jnp.where(clamp_mask, jnp.ones_like(ok, dtype=jnp.bool_), ok)
+    if return_ok:
+        return values, ok
+    return values
+
+
+def safe_gather_1d_ok_value(
+    arr,
+    idx,
+    label="safe_gather_1d_ok_value",
+    guard=None,
+    *,
+    policy_value: PolicyValue,
+):
+    """Guarded gather that returns ok + corruption flag using policy value."""
+    values, ok = safe_gather_1d_value(
+        arr,
+        idx,
+        label,
+        guard=guard,
+        policy_value=policy_value,
+        return_ok=True,
+    )
+    policy_val = jnp.asarray(policy_value, dtype=jnp.int32)
+    corrupt = jnp.where(policy_val == POLICY_VALUE_CORRUPT, ~ok, False)
+    return values, ok, corrupt
+
+
 def safe_index_1d(
     idx,
     size,
@@ -177,6 +234,28 @@ def safe_index_1d(
     return idx_safe, ok
 
 
+def safe_index_1d_value(
+    idx,
+    size,
+    label="safe_index_1d_value",
+    guard=None,
+    *,
+    policy_value: PolicyValue,
+):
+    """Return a policy-aware safe index using policy value."""
+    size_i = jnp.asarray(size, dtype=jnp.int32)
+    idx_i = jnp.asarray(idx, dtype=jnp.int32)
+    policy_val = jnp.asarray(policy_value, dtype=jnp.int32)
+    guard_gather_index(idx_i, size_i, label, guard=guard)
+    ok = (idx_i >= 0) & (idx_i < size_i)
+    idx_safe = jnp.clip(idx_i, 0, size_i - 1)
+    drop_mask = policy_val == POLICY_VALUE_DROP
+    clamp_mask = policy_val == POLICY_VALUE_CLAMP
+    idx_safe = jnp.where(drop_mask, jnp.where(ok, idx_safe, jnp.int32(0)), idx_safe)
+    ok = jnp.where(clamp_mask, jnp.ones_like(ok, dtype=jnp.bool_), ok)
+    return idx_safe, ok
+
+
 __all__ = [
     "TEST_GUARDS",
     "SCATTER_GUARD",
@@ -189,5 +268,8 @@ __all__ = [
     "guard_gather_index",
     "safe_gather_1d",
     "safe_gather_1d_ok",
+    "safe_gather_1d_value",
+    "safe_gather_1d_ok_value",
     "safe_index_1d",
+    "safe_index_1d_value",
 ]

@@ -20,6 +20,8 @@ def wrap_policy(safe_gather_fn, policy):
     wrapped = bind_optional_kwargs(safe_gather_fn, policy=policy)
 
     def _safe_gather(arr, idx, label, **kwargs):
+        if "policy" in kwargs:
+            raise TypeError("policy already bound in wrap_policy; remove duplicate")
         return wrapped(arr, idx, label, **kwargs)
 
     return _safe_gather
@@ -32,6 +34,8 @@ def wrap_index_policy(safe_index_fn, policy):
     wrapped = bind_optional_kwargs(safe_index_fn, policy=policy)
 
     def _safe_index(idx, size, label, **kwargs):
+        if "policy" in kwargs:
+            raise TypeError("policy already bound in wrap_index_policy; remove duplicate")
         return wrapped(idx, size, label, **kwargs)
 
     return _safe_index
