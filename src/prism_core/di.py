@@ -17,10 +17,10 @@ def wrap_policy(safe_gather_fn, policy):
     """Wrap a safe_gather_fn with a fixed SafetyPolicy (if provided)."""
     if policy is None:
         return safe_gather_fn
+    wrapped = bind_optional_kwargs(safe_gather_fn, policy=policy)
 
     def _safe_gather(arr, idx, label, **kwargs):
-        kwargs["policy"] = policy
-        return safe_gather_fn(arr, idx, label, **kwargs)
+        return wrapped(arr, idx, label, **kwargs)
 
     return _safe_gather
 
@@ -29,10 +29,10 @@ def wrap_index_policy(safe_index_fn, policy):
     """Wrap a safe_index_fn with a fixed SafetyPolicy (if provided)."""
     if policy is None:
         return safe_index_fn
+    wrapped = bind_optional_kwargs(safe_index_fn, policy=policy)
 
     def _safe_index(idx, size, label, **kwargs):
-        kwargs["policy"] = policy
-        return safe_index_fn(idx, size, label, **kwargs)
+        return wrapped(idx, size, label, **kwargs)
 
     return _safe_index
 
