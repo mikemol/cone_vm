@@ -419,6 +419,19 @@ def _cycle_candidates_core_common(
                 cnf2_enabled_fn = lambda: bool(cfg.flags.enabled)
             if cfg.flags.slot1_enabled is not None and cnf2_slot1_enabled_fn is _cnf2_slot1_enabled:
                 cnf2_slot1_enabled_fn = lambda: bool(cfg.flags.slot1_enabled)
+        if cfg.policy_binding is not None:
+            if safe_gather_policy is not None or safe_gather_policy_value is not None:
+                raise PrismPolicyBindingError(
+                    "cycle_candidates_core received both policy_binding and "
+                    "safe_gather_policy/safe_gather_policy_value",
+                    context="cycle_candidates_core",
+                    policy_mode="ambiguous",
+                )
+            policy_mode = cfg.policy_binding.mode
+            if policy_mode == PolicyMode.VALUE:
+                safe_gather_policy_value = cfg.policy_binding.policy_value
+            else:
+                safe_gather_policy = cfg.policy_binding.policy
 
     policy_mode = coerce_policy_mode(policy_mode, context="cycle_candidates_core")
     if policy_mode == PolicyMode.STATIC and safe_gather_policy is None:
@@ -895,6 +908,16 @@ def cycle_candidates_static(
     cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
     cnf2_metrics_update_fn=_cnf2_metrics_update,
 ):
+    if cfg is not None and cfg.policy_binding is not None:
+        if cfg.policy_binding.mode == PolicyMode.VALUE:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_static received cfg.policy_binding value-mode; "
+                "use cycle_candidates_value",
+                context="cycle_candidates_static",
+                policy_mode="static",
+            )
+        if safe_gather_policy is None:
+            safe_gather_policy = cfg.policy_binding.policy
     if cfg is not None and cfg.safe_gather_policy_value is not None:
         raise PrismPolicyBindingError(
             "cycle_candidates_static received cfg.safe_gather_policy_value; "
@@ -972,6 +995,16 @@ def cycle_candidates_value(
     cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
     cnf2_metrics_update_fn=_cnf2_metrics_update,
 ):
+    if cfg is not None and cfg.policy_binding is not None:
+        if cfg.policy_binding.mode == PolicyMode.STATIC:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_value received cfg.policy_binding static-mode; "
+                "use cycle_candidates_static",
+                context="cycle_candidates_value",
+                policy_mode="value",
+            )
+        if safe_gather_policy_value is None:
+            safe_gather_policy_value = cfg.policy_binding.policy_value
     if cfg is not None and cfg.safe_gather_policy is not None:
         raise PrismPolicyBindingError(
             "cycle_candidates_value received cfg.safe_gather_policy; "

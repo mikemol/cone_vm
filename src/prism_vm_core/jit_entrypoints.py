@@ -410,6 +410,16 @@ def cycle_candidates_static_jit(
             intern_fn = cnf2_cfg.intern_fn
         if emit_candidates_fn is None and cnf2_cfg.emit_candidates_fn is not None:
             emit_candidates_fn = cnf2_cfg.emit_candidates_fn
+        if cnf2_cfg.policy_binding is not None:
+            if cnf2_cfg.policy_binding.mode == PolicyMode.VALUE:
+                raise PrismPolicyBindingError(
+                    "cycle_candidates_static_jit received cfg.policy_binding value-mode; "
+                    "use cycle_candidates_value_jit",
+                    context="cycle_candidates_static_jit",
+                    policy_mode="static",
+                )
+            if safe_gather_policy is None:
+                safe_gather_policy = cnf2_cfg.policy_binding.policy
         if safe_gather_policy is None and cnf2_cfg.safe_gather_policy is not None:
             safe_gather_policy = cnf2_cfg.safe_gather_policy
         if (
@@ -518,6 +528,16 @@ def cycle_candidates_value_jit(
             intern_fn = cnf2_cfg.intern_fn
         if emit_candidates_fn is None and cnf2_cfg.emit_candidates_fn is not None:
             emit_candidates_fn = cnf2_cfg.emit_candidates_fn
+        if cnf2_cfg.policy_binding is not None:
+            if cnf2_cfg.policy_binding.mode == PolicyMode.STATIC:
+                raise PrismPolicyBindingError(
+                    "cycle_candidates_value_jit received cfg.policy_binding static-mode; "
+                    "use cycle_candidates_static_jit",
+                    context="cycle_candidates_value_jit",
+                    policy_mode="value",
+                )
+            if safe_gather_policy_value is None:
+                safe_gather_policy_value = cnf2_cfg.policy_binding.policy_value
         if cnf2_cfg.safe_gather_policy is not None:
             raise PrismPolicyBindingError(
                 "cycle_candidates_value_jit received cfg.safe_gather_policy; "
