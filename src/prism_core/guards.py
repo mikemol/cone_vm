@@ -5,6 +5,7 @@ from typing import Callable, Optional
 
 import jax.numpy as jnp
 
+from prism_core.di import call_with_optional_kwargs
 from prism_core import jax_safe as _jax_safe
 
 
@@ -49,7 +50,13 @@ def safe_index_1d_cfg(
 ):
     """Guard-configured wrapper for safe_index_1d (shared)."""
     if cfg.safe_index_fn is not None:
-        return cfg.safe_index_fn(idx, size, label, guard=guard, policy=policy)
+        return call_with_optional_kwargs(
+            cfg.safe_index_fn,
+            {"guard": guard, "policy": policy},
+            idx,
+            size,
+            label,
+        )
     guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
     return _jax_safe.safe_index_1d(idx, size, label, guard=False, policy=policy)
 
@@ -101,8 +108,12 @@ def make_safe_gather_fn(
     def _safe_gather(arr, idx, label, *, policy=policy, return_ok: bool = False):
         size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
         guard_gather_index_cfg(idx, size, label, cfg=cfg)
-        return safe_gather_fn(
-            arr, idx, label, guard=False, policy=policy, return_ok=return_ok
+        return call_with_optional_kwargs(
+            safe_gather_fn,
+            {"guard": False, "policy": policy, "return_ok": return_ok},
+            arr,
+            idx,
+            label,
         )
 
     return _safe_gather
@@ -116,7 +127,13 @@ def make_safe_index_fn(
     """Return a SafeIndexFn wired to the provided GuardConfig."""
     if cfg.safe_index_fn is not None:
         def _safe_index(idx, size, label, *, policy=policy):
-            return cfg.safe_index_fn(idx, size, label, guard=None, policy=policy)
+            return call_with_optional_kwargs(
+                cfg.safe_index_fn,
+                {"guard": None, "policy": policy},
+                idx,
+                size,
+                label,
+            )
     else:
         def _safe_index(idx, size, label, *, policy=policy):
             return safe_index_1d_cfg(idx, size, label, policy=policy, cfg=cfg)
