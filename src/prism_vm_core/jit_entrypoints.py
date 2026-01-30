@@ -545,7 +545,7 @@ def cycle_jit_cfg(
     if op_interact_fn is None and cfg.interact_cfg is not None:
         op_interact_fn = op_interact_jit_cfg(cfg.interact_cfg)
     if op_interact_fn is None:
-        if cfg.safe_gather_policy is not None:
+        if cfg.safe_gather_policy is not None or cfg.guard_cfg is not None:
             op_interact_fn = op_interact_jit(
                 safe_gather_fn=safe_gather_fn,
                 safe_gather_policy=cfg.safe_gather_policy,
