@@ -108,6 +108,8 @@ def resolve_policy_binding(
         )
     if policy_value is not None:
         return PolicyBinding(PolicyMode.VALUE, policy=None, policy_value=policy_value)
+    if policy is None:
+        policy = DEFAULT_SAFETY_POLICY
     return PolicyBinding(PolicyMode.STATIC, policy=policy, policy_value=None)
 
 
