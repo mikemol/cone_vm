@@ -101,6 +101,19 @@ jobs:
         run: |
           python scripts/policy_check.py --workflows --posture
 
+  smoke-exports:
+    needs: [changes, policy-check, audit]
+    if: needs.changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Smoke-check exports
+        run: |
+          python scripts/smoke_exports.py
+
   audit:
     needs: [changes]
     runs-on: ubuntu-latest
@@ -120,7 +133,7 @@ jobs:
           path: artifacts/audit_in_versions.md
 
   agda-check:
-    needs: [changes, policy-check, audit]
+    needs: [changes, policy-check, audit, smoke-exports]
     if: needs.changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     container:
@@ -146,7 +159,7 @@ jobs:
           scripts/check_agda.sh
 
   tests:
-    needs: [changes, policy-check, audit]
+    needs: [changes, policy-check, audit, smoke-exports]
     if: needs.changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -258,7 +271,7 @@ jobs:
           if-no-files-found: ignore
 
   tests-gpu:
-    needs: [changes, policy-check, audit]
+    needs: [changes, policy-check, audit, smoke-exports]
     if: needs.changes.outputs.code_changed == 'true' && github.actor == github.repository_owner && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     runs-on: [self-hosted, cassian, gpu, local]
     timeout-minutes: 30
@@ -343,7 +356,7 @@ jobs:
 
   collect-report:
     runs-on: ubuntu-latest
-    needs: [changes, policy-check, audit, agda-check, tests, tests-gpu]
+    needs: [changes, policy-check, audit, smoke-exports, agda-check, tests, tests-gpu]
     if: always() && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
