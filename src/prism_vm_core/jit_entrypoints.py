@@ -10,7 +10,7 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.di import cached_jit, resolve, wrap_policy
+from prism_core.di import bind_optional_kwargs, cached_jit, resolve, wrap_policy
 from prism_core.guards import GuardConfig, make_safe_gather_fn
 from prism_core.safety import SafetyPolicy
 from prism_ledger import intern as _ledger_intern
@@ -364,8 +364,10 @@ def _cycle_jit(
     guard_cfg,
     op_interact_fn,
 ):
+    cycle_core_fn = bind_optional_kwargs(_cycle_core, guard_cfg=guard_cfg)
+
     def _impl(arena, root_ptr):
-        return _cycle_core(
+        return cycle_core_fn(
             arena,
             root_ptr,
             do_sort=do_sort,
@@ -385,7 +387,6 @@ def _cycle_jit(
             op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
             op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
             safe_gather_fn=safe_gather_fn,
-            guard_cfg=guard_cfg,
             arena_root_hash_fn=_noop_root_hash,
             damage_tile_size_fn=_noop_tile_size,
             damage_metrics_update_fn=_noop_metrics,
