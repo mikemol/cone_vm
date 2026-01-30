@@ -5,7 +5,7 @@ from functools import partial
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.di import call_with_optional_kwargs
-from prism_core.guards import safe_gather_1d_ok_cfg
+from prism_core.guards import GuardConfig, safe_gather_1d_ok_cfg
 from prism_core.compact import scatter_compacted_ids
 from prism_core.safety import SafetyPolicy, oob_any
 from prism_coord.coord import coord_xor_batch
@@ -312,6 +312,7 @@ def cycle_candidates(
     *,
     cfg: Cnf2Config | None = None,
     safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
     intern_fn: InternFn = intern_nodes,
     intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -340,6 +341,7 @@ def cycle_candidates(
         return current
 
     if cfg is not None:
+        guard_cfg = cfg.guard_cfg if guard_cfg is None else guard_cfg
         intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
         if cfg.coord_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
             coord_xor_batch_fn = partial(coord_xor_batch, cfg=cfg.coord_cfg)
@@ -610,6 +612,7 @@ def cycle_candidates(
     commit_optional = {
         "safe_gather_policy": safe_gather_policy,
         "safe_gather_ok_fn": safe_gather_ok_fn,
+        "guard_cfg": guard_cfg,
     }
     ledger2, _, q_map = call_with_optional_kwargs(
         commit_stratum_fn,
