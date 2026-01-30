@@ -7,6 +7,7 @@ from ic_core.graph import (
     PORT_PRINCIPAL,
     decode_port,
     ic_compact_active_pairs,
+    ic_compact_active_pairs_result,
     _halted,
     _scan_corrupt_ports,
 )
@@ -24,6 +25,7 @@ class ICRewriteStats(NamedTuple):
 
 DEFAULT_ENGINE_CONFIG = ICEngineConfig(
     compact_pairs_fn=ic_compact_active_pairs,
+    compact_pairs_result_fn=None,
     decode_port_fn=decode_port,
     alloc_plan_fn=_alloc_plan,
     apply_template_planned_fn=_apply_template_planned,
@@ -35,6 +37,7 @@ DEFAULT_ENGINE_CONFIG = ICEngineConfig(
 @jax.jit(
     static_argnames=(
         "compact_pairs_fn",
+        "compact_pairs_result_fn",
         "decode_port_fn",
         "alloc_plan_fn",
         "apply_template_planned_fn",
@@ -46,6 +49,7 @@ def ic_apply_active_pairs(
     state: ICState,
     *,
     compact_pairs_fn=ic_compact_active_pairs,
+    compact_pairs_result_fn=None,
     decode_port_fn=decode_port,
     alloc_plan_fn=_alloc_plan,
     apply_template_planned_fn=_apply_template_planned,
@@ -64,7 +68,12 @@ def ic_apply_active_pairs(
         return s, zero_stats
 
     def _run(s):
-        pairs, count, _ = compact_pairs_fn(s)
+        if compact_pairs_result_fn is not None:
+            result, _ = compact_pairs_result_fn(s)
+            pairs = jnp.where(result.valid, result.idx, jnp.uint32(0))
+            count = result.count
+        else:
+            pairs, count, _ = compact_pairs_fn(s)
         count_i = count.astype(jnp.int32)
 
         def body(i, carry):

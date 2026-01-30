@@ -29,6 +29,7 @@ def _apply_active_pairs_jit(cfg: ICEngineConfig):
         return ic_apply_active_pairs(
             state,
             compact_pairs_fn=cfg.compact_pairs_fn,
+            compact_pairs_result_fn=cfg.compact_pairs_result_fn,
             decode_port_fn=cfg.decode_port_fn,
             alloc_plan_fn=cfg.alloc_plan_fn,
             apply_template_planned_fn=cfg.apply_template_planned_fn,
@@ -56,6 +57,7 @@ def _reduce_jit(cfg: ICEngineConfig):
     apply_fn = partial(
         ic_apply_active_pairs,
         compact_pairs_fn=cfg.compact_pairs_fn,
+        compact_pairs_result_fn=cfg.compact_pairs_result_fn,
         decode_port_fn=cfg.decode_port_fn,
         alloc_plan_fn=cfg.alloc_plan_fn,
         apply_template_planned_fn=cfg.apply_template_planned_fn,

@@ -13,6 +13,7 @@ from ic_core.protocols import (
     ApplyTemplateFn,
     ApplyTemplatePlannedFn,
     CompactPairsFn,
+    CompactPairsResultFn,
     DecodePortFn,
     HaltedFn,
     RuleForTypesFn,
@@ -56,6 +57,7 @@ class ICEngineConfig:
     apply_template_planned_fn: ApplyTemplatePlannedFn
     halted_fn: HaltedFn
     scan_corrupt_fn: ScanCorruptFn
+    compact_pairs_result_fn: CompactPairsResultFn | None = None
 
 
 __all__ = [
