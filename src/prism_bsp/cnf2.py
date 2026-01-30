@@ -7,7 +7,6 @@ from prism_core import jax_safe as _jax_safe
 from prism_core.di import call_with_optional_kwargs
 from prism_core.guards import (
     GuardConfig,
-    resolve_safe_gather_ok_fn,
     resolve_safe_gather_ok_value_fn,
 )
 from prism_core.compact import scatter_compacted_ids
@@ -943,11 +942,6 @@ def cycle_candidates_static(
     if safe_gather_policy is None:
         safe_gather_policy = DEFAULT_SAFETY_POLICY
     guard_cfg = _resolve_guard_cfg(guard_cfg, cfg)
-    safe_gather_ok_fn = resolve_safe_gather_ok_fn(
-        safe_gather_ok_fn=safe_gather_ok_fn,
-        policy=safe_gather_policy,
-        guard_cfg=guard_cfg,
-    )
     return _cycle_candidates_core_static(
         ledger,
         frontier_ids,
