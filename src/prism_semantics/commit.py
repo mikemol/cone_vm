@@ -9,6 +9,7 @@ from prism_core.safety import (
     PolicyMode,
     coerce_policy_mode,
     SafetyPolicy,
+    SafetyMode,
     PolicyValue,
     POLICY_VALUE_CLAMP,
     POLICY_VALUE_DEFAULT,
@@ -179,7 +180,7 @@ def _q_map_ok(ids, meta: QMapMeta):
         )
         return ok
     policy = meta.safe_gather_policy or SafetyPolicy()
-    if policy.mode == "clamp":
+    if policy.mode == SafetyMode.CLAMP:
         ok = jnp.ones_like(ok, dtype=jnp.bool_)
     return ok
 
@@ -242,7 +243,7 @@ def _apply_stratum_q_core(
     out = provisional_ids_fn(jnp.where(in_range, mapped, ids.a))
     if not return_ok:
         return out
-    if policy.mode == "clamp":
+    if policy.mode == SafetyMode.CLAMP:
         ok = jnp.ones_like(ok, dtype=jnp.bool_)
     corrupt = jnp.where(in_range, corrupt, False)
     return out, ok, corrupt

@@ -9,6 +9,7 @@ from prism_core.safety import (
     POLICY_VALUE_DROP,
     PolicyValue,
     SafetyPolicy,
+    SafetyMode,
     oob_mask,
 )
 
@@ -127,12 +128,12 @@ def safe_gather_1d(
     guard_gather_index(idx_i, size, label, guard=guard)
     ok = (idx_i >= 0) & (idx_i < size)
     idx_safe = jnp.clip(idx_i, 0, size - 1)
-    if policy.mode == "drop":
+    if policy.mode == SafetyMode.DROP:
         idx_safe = jnp.where(ok, idx_safe, jnp.int32(0))
     values = arr[idx_safe]
-    if policy.mode == "drop":
+    if policy.mode == SafetyMode.DROP:
         values = jnp.where(ok, values, jnp.zeros_like(values))
-    if policy.mode == "clamp":
+    if policy.mode == SafetyMode.CLAMP:
         ok = jnp.ones_like(ok, dtype=jnp.bool_)
     if return_ok:
         return values, ok
@@ -227,9 +228,9 @@ def safe_index_1d(
     guard_gather_index(idx_i, size_i, label, guard=guard)
     ok = (idx_i >= 0) & (idx_i < size_i)
     idx_safe = jnp.clip(idx_i, 0, size_i - 1)
-    if policy.mode == "drop":
+    if policy.mode == SafetyMode.DROP:
         idx_safe = jnp.where(ok, idx_safe, jnp.int32(0))
-    if policy.mode == "clamp":
+    if policy.mode == SafetyMode.CLAMP:
         ok = jnp.ones_like(ok, dtype=jnp.bool_)
     return idx_safe, ok
 
