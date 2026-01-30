@@ -371,10 +371,8 @@ def cycle_candidates(
         safe_gather_ok_fn = _maybe_override(
             safe_gather_ok_fn, _jax_safe.safe_gather_1d_ok, cfg.safe_gather_ok_fn
         )
-        if cfg.guard_cfg is not None and safe_gather_ok_fn is _jax_safe.safe_gather_1d_ok:
-            safe_gather_ok_fn = partial(
-                safe_gather_1d_ok_cfg, cfg=cfg.guard_cfg
-            )
+        if guard_cfg is not None and safe_gather_ok_fn is _jax_safe.safe_gather_1d_ok:
+            safe_gather_ok_fn = partial(safe_gather_1d_ok_cfg, cfg=guard_cfg)
         host_bool_value_fn = _maybe_override(
             host_bool_value_fn, _host_bool_value, cfg.host_bool_value_fn
         )
@@ -403,6 +401,8 @@ def cycle_candidates(
             if cfg.flags.slot1_enabled is not None and cnf2_slot1_enabled_fn is _cnf2_slot1_enabled:
                 cnf2_slot1_enabled_fn = lambda: bool(cfg.flags.slot1_enabled)
 
+    if guard_cfg is not None and safe_gather_ok_fn is _jax_safe.safe_gather_1d_ok:
+        safe_gather_ok_fn = partial(safe_gather_1d_ok_cfg, cfg=guard_cfg)
     if intern_cfg is not None and intern_fn is intern_nodes:
         intern_fn = partial(intern_nodes, cfg=intern_cfg)
     if intern_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
