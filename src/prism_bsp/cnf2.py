@@ -21,6 +21,7 @@ from prism_core.safety import (
     oob_any,
     oob_any_value,
 )
+from prism_core.errors import PrismPolicyBindingError
 from prism_core.modes import ValidateMode
 from prism_coord.coord import coord_xor_batch
 from prism_ledger.intern import intern_nodes
@@ -421,9 +422,17 @@ def _cycle_candidates_core_common(
 
     policy_mode = coerce_policy_mode(policy_mode, context="cycle_candidates_core")
     if policy_mode == PolicyMode.STATIC and safe_gather_policy is None:
-        raise ValueError("cycle_candidates core (static) requires safe_gather_policy")
+        raise PrismPolicyBindingError(
+            "cycle_candidates core (static) requires safe_gather_policy",
+            context="cycle_candidates_core",
+            policy_mode="static",
+        )
     if policy_mode == PolicyMode.VALUE and safe_gather_policy_value is None:
-        raise ValueError("cycle_candidates core (value) requires safe_gather_policy_value")
+        raise PrismPolicyBindingError(
+            "cycle_candidates core (value) requires safe_gather_policy_value",
+            context="cycle_candidates_core",
+            policy_mode="value",
+        )
     if intern_cfg is not None and intern_fn is intern_nodes:
         intern_fn = partial(intern_nodes, cfg=intern_cfg)
     if intern_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
@@ -683,8 +692,10 @@ def _cycle_candidates_core_common(
     if meta is not None:
         if policy_mode == PolicyMode.STATIC:
             if meta.safe_gather_policy_value is not None:
-                raise ValueError(
-                    "cycle_candidates core (static) received policy_value metadata"
+                raise PrismPolicyBindingError(
+                    "cycle_candidates core (static) received policy_value metadata",
+                    context="cycle_candidates_core",
+                    policy_mode="static",
                 )
             if meta.safe_gather_policy is not None:
                 post_ids, ok = _apply_q_optional_ok(apply_q_fn, q_map, next_frontier)
@@ -693,8 +704,10 @@ def _cycle_candidates_core_common(
                     ledger2 = ledger2._replace(corrupt=ledger2.corrupt | corrupt)
         else:
             if meta.safe_gather_policy is not None:
-                raise ValueError(
-                    "cycle_candidates core (value) received policy metadata"
+                raise PrismPolicyBindingError(
+                    "cycle_candidates core (value) received policy metadata",
+                    context="cycle_candidates_core",
+                    policy_mode="value",
                 )
             if meta.safe_gather_policy_value is not None:
                 post_ids, ok = _apply_q_optional_ok(apply_q_fn, q_map, next_frontier)
