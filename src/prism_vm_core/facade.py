@@ -256,24 +256,22 @@ def op_sort_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_with_perm with guard cfg."""
-    if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise PrismPolicyBindingError(
-            "op_sort_with_perm_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value",
-            context="op_sort_with_perm_cfg",
-            policy_mode="ambiguous",
-        )
-    if safe_gather_policy_value is not None:
+    binding = resolve_policy_binding(
+        policy=safe_gather_policy,
+        policy_value=safe_gather_policy_value,
+        context="op_sort_with_perm_cfg",
+    )
+    if binding.mode == PolicyMode.VALUE:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_with_perm_value,
             {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
             arena,
-            safe_gather_policy_value,
+            binding.policy_value,
         )
     return call_with_optional_kwargs(
         op_sort_and_swizzle_with_perm,
         {
-            "safe_gather_policy": safe_gather_policy,
+            "safe_gather_policy": binding.policy,
             "guard_cfg": guard_cfg,
         },
         arena,
@@ -293,26 +291,24 @@ def op_sort_blocked_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_blocked_with_perm with guard cfg."""
-    if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise PrismPolicyBindingError(
-            "op_sort_blocked_with_perm_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value",
-            context="op_sort_blocked_with_perm_cfg",
-            policy_mode="ambiguous",
-        )
-    if safe_gather_policy_value is not None:
+    binding = resolve_policy_binding(
+        policy=safe_gather_policy,
+        policy_value=safe_gather_policy_value,
+        context="op_sort_blocked_with_perm_cfg",
+    )
+    if binding.mode == PolicyMode.VALUE:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_blocked_with_perm_value,
             {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
             arena,
             block_size,
-            safe_gather_policy_value,
+            binding.policy_value,
             morton=morton,
         )
     return call_with_optional_kwargs(
         op_sort_and_swizzle_blocked_with_perm,
         {
-            "safe_gather_policy": safe_gather_policy,
+            "safe_gather_policy": binding.policy,
             "guard_cfg": guard_cfg,
         },
         arena,
@@ -336,28 +332,26 @@ def op_sort_hierarchical_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_hierarchical_with_perm with guard cfg."""
-    if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise PrismPolicyBindingError(
-            "op_sort_hierarchical_with_perm_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value",
-            context="op_sort_hierarchical_with_perm_cfg",
-            policy_mode="ambiguous",
-        )
-    if safe_gather_policy_value is not None:
+    binding = resolve_policy_binding(
+        policy=safe_gather_policy,
+        policy_value=safe_gather_policy_value,
+        context="op_sort_hierarchical_with_perm_cfg",
+    )
+    if binding.mode == PolicyMode.VALUE:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_hierarchical_with_perm_value,
             {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
             arena,
             l2_block_size,
             l1_block_size,
-            safe_gather_policy_value,
+            binding.policy_value,
             morton=morton,
             do_global=do_global,
         )
     return call_with_optional_kwargs(
         op_sort_and_swizzle_hierarchical_with_perm,
         {
-            "safe_gather_policy": safe_gather_policy,
+            "safe_gather_policy": binding.policy,
             "guard_cfg": guard_cfg,
         },
         arena,
@@ -380,25 +374,23 @@ def op_sort_morton_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_morton_with_perm with guard cfg."""
-    if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise PrismPolicyBindingError(
-            "op_sort_morton_with_perm_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value",
-            context="op_sort_morton_with_perm_cfg",
-            policy_mode="ambiguous",
-        )
-    if safe_gather_policy_value is not None:
+    binding = resolve_policy_binding(
+        policy=safe_gather_policy,
+        policy_value=safe_gather_policy_value,
+        context="op_sort_morton_with_perm_cfg",
+    )
+    if binding.mode == PolicyMode.VALUE:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_morton_with_perm_value,
             {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
             arena,
             morton,
-            safe_gather_policy_value,
+            binding.policy_value,
         )
     return call_with_optional_kwargs(
         op_sort_and_swizzle_morton_with_perm,
         {
-            "safe_gather_policy": safe_gather_policy,
+            "safe_gather_policy": binding.policy,
             "guard_cfg": guard_cfg,
         },
         arena,
@@ -419,26 +411,24 @@ def op_sort_servo_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_servo_with_perm with guard cfg."""
-    if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise PrismPolicyBindingError(
-            "op_sort_servo_with_perm_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value",
-            context="op_sort_servo_with_perm_cfg",
-            policy_mode="ambiguous",
-        )
-    if safe_gather_policy_value is not None:
+    binding = resolve_policy_binding(
+        policy=safe_gather_policy,
+        policy_value=safe_gather_policy_value,
+        context="op_sort_servo_with_perm_cfg",
+    )
+    if binding.mode == PolicyMode.VALUE:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_servo_with_perm_value,
             {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
             arena,
             morton,
             servo_mask,
-            safe_gather_policy_value,
+            binding.policy_value,
         )
     return call_with_optional_kwargs(
         op_sort_and_swizzle_servo_with_perm,
         {
-            "safe_gather_policy": safe_gather_policy,
+            "safe_gather_policy": binding.policy,
             "guard_cfg": guard_cfg,
         },
         arena,
@@ -1027,14 +1017,12 @@ def commit_stratum(
     Axis: Interface/Control. Commutes with q. Erased by q.
     Test: tests/test_commit_stratum.py
     """
-    if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise PrismPolicyBindingError(
-            "commit_stratum received both safe_gather_policy and "
-            "safe_gather_policy_value",
-            context="commit_stratum",
-            policy_mode="ambiguous",
-        )
-    if safe_gather_policy_value is not None:
+    binding = resolve_policy_binding(
+        policy=safe_gather_policy,
+        policy_value=safe_gather_policy_value,
+        context="commit_stratum",
+    )
+    if binding.mode == PolicyMode.VALUE:
         return commit_stratum_value(
             ledger,
             stratum,
@@ -1042,7 +1030,7 @@ def commit_stratum(
             validate=validate,
             validate_mode=validate_mode,
             intern_fn=intern_fn,
-            safe_gather_policy_value=safe_gather_policy_value,
+            safe_gather_policy_value=binding.policy_value,
             guard_cfg=guard_cfg,
         )
     return commit_stratum_static(
@@ -1052,7 +1040,7 @@ def commit_stratum(
         validate=validate,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
-        safe_gather_policy=safe_gather_policy,
+        safe_gather_policy=binding.policy,
         guard_cfg=guard_cfg,
     )
 
