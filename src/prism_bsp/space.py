@@ -7,13 +7,12 @@ import jax.numpy as jnp
 from jax import jit, lax
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.di import wrap_policy
 from prism_core.safety import SafetyPolicy
 from prism_vm_core.domains import _host_int, _host_int_value
 from prism_vm_core.guards import (
     GuardConfig,
     DEFAULT_GUARD_CONFIG,
-    make_safe_gather_fn,
+    resolve_safe_gather_fn,
     guard_null_row_cfg,
     guard_slot0_perm_cfg,
     guard_swizzle_args_cfg,
@@ -158,10 +157,10 @@ def _apply_perm_and_swizzle(
     # BSP_s renorm: layout-only; must commute with q/denote.
     if guard_cfg is None:
         guard_cfg = DEFAULT_GUARD_CONFIG
-    safe_gather_fn = make_safe_gather_fn(
-        cfg=guard_cfg,
-        policy=safe_gather_policy,
+    safe_gather_fn = resolve_safe_gather_fn(
         safe_gather_fn=safe_gather_fn,
+        policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
     )
     inv_perm = _invert_perm(perm)
     new_ops = arena.opcode[perm]

@@ -5,7 +5,7 @@ from typing import Callable, Optional
 
 import jax.numpy as jnp
 
-from prism_core.di import call_with_optional_kwargs
+from prism_core.di import call_with_optional_kwargs, wrap_index_policy, wrap_policy
 from prism_core import jax_safe as _jax_safe
 
 
@@ -122,6 +122,30 @@ def make_safe_gather_fn(
     return _safe_gather
 
 
+def make_safe_gather_ok_fn(
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+    policy=None,
+    safe_gather_ok_fn=None,
+):
+    """Return a SafeGatherOkFn wired to the provided GuardConfig."""
+    if safe_gather_ok_fn is None:
+        safe_gather_ok_fn = _jax_safe.safe_gather_1d_ok
+
+    def _safe_gather_ok(arr, idx, label, *, policy=policy):
+        size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
+        guard_gather_index_cfg(idx, size, label, cfg=cfg)
+        return call_with_optional_kwargs(
+            safe_gather_ok_fn,
+            {"guard": False, "policy": policy},
+            arr,
+            idx,
+            label,
+        )
+
+    return _safe_gather_ok
+
+
 def make_safe_index_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
@@ -145,6 +169,54 @@ def make_safe_index_fn(
     return _safe_index
 
 
+def resolve_safe_gather_fn(
+    *,
+    safe_gather_fn=None,
+    policy=None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Return a SafeGatherFn with optional SafetyPolicy + GuardConfig wiring."""
+    if safe_gather_fn is None:
+        safe_gather_fn = _jax_safe.safe_gather_1d
+    if guard_cfg is not None:
+        return make_safe_gather_fn(
+            cfg=guard_cfg, policy=policy, safe_gather_fn=safe_gather_fn
+        )
+    return wrap_policy(safe_gather_fn, policy)
+
+
+def resolve_safe_gather_ok_fn(
+    *,
+    safe_gather_ok_fn=None,
+    policy=None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Return a SafeGatherOkFn with optional SafetyPolicy + GuardConfig wiring."""
+    if safe_gather_ok_fn is None:
+        safe_gather_ok_fn = _jax_safe.safe_gather_1d_ok
+    if guard_cfg is not None:
+        return make_safe_gather_ok_fn(
+            cfg=guard_cfg, policy=policy, safe_gather_ok_fn=safe_gather_ok_fn
+        )
+    return wrap_policy(safe_gather_ok_fn, policy)
+
+
+def resolve_safe_index_fn(
+    *,
+    safe_index_fn=None,
+    policy=None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Return a SafeIndexFn with optional SafetyPolicy + GuardConfig wiring."""
+    if safe_index_fn is None:
+        safe_index_fn = _jax_safe.safe_index_1d
+    if guard_cfg is not None:
+        return make_safe_index_fn(
+            cfg=guard_cfg, policy=policy, safe_index_fn=safe_index_fn
+        )
+    return wrap_index_policy(safe_index_fn, policy)
+
+
 __all__ = [
     "GuardConfig",
     "DEFAULT_GUARD_CONFIG",
@@ -153,5 +225,9 @@ __all__ = [
     "safe_gather_1d_cfg",
     "safe_gather_1d_ok_cfg",
     "make_safe_gather_fn",
+    "make_safe_gather_ok_fn",
     "make_safe_index_fn",
+    "resolve_safe_gather_fn",
+    "resolve_safe_gather_ok_fn",
+    "resolve_safe_index_fn",
 ]

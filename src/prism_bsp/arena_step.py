@@ -3,8 +3,8 @@ import jax.numpy as jnp
 from jax import jit, lax
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.di import call_with_optional_kwargs, wrap_policy
-from prism_core.guards import make_safe_gather_fn
+from prism_core.di import call_with_optional_kwargs
+from prism_core.guards import resolve_safe_gather_fn
 from prism_metrics.metrics import _damage_metrics_update, _damage_tile_size
 from prism_vm_core.domains import _host_int_value
 from prism_vm_core.gating import _servo_enabled
@@ -146,15 +146,11 @@ def op_interact_cfg(
     arena, *, cfg: ArenaInteractConfig = DEFAULT_ARENA_INTERACT_CONFIG
 ):
     """Interface/Control wrapper for op_interact with DI bundle."""
-    safe_gather_fn = cfg.safe_gather_fn or _jax_safe.safe_gather_1d
-    if cfg.guard_cfg is not None:
-        safe_gather_fn = make_safe_gather_fn(
-            cfg=cfg.guard_cfg,
-            policy=cfg.safe_gather_policy,
-            safe_gather_fn=safe_gather_fn,
-        )
-    else:
-        safe_gather_fn = wrap_policy(safe_gather_fn, cfg.safe_gather_policy)
+    safe_gather_fn = resolve_safe_gather_fn(
+        safe_gather_fn=cfg.safe_gather_fn,
+        policy=cfg.safe_gather_policy,
+        guard_cfg=cfg.guard_cfg,
+    )
     scatter_drop_fn = cfg.scatter_drop_fn or _jax_safe.scatter_drop
     guard_max_fn = cfg.guard_max_fn or _guard_max
     return op_interact(
@@ -252,11 +248,10 @@ def cycle_core(
                     arena,
                 )
         # Root remap is a pointer gather; guard when guard_cfg is supplied.
-        safe_gather_root = safe_gather_fn
-        if guard_cfg is not None:
-            safe_gather_root = make_safe_gather_fn(
-                cfg=guard_cfg, safe_gather_fn=safe_gather_fn
-            )
+        safe_gather_root = resolve_safe_gather_fn(
+            safe_gather_fn=safe_gather_fn,
+            guard_cfg=guard_cfg,
+        )
         root_idx = jnp.where(root_arr != 0, root_arr, jnp.int32(0))
         root_g = safe_gather_root(inv_perm, root_idx, "cycle.root_remap")
         root_arr = jnp.where(root_arr != 0, root_g, 0)
@@ -360,15 +355,11 @@ def cycle_cfg(
         cfg.op_sort_and_swizzle_servo_with_perm_fn
         or op_sort_and_swizzle_servo_with_perm
     )
-    safe_gather_fn = cfg.safe_gather_fn or _jax_safe.safe_gather_1d
-    if cfg.guard_cfg is not None:
-        safe_gather_fn = make_safe_gather_fn(
-            cfg=cfg.guard_cfg,
-            policy=cfg.safe_gather_policy,
-            safe_gather_fn=safe_gather_fn,
-        )
-    else:
-        safe_gather_fn = wrap_policy(safe_gather_fn, cfg.safe_gather_policy)
+    safe_gather_fn = resolve_safe_gather_fn(
+        safe_gather_fn=cfg.safe_gather_fn,
+        policy=cfg.safe_gather_policy,
+        guard_cfg=cfg.guard_cfg,
+    )
     arena_root_hash_fn = cfg.arena_root_hash_fn or _arena_root_hash_host
     damage_tile_size_fn = cfg.damage_tile_size_fn or _damage_tile_size
     damage_metrics_update_fn = cfg.damage_metrics_update_fn or _damage_metrics_update

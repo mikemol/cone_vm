@@ -5,7 +5,7 @@ from functools import partial
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.di import call_with_optional_kwargs
-from prism_core.guards import GuardConfig, safe_gather_1d_ok_cfg
+from prism_core.guards import GuardConfig, resolve_safe_gather_ok_fn
 from prism_core.compact import scatter_compacted_ids
 from prism_core.safety import SafetyPolicy, oob_any
 from prism_coord.coord import coord_xor_batch
@@ -371,8 +371,6 @@ def cycle_candidates(
         safe_gather_ok_fn = _maybe_override(
             safe_gather_ok_fn, _jax_safe.safe_gather_1d_ok, cfg.safe_gather_ok_fn
         )
-        if guard_cfg is not None and safe_gather_ok_fn is _jax_safe.safe_gather_1d_ok:
-            safe_gather_ok_fn = partial(safe_gather_1d_ok_cfg, cfg=guard_cfg)
         host_bool_value_fn = _maybe_override(
             host_bool_value_fn, _host_bool_value, cfg.host_bool_value_fn
         )
@@ -401,8 +399,11 @@ def cycle_candidates(
             if cfg.flags.slot1_enabled is not None and cnf2_slot1_enabled_fn is _cnf2_slot1_enabled:
                 cnf2_slot1_enabled_fn = lambda: bool(cfg.flags.slot1_enabled)
 
-    if guard_cfg is not None and safe_gather_ok_fn is _jax_safe.safe_gather_1d_ok:
-        safe_gather_ok_fn = partial(safe_gather_1d_ok_cfg, cfg=guard_cfg)
+    safe_gather_ok_fn = resolve_safe_gather_ok_fn(
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
     if intern_cfg is not None and intern_fn is intern_nodes:
         intern_fn = partial(intern_nodes, cfg=intern_cfg)
     if intern_cfg is not None and coord_xor_batch_fn is coord_xor_batch:

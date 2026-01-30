@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from functools import partial
 
 import jax
 import jax.numpy as jnp
@@ -7,8 +6,12 @@ from jax import lax
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.safety import SafetyPolicy
-from prism_core.di import call_with_optional_kwargs, wrap_policy
-from prism_core.guards import GuardConfig, safe_gather_1d_cfg, safe_gather_1d_ok_cfg
+from prism_core.di import call_with_optional_kwargs
+from prism_core.guards import (
+    GuardConfig,
+    resolve_safe_gather_fn,
+    resolve_safe_gather_ok_fn,
+)
 from prism_ledger.intern import intern_nodes
 from prism_vm_core.constants import _PREFIX_SCAN_CHUNK
 from prism_vm_core.domains import (
@@ -270,14 +273,18 @@ def commit_stratum(
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
     q_prev: QMap = prior_q or identity_q_fn
-    if guard_cfg is not None:
-        if safe_gather_fn is safe_gather_1d:
-            safe_gather_fn = partial(safe_gather_1d_cfg, cfg=guard_cfg)
-        if safe_gather_ok_fn is safe_gather_1d_ok:
-            safe_gather_ok_fn = partial(safe_gather_1d_ok_cfg, cfg=guard_cfg)
     if safe_gather_policy is None:
         safe_gather_policy = SafetyPolicy()
-    safe_gather_fn = wrap_policy(safe_gather_fn, safe_gather_policy)
+    safe_gather_fn = resolve_safe_gather_fn(
+        safe_gather_fn=safe_gather_fn,
+        policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
+    safe_gather_ok_fn = resolve_safe_gather_ok_fn(
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
     # SYNC: host int() pulls device scalar for host-side control flow (m1).
     count = host_int_value_fn(jnp.maximum(stratum.count, 0))
     if count == 0:
