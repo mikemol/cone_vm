@@ -441,14 +441,12 @@ def safe_gather_1d_cfg(
     return_ok: bool = False,
 ):
     """Interface/Control wrapper for safe_gather_1d with guard config."""
-    return _safe_gather_1d_cfg(
+    return call_with_optional_kwargs(
+        _safe_gather_1d_cfg,
+        {"guard": guard, "policy": policy, "cfg": cfg, "return_ok": return_ok},
         arr,
         idx,
         label,
-        guard=guard,
-        policy=policy,
-        cfg=cfg,
-        return_ok=return_ok,
     )
 
 
@@ -462,13 +460,12 @@ def safe_gather_1d_ok_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Interface/Control wrapper for safe_gather_1d_ok with guard config."""
-    return _safe_gather_1d_ok_cfg(
+    return call_with_optional_kwargs(
+        _safe_gather_1d_ok_cfg,
+        {"guard": guard, "policy": policy, "cfg": cfg},
         arr,
         idx,
         label,
-        guard=guard,
-        policy=policy,
-        cfg=cfg,
     )
 
 
@@ -502,13 +499,12 @@ def safe_index_1d_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Interface/Control wrapper for safe_index_1d with guard config."""
-    return _safe_index_1d_cfg(
+    return call_with_optional_kwargs(
+        _safe_index_1d_cfg,
+        {"guard": guard, "policy": policy, "cfg": cfg},
         idx,
         size,
         label,
-        guard=guard,
-        policy=policy,
-        cfg=cfg,
     )
 
 def node_batch(op, a1, a2) -> NodeBatch:
