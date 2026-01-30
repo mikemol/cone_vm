@@ -373,8 +373,7 @@ def _commit_stratum_common(
     ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
-    validate: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     policy_mode: PolicyMode | str,
     intern_fn: InternFn = intern_nodes,
@@ -398,8 +397,6 @@ def _commit_stratum_common(
 ):
     # Collapseʰ: homomorphic projection q at the stratum boundary.
     mode = coerce_validate_mode(validate_mode, context="commit_stratum")
-    if validate and mode == ValidateMode.NONE:
-        mode = ValidateMode.STRICT
     if guards_enabled_fn() and mode == ValidateMode.NONE:
         mode = ValidateMode.STRICT
     if mode != ValidateMode.NONE:
@@ -477,7 +474,7 @@ def _commit_stratum_common(
     a2 = q_prev(provisional_ids_fn(ledger.arg2[ids])).a
     canon_ids_raw, ledger = intern_fn(ledger, node_batch_fn(ops, a1, a2))
     canon_ids = committed_ids_fn(canon_ids_raw)
-    if (validate or guards_enabled_fn()) and canon_ids.a.shape[0] != count:
+    if (mode != ValidateMode.NONE or guards_enabled_fn()) and canon_ids.a.shape[0] != count:
         raise ValueError("Stratum count mismatch in commit_stratum")
 
     def q_map(ids_in):
@@ -517,8 +514,7 @@ def commit_stratum_static(
     ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
-    validate: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -548,7 +544,6 @@ def commit_stratum_static(
         ledger,
         stratum,
         prior_q=prior_q,
-        validate=validate,
         validate_mode=validate_mode,
         policy_mode=PolicyMode.STATIC,
         intern_fn=intern_fn,
@@ -576,8 +571,7 @@ def commit_stratum_value(
     ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
-    validate: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -606,7 +600,6 @@ def commit_stratum_value(
         ledger,
         stratum,
         prior_q=prior_q,
-        validate=validate,
         validate_mode=validate_mode,
         policy_mode=PolicyMode.VALUE,
         intern_fn=intern_fn,
@@ -634,8 +627,7 @@ def commit_stratum(
     ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
-    validate: bool = False,
-    validate_mode: ValidateMode | str = ValidateMode.NONE,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -678,7 +670,6 @@ def commit_stratum(
                 ledger,
                 stratum,
                 prior_q=prior_q,
-                validate=validate,
                 validate_mode=validate_mode,
                 intern_fn=intern_fn,
                 node_batch_fn=node_batch_fn,
@@ -699,7 +690,6 @@ def commit_stratum(
             ledger,
             stratum,
             prior_q=prior_q,
-            validate=validate,
             validate_mode=validate_mode,
             intern_fn=intern_fn,
             node_batch_fn=node_batch_fn,
@@ -721,7 +711,6 @@ def commit_stratum(
             ledger,
             stratum,
             prior_q=prior_q,
-            validate=validate,
             validate_mode=validate_mode,
             intern_fn=intern_fn,
             node_batch_fn=node_batch_fn,
@@ -742,7 +731,6 @@ def commit_stratum(
         ledger,
         stratum,
         prior_q=prior_q,
-        validate=validate,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
         node_batch_fn=node_batch_fn,

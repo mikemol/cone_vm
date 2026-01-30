@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.modes import ValidateMode, coerce_validate_mode
 from prism_core.safety import oob_mask
 from prism_baseline.kernels import dispatch_kernel, kernel_add, kernel_mul, optimize_ptr
 from prism_bsp.arena_step import cycle
@@ -459,8 +460,11 @@ def run_program_lines_bsp(
     l1_block_size=None,
     do_global=False,
     bsp_mode=BspMode.AUTO,
-    validate_stratum=False,
+    validate_mode: ValidateMode = ValidateMode.NONE,
 ):
+    validate_mode = coerce_validate_mode(
+        validate_mode, context="run_program_lines_bsp"
+    )
     if vm is None:
         vm = PrismVM_BSP()
     bsp_mode = _normalize_bsp_mode(bsp_mode)
@@ -479,7 +483,7 @@ def run_program_lines_bsp(
                 frontier = _committed_ids(frontier_arr)
             else:
                 vm.ledger, frontier_prov, _, q_map = cycle_candidates(
-                    vm.ledger, frontier, validate_stratum=validate_stratum
+                    vm.ledger, frontier, validate_mode=validate_mode
                 )
                 frontier, ok = apply_q(q_map, frontier_prov, return_ok=True)
                 meta = getattr(q_map, "_prism_meta", None)
@@ -503,8 +507,9 @@ def repl(
     use_morton=False,
     block_size=None,
     bsp_mode=BspMode.AUTO,
-    validate_stratum=False,
+    validate_mode: ValidateMode = ValidateMode.NONE,
 ):
+    validate_mode = coerce_validate_mode(validate_mode, context="repl")
     if mode == "bsp":
         vm = PrismVM_BSP()
         bsp_mode = _normalize_bsp_mode(bsp_mode)
@@ -534,7 +539,7 @@ def repl(
                     use_morton=use_morton,
                     block_size=block_size,
                     bsp_mode=bsp_mode,
-                    validate_stratum=validate_stratum,
+                    validate_mode=validate_mode,
                 )
             elif mode == "arena":
                 run_program_lines_arena(
@@ -555,7 +560,7 @@ def main():
     args = sys.argv[1:]
     mode = "baseline"
     bsp_mode = BspMode.AUTO
-    validate_stratum = False
+    validate_mode: ValidateMode = ValidateMode.NONE
     cycles = 1
     do_sort = True
     use_morton = False
@@ -589,12 +594,25 @@ def main():
             i += 1
             continue
         if arg == "--validate-stratum":
-            validate_stratum = True
+            validate_mode = ValidateMode.STRICT
             i += 1
             continue
         if arg.startswith("--validate-stratum="):
             value = arg.split("=", 1)[1].strip().lower()
-            validate_stratum = value in ("1", "true", "yes", "on")
+            if value in ("1", "true", "yes", "on"):
+                validate_mode = ValidateMode.STRICT
+            i += 1
+            continue
+        if arg == "--validate-mode" and i + 1 < len(args):
+            validate_mode = coerce_validate_mode(
+                args[i + 1], context="cli"
+            )
+            i += 2
+            continue
+        if arg.startswith("--validate-mode="):
+            validate_mode = coerce_validate_mode(
+                arg.split("=", 1)[1], context="cli"
+            )
             i += 1
             continue
         if arg == "--no-sort":
@@ -629,7 +647,7 @@ def main():
                 use_morton=use_morton,
                 block_size=block_size,
                 bsp_mode=bsp_mode,
-                validate_stratum=validate_stratum,
+                validate_mode=validate_mode,
             )
         elif mode == "arena":
             run_program_lines_arena(
@@ -647,7 +665,7 @@ def main():
             use_morton=use_morton,
             block_size=block_size,
             bsp_mode=bsp_mode,
-            validate_stratum=validate_stratum,
+            validate_mode=validate_mode,
         )
 
 
