@@ -236,6 +236,7 @@ __all__ = [
     "cycle_candidates",
     "cycle_candidates_static",
     "cycle_candidates_value",
+    "cycle_candidates_bound",
     "op_rank",
     "coord_norm",
     "coord_xor",

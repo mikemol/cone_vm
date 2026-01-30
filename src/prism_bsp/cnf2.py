@@ -12,6 +12,7 @@ from prism_core.guards import (
 )
 from prism_core.compact import scatter_compacted_ids
 from prism_core.safety import (
+    PolicyBinding,
     PolicyMode,
     coerce_policy_mode,
     DEFAULT_SAFETY_POLICY,
@@ -1155,6 +1156,105 @@ def cycle_candidates(
     )
 
 
+def cycle_candidates_bound(
+    ledger,
+    frontier_ids,
+    policy_binding: PolicyBinding,
+    validate_stratum: bool = False,
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    *,
+    cfg: Cnf2Config | None = None,
+    guard_cfg: GuardConfig | None = None,
+    intern_fn: InternFn = intern_nodes,
+    intern_cfg: InternConfig | None = None,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    coord_xor_batch_fn: CoordXorBatchFn = coord_xor_batch,
+    emit_candidates_fn: EmitCandidatesFn = emit_candidates,
+    candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
+    scatter_drop_fn: ScatterDropFn = _scatter_drop,
+    commit_stratum_fn: CommitStratumFn = commit_stratum,
+    apply_q_fn: ApplyQFn = apply_q,
+    identity_q_fn: IdentityQFn = _identity_q,
+    safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
+    safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
+    host_bool_value_fn: HostBoolValueFn = _host_bool_value,
+    host_int_value_fn: HostIntValueFn = _host_int_value,
+    guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
+    ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
+    cnf2_enabled_fn=_cnf2_enabled,
+    cnf2_slot1_enabled_fn=_cnf2_slot1_enabled,
+    cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
+    cnf2_metrics_update_fn=_cnf2_metrics_update,
+):
+    """PolicyBinding-required wrapper for cycle_candidates."""
+    if cfg is None:
+        cfg = Cnf2Config(policy_binding=policy_binding)
+    else:
+        cfg = replace(
+            cfg,
+            policy_binding=policy_binding,
+            safe_gather_policy=None,
+            safe_gather_policy_value=None,
+        )
+    if policy_binding.mode == PolicyMode.VALUE:
+        return cycle_candidates_value(
+            ledger,
+            frontier_ids,
+            validate_stratum=validate_stratum,
+            validate_mode=validate_mode,
+            cfg=cfg,
+            safe_gather_policy_value=policy_binding.policy_value,
+            guard_cfg=guard_cfg,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            node_batch_fn=node_batch_fn,
+            coord_xor_batch_fn=coord_xor_batch_fn,
+            emit_candidates_fn=emit_candidates_fn,
+            candidate_indices_fn=candidate_indices_fn,
+            scatter_drop_fn=scatter_drop_fn,
+            commit_stratum_fn=commit_stratum_fn,
+            apply_q_fn=apply_q_fn,
+            identity_q_fn=identity_q_fn,
+            safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+            host_bool_value_fn=host_bool_value_fn,
+            host_int_value_fn=host_int_value_fn,
+            guards_enabled_fn=guards_enabled_fn,
+            ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
+            cnf2_enabled_fn=cnf2_enabled_fn,
+            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+            cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
+            cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+        )
+    return cycle_candidates_static(
+        ledger,
+        frontier_ids,
+        validate_stratum=validate_stratum,
+        validate_mode=validate_mode,
+        cfg=cfg,
+        safe_gather_policy=policy_binding.policy,
+        guard_cfg=guard_cfg,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        node_batch_fn=node_batch_fn,
+        coord_xor_batch_fn=coord_xor_batch_fn,
+        emit_candidates_fn=emit_candidates_fn,
+        candidate_indices_fn=candidate_indices_fn,
+        scatter_drop_fn=scatter_drop_fn,
+        commit_stratum_fn=commit_stratum_fn,
+        apply_q_fn=apply_q_fn,
+        identity_q_fn=identity_q_fn,
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        host_bool_value_fn=host_bool_value_fn,
+        host_int_value_fn=host_int_value_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
+        cnf2_enabled_fn=cnf2_enabled_fn,
+        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
+        cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+    )
+
+
 __all__ = [
     "emit_candidates",
     "emit_candidates_cfg",
@@ -1170,4 +1270,5 @@ __all__ = [
     "cycle_candidates",
     "cycle_candidates_static",
     "cycle_candidates_value",
+    "cycle_candidates_bound",
 ]

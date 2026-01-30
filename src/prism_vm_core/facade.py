@@ -1465,3 +1465,50 @@ def cycle_candidates(
         cnf2_enabled_fn=cnf2_enabled_fn,
         cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
     )
+
+
+def cycle_candidates_bound(
+    ledger,
+    frontier_ids,
+    policy_binding: PolicyBinding,
+    validate_stratum: bool = False,
+    validate_mode: ValidateMode | str = ValidateMode.STRICT,
+    *,
+    intern_fn: InternFn | None = None,
+    intern_cfg: InternConfig | None = None,
+    emit_candidates_fn: EmitCandidatesFn | None = None,
+    host_raise_if_bad_fn: HostRaiseFn | None = None,
+    guard_cfg: GuardConfig | None = None,
+    cnf2_cfg: Cnf2Config | None = None,
+    cnf2_flags: Cnf2Flags | None = None,
+    cnf2_enabled_fn=None,
+    cnf2_slot1_enabled_fn=None,
+):
+    """Interface/Control wrapper for CNF-2 evaluation with required PolicyBinding."""
+    if cnf2_cfg is None:
+        cnf2_cfg = Cnf2Config(policy_binding=policy_binding)
+    else:
+        cnf2_cfg = replace(
+            cnf2_cfg,
+            policy_binding=policy_binding,
+            safe_gather_policy=None,
+            safe_gather_policy_value=None,
+        )
+    return _cycle_candidates_common(
+        ledger,
+        frontier_ids,
+        validate_stratum,
+        validate_mode,
+        policy_mode=policy_binding.mode,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        emit_candidates_fn=emit_candidates_fn,
+        host_raise_if_bad_fn=host_raise_if_bad_fn,
+        safe_gather_policy=policy_binding.policy,
+        safe_gather_policy_value=policy_binding.policy_value,
+        guard_cfg=guard_cfg,
+        cnf2_cfg=cnf2_cfg,
+        cnf2_flags=cnf2_flags,
+        cnf2_enabled_fn=cnf2_enabled_fn,
+        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+    )
