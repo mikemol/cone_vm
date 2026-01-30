@@ -26,6 +26,16 @@ def make_cycle_candidates_jit(**kwargs):
     return pv.cycle_candidates_jit(**kwargs)
 
 
+def make_cycle_candidates_static_jit(**kwargs):
+    """Build a jitted CNF-2 cycle entrypoint (static policy)."""
+    return pv.cycle_candidates_static_jit(**kwargs)
+
+
+def make_cycle_candidates_value_jit(**kwargs):
+    """Build a jitted CNF-2 cycle entrypoint (policy as JAX value)."""
+    return pv.cycle_candidates_value_jit(**kwargs)
+
+
 def make_emit_candidates_jit_cfg(**kwargs):
     """Build a jitted emit_candidates entrypoint from a config."""
     return pv.emit_candidates_jit_cfg(**kwargs)
