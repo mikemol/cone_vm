@@ -6,6 +6,8 @@ from typing import Callable, TypeVar
 
 import jax
 
+from prism_core.errors import PrismPolicyBindingError
+
 T = TypeVar("T")
 
 
@@ -17,12 +19,24 @@ def wrap_policy(safe_gather_fn, policy):
     """Wrap a safe_gather_fn with a fixed SafetyPolicy (if provided)."""
     if policy is None:
         return safe_gather_fn
+    if getattr(safe_gather_fn, "_prism_policy_bound", False):
+        raise PrismPolicyBindingError(
+            "policy already bound in wrap_policy; remove duplicate",
+            context="wrap_policy",
+            policy_mode="static",
+        )
     wrapped = bind_optional_kwargs(safe_gather_fn, policy=policy)
 
-    def _safe_gather(arr, idx, label, **kwargs):
-        if "policy" in kwargs:
-            raise TypeError("policy already bound in wrap_policy; remove duplicate")
-        return wrapped(arr, idx, label, **kwargs)
+    def _safe_gather(arr, idx, label, *, guard=None, return_ok=None):
+        optional = {"guard": guard}
+        if return_ok is not None:
+            optional["return_ok"] = return_ok
+        return call_with_optional_kwargs(wrapped, optional, arr, idx, label)
+
+    try:
+        setattr(_safe_gather, "_prism_policy_bound", True)
+    except Exception:
+        pass
 
     return _safe_gather
 
@@ -31,12 +45,23 @@ def wrap_index_policy(safe_index_fn, policy):
     """Wrap a safe_index_fn with a fixed SafetyPolicy (if provided)."""
     if policy is None:
         return safe_index_fn
+    if getattr(safe_index_fn, "_prism_policy_bound", False):
+        raise PrismPolicyBindingError(
+            "policy already bound in wrap_index_policy; remove duplicate",
+            context="wrap_index_policy",
+            policy_mode="static",
+        )
     wrapped = bind_optional_kwargs(safe_index_fn, policy=policy)
 
-    def _safe_index(idx, size, label, **kwargs):
-        if "policy" in kwargs:
-            raise TypeError("policy already bound in wrap_index_policy; remove duplicate")
-        return wrapped(idx, size, label, **kwargs)
+    def _safe_index(idx, size, label, *, guard=None):
+        return call_with_optional_kwargs(
+            wrapped, {"guard": guard}, idx, size, label
+        )
+
+    try:
+        setattr(_safe_index, "_prism_policy_bound", True)
+    except Exception:
+        pass
 
     return _safe_index
 

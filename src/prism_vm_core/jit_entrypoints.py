@@ -10,6 +10,7 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.errors import PrismPolicyBindingError
 from prism_core.di import bind_optional_kwargs, cached_jit, resolve
 from prism_core.guards import (
     GuardConfig,
@@ -175,9 +176,11 @@ def op_interact_jit_cfg(
         cfg.safe_gather_policy is not None
         and cfg.safe_gather_policy_value is not None
     ):
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "op_interact_jit_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="op_interact_jit_cfg",
+            policy_mode="ambiguous",
         )
     if cfg.safe_gather_policy_value is not None:
         return op_interact_value_jit(
@@ -399,9 +402,11 @@ def cycle_candidates_static_jit(
         if (
             cnf2_cfg.safe_gather_policy_value is not None
         ):
-            raise ValueError(
+            raise PrismPolicyBindingError(
                 "cycle_candidates_static_jit received cfg.safe_gather_policy_value; "
-                "use cycle_candidates_value_jit"
+                "use cycle_candidates_value_jit",
+                context="cycle_candidates_static_jit",
+                policy_mode="static",
             )
         if guard_cfg is None and cnf2_cfg.guard_cfg is not None:
             guard_cfg = cnf2_cfg.guard_cfg
@@ -501,9 +506,11 @@ def cycle_candidates_value_jit(
         if emit_candidates_fn is None and cnf2_cfg.emit_candidates_fn is not None:
             emit_candidates_fn = cnf2_cfg.emit_candidates_fn
         if cnf2_cfg.safe_gather_policy is not None:
-            raise ValueError(
+            raise PrismPolicyBindingError(
                 "cycle_candidates_value_jit received cfg.safe_gather_policy; "
-                "use cycle_candidates_static_jit"
+                "use cycle_candidates_static_jit",
+                context="cycle_candidates_value_jit",
+                policy_mode="value",
             )
         if (
             safe_gather_policy_value is None
@@ -589,9 +596,11 @@ def cycle_candidates_jit(
 ):
     """Return a jitted cycle_candidates entrypoint for fixed DI."""
     if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "cycle_candidates_jit received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="cycle_candidates_jit",
+            policy_mode="ambiguous",
         )
     if safe_gather_policy_value is not None:
         return cycle_candidates_value_jit(
@@ -842,9 +851,11 @@ def cycle_jit_cfg(
         cfg.safe_gather_policy is not None
         and cfg.safe_gather_policy_value is not None
     ):
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "cycle_jit_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="cycle_jit_cfg",
+            policy_mode="ambiguous",
         )
     if cfg.safe_gather_policy_value is not None:
         return cycle_value_jit(

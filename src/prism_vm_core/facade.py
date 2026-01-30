@@ -255,9 +255,11 @@ def op_sort_with_perm_cfg(
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_with_perm with guard cfg."""
     if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "op_sort_with_perm_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="op_sort_with_perm_cfg",
+            policy_mode="ambiguous",
         )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
@@ -290,9 +292,11 @@ def op_sort_blocked_with_perm_cfg(
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_blocked_with_perm with guard cfg."""
     if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "op_sort_blocked_with_perm_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="op_sort_blocked_with_perm_cfg",
+            policy_mode="ambiguous",
         )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
@@ -331,9 +335,11 @@ def op_sort_hierarchical_with_perm_cfg(
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_hierarchical_with_perm with guard cfg."""
     if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "op_sort_hierarchical_with_perm_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="op_sort_hierarchical_with_perm_cfg",
+            policy_mode="ambiguous",
         )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
@@ -373,9 +379,11 @@ def op_sort_morton_with_perm_cfg(
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_morton_with_perm with guard cfg."""
     if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "op_sort_morton_with_perm_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="op_sort_morton_with_perm_cfg",
+            policy_mode="ambiguous",
         )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
@@ -410,9 +418,11 @@ def op_sort_servo_with_perm_cfg(
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_servo_with_perm with guard cfg."""
     if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "op_sort_servo_with_perm_cfg received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="op_sort_servo_with_perm_cfg",
+            policy_mode="ambiguous",
         )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
@@ -1016,9 +1026,11 @@ def commit_stratum(
     Test: tests/test_commit_stratum.py
     """
     if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "commit_stratum received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="commit_stratum",
+            policy_mode="ambiguous",
         )
     if safe_gather_policy_value is not None:
         return commit_stratum_value(
@@ -1296,9 +1308,11 @@ def cycle_candidates(
     Test: tests/test_candidate_cycle.py
     """
     if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
+        raise PrismPolicyBindingError(
             "cycle_candidates received both safe_gather_policy and "
-            "safe_gather_policy_value"
+            "safe_gather_policy_value",
+            context="cycle_candidates",
+            policy_mode="ambiguous",
         )
     if safe_gather_policy_value is not None:
         return cycle_candidates_value(
