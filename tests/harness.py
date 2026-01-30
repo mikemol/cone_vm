@@ -36,9 +36,19 @@ def make_compact_candidates_jit_cfg(**kwargs):
     return pv.compact_candidates_jit_cfg(**kwargs)
 
 
+def make_compact_candidates_result_jit_cfg(**kwargs):
+    """Build a jitted compact_candidates_result entrypoint from a config."""
+    return pv.compact_candidates_result_jit_cfg(**kwargs)
+
+
 def make_compact_candidates_with_index_jit_cfg(**kwargs):
     """Build a jitted compact_candidates_with_index entrypoint from a config."""
     return pv.compact_candidates_with_index_jit_cfg(**kwargs)
+
+
+def make_compact_candidates_with_index_result_jit_cfg(**kwargs):
+    """Build a jitted compact_candidates_with_index_result entrypoint from a config."""
+    return pv.compact_candidates_with_index_result_jit_cfg(**kwargs)
 
 
 def make_intern_candidates_jit_cfg(**kwargs):
