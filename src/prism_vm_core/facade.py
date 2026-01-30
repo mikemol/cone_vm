@@ -955,29 +955,26 @@ def commit_stratum(
     )
 
 
-def cycle_candidates(
+def _cycle_candidates_common(
     ledger,
     frontier_ids,
-    validate_stratum: bool = False,
-    validate_mode: str = "strict",
+    validate_stratum: bool,
+    validate_mode: str,
     *,
-    intern_fn: InternFn | None = None,
-    intern_cfg: InternConfig | None = None,
-    emit_candidates_fn: EmitCandidatesFn | None = None,
-    host_raise_if_bad_fn: HostRaiseFn | None = None,
-    safe_gather_policy: SafetyPolicy | None = None,
-    safe_gather_policy_value: PolicyValue | None = None,
-    guard_cfg: GuardConfig | None = None,
-    cnf2_cfg: Cnf2Config | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_enabled_fn=None,
-    cnf2_slot1_enabled_fn=None,
+    policy_mode: str,
+    intern_fn: InternFn | None,
+    intern_cfg: InternConfig | None,
+    emit_candidates_fn: EmitCandidatesFn | None,
+    host_raise_if_bad_fn: HostRaiseFn | None,
+    safe_gather_policy: SafetyPolicy | None,
+    safe_gather_policy_value: PolicyValue | None,
+    guard_cfg: GuardConfig | None,
+    cnf2_cfg: Cnf2Config | None,
+    cnf2_flags: Cnf2Flags | None,
+    cnf2_enabled_fn,
+    cnf2_slot1_enabled_fn,
 ):
-    """Interface/Control wrapper for CNF-2 evaluation with DI hooks.
-
-    Axis: Interface/Control. Commutes with q. Erased by q.
-    Test: tests/test_candidate_cycle.py
-    """
+    """Shared wrapper for CNF-2 entrypoints with explicit policy mode."""
     if intern_fn is None:
         intern_fn = intern_nodes
     if cnf2_cfg is not None and cnf2_flags is not None:
@@ -987,13 +984,6 @@ def cycle_candidates(
     if cnf2_cfg is not None:
         if intern_cfg is None:
             intern_cfg = cnf2_cfg.intern_cfg
-        if safe_gather_policy is None and cnf2_cfg.safe_gather_policy is not None:
-            safe_gather_policy = cnf2_cfg.safe_gather_policy
-        if (
-            safe_gather_policy_value is None
-            and cnf2_cfg.safe_gather_policy_value is not None
-        ):
-            safe_gather_policy_value = cnf2_cfg.safe_gather_policy_value
         if guard_cfg is None and cnf2_cfg.guard_cfg is not None:
             guard_cfg = cnf2_cfg.guard_cfg
         if intern_fn is None and cnf2_cfg.intern_fn is not None:
@@ -1005,11 +995,39 @@ def cycle_candidates(
         if cnf2_slot1_enabled_fn is None and cnf2_cfg.cnf2_slot1_enabled_fn is not None:
             cnf2_slot1_enabled_fn = cnf2_cfg.cnf2_slot1_enabled_fn
         cnf2_flags = cnf2_cfg.flags if cnf2_flags is None else cnf2_flags
-    if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
-            "cycle_candidates received both safe_gather_policy and "
-            "safe_gather_policy_value"
-        )
+        if policy_mode == "static":
+            if cnf2_cfg.safe_gather_policy_value is not None:
+                raise ValueError(
+                    "cycle_candidates_static received cfg.safe_gather_policy_value; "
+                    "use cycle_candidates_value"
+                )
+            if safe_gather_policy is None and cnf2_cfg.safe_gather_policy is not None:
+                safe_gather_policy = cnf2_cfg.safe_gather_policy
+        else:
+            if cnf2_cfg.safe_gather_policy is not None:
+                raise ValueError(
+                    "cycle_candidates_value received cfg.safe_gather_policy; "
+                    "use cycle_candidates_static"
+                )
+            if (
+                safe_gather_policy_value is None
+                and cnf2_cfg.safe_gather_policy_value is not None
+            ):
+                safe_gather_policy_value = cnf2_cfg.safe_gather_policy_value
+    if policy_mode not in ("static", "value"):
+        raise ValueError(f"unknown policy_mode={policy_mode!r}")
+    if policy_mode == "static":
+        if safe_gather_policy_value is not None:
+            raise ValueError(
+                "cycle_candidates_static received safe_gather_policy_value; "
+                "use cycle_candidates_value"
+            )
+    else:
+        if safe_gather_policy is not None:
+            raise ValueError(
+                "cycle_candidates_value received safe_gather_policy; "
+                "use cycle_candidates_static"
+            )
     def _resolve_gate(flag_value, fn_value, default_fn):
         if flag_value is not None:
             return bool(flag_value)
@@ -1041,22 +1059,9 @@ def cycle_candidates(
         host_raise_if_bad_fn = _host_raise_if_bad
     if not cnf2_enabled_fn():
         raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
-    if safe_gather_policy_value is not None:
-        ledger, frontier_ids, strata, q_map = _cycle_candidates_value(
-            ledger,
-            frontier_ids,
-            validate_stratum=validate_stratum,
-            validate_mode=validate_mode,
-            cfg=cnf2_cfg,
-            safe_gather_policy_value=safe_gather_policy_value,
-            guard_cfg=guard_cfg,
-            intern_fn=intern_fn,
-            intern_cfg=intern_cfg,
-            emit_candidates_fn=emit_candidates_fn,
-            cnf2_enabled_fn=cnf2_enabled_fn,
-            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-        )
-    else:
+    if policy_mode == "static":
+        if safe_gather_policy is None:
+            safe_gather_policy = DEFAULT_SAFETY_POLICY
         ledger, frontier_ids, strata, q_map = _cycle_candidates_static(
             ledger,
             frontier_ids,
@@ -1071,11 +1076,163 @@ def cycle_candidates(
             cnf2_enabled_fn=cnf2_enabled_fn,
             cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
         )
+    else:
+        if safe_gather_policy_value is None:
+            safe_gather_policy_value = POLICY_VALUE_DEFAULT
+        ledger, frontier_ids, strata, q_map = _cycle_candidates_value(
+            ledger,
+            frontier_ids,
+            validate_stratum=validate_stratum,
+            validate_mode=validate_mode,
+            cfg=cnf2_cfg,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            cnf2_enabled_fn=cnf2_enabled_fn,
+            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        )
     if not bool(jax.device_get(ledger.corrupt)):
         host_raise_if_bad_fn(ledger, "Ledger capacity exceeded during cycle")
     return ledger, frontier_ids, strata, q_map
 
 
-# Explicit re-exports for static/value variants.
-cycle_candidates_static = _cycle_candidates_static
-cycle_candidates_value = _cycle_candidates_value
+def cycle_candidates_static(
+    ledger,
+    frontier_ids,
+    validate_stratum: bool = False,
+    validate_mode: str = "strict",
+    *,
+    intern_fn: InternFn | None = None,
+    intern_cfg: InternConfig | None = None,
+    emit_candidates_fn: EmitCandidatesFn | None = None,
+    host_raise_if_bad_fn: HostRaiseFn | None = None,
+    safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
+    cnf2_cfg: Cnf2Config | None = None,
+    cnf2_flags: Cnf2Flags | None = None,
+    cnf2_enabled_fn=None,
+    cnf2_slot1_enabled_fn=None,
+):
+    """Interface/Control wrapper for CNF-2 evaluation (static policy)."""
+    return _cycle_candidates_common(
+        ledger,
+        frontier_ids,
+        validate_stratum,
+        validate_mode,
+        policy_mode="static",
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        emit_candidates_fn=emit_candidates_fn,
+        host_raise_if_bad_fn=host_raise_if_bad_fn,
+        safe_gather_policy=safe_gather_policy,
+        safe_gather_policy_value=None,
+        guard_cfg=guard_cfg,
+        cnf2_cfg=cnf2_cfg,
+        cnf2_flags=cnf2_flags,
+        cnf2_enabled_fn=cnf2_enabled_fn,
+        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+    )
+
+
+def cycle_candidates_value(
+    ledger,
+    frontier_ids,
+    validate_stratum: bool = False,
+    validate_mode: str = "strict",
+    *,
+    intern_fn: InternFn | None = None,
+    intern_cfg: InternConfig | None = None,
+    emit_candidates_fn: EmitCandidatesFn | None = None,
+    host_raise_if_bad_fn: HostRaiseFn | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
+    guard_cfg: GuardConfig | None = None,
+    cnf2_cfg: Cnf2Config | None = None,
+    cnf2_flags: Cnf2Flags | None = None,
+    cnf2_enabled_fn=None,
+    cnf2_slot1_enabled_fn=None,
+):
+    """Interface/Control wrapper for CNF-2 evaluation (policy as JAX value)."""
+    return _cycle_candidates_common(
+        ledger,
+        frontier_ids,
+        validate_stratum,
+        validate_mode,
+        policy_mode="value",
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        emit_candidates_fn=emit_candidates_fn,
+        host_raise_if_bad_fn=host_raise_if_bad_fn,
+        safe_gather_policy=None,
+        safe_gather_policy_value=safe_gather_policy_value,
+        guard_cfg=guard_cfg,
+        cnf2_cfg=cnf2_cfg,
+        cnf2_flags=cnf2_flags,
+        cnf2_enabled_fn=cnf2_enabled_fn,
+        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+    )
+
+
+def cycle_candidates(
+    ledger,
+    frontier_ids,
+    validate_stratum: bool = False,
+    validate_mode: str = "strict",
+    *,
+    intern_fn: InternFn | None = None,
+    intern_cfg: InternConfig | None = None,
+    emit_candidates_fn: EmitCandidatesFn | None = None,
+    host_raise_if_bad_fn: HostRaiseFn | None = None,
+    safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
+    guard_cfg: GuardConfig | None = None,
+    cnf2_cfg: Cnf2Config | None = None,
+    cnf2_flags: Cnf2Flags | None = None,
+    cnf2_enabled_fn=None,
+    cnf2_slot1_enabled_fn=None,
+):
+    """Interface/Control wrapper for CNF-2 evaluation with DI hooks.
+
+    Axis: Interface/Control. Commutes with q. Erased by q.
+    Test: tests/test_candidate_cycle.py
+    """
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "cycle_candidates received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if safe_gather_policy_value is not None:
+        return cycle_candidates_value(
+            ledger,
+            frontier_ids,
+            validate_stratum=validate_stratum,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            host_raise_if_bad_fn=host_raise_if_bad_fn,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+            cnf2_cfg=cnf2_cfg,
+            cnf2_flags=cnf2_flags,
+            cnf2_enabled_fn=cnf2_enabled_fn,
+            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        )
+    return cycle_candidates_static(
+        ledger,
+        frontier_ids,
+        validate_stratum=validate_stratum,
+        validate_mode=validate_mode,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        emit_candidates_fn=emit_candidates_fn,
+        host_raise_if_bad_fn=host_raise_if_bad_fn,
+        safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+        cnf2_cfg=cnf2_cfg,
+        cnf2_flags=cnf2_flags,
+        cnf2_enabled_fn=cnf2_enabled_fn,
+        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+    )
+
