@@ -12,6 +12,7 @@ from ic_core.engine import (
 )
 from ic_core.graph import (
     ic_compact_active_pairs,
+    ic_compact_active_pairs_result,
     ic_find_active_pairs,
     ic_wire_jax,
     ic_wire_jax_safe,
@@ -137,6 +138,33 @@ def compact_active_pairs_jit(cfg: ICGraphConfig | None = None):
 def compact_active_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
     """Alias for compact_active_pairs_jit (config-first naming)."""
     return compact_active_pairs_jit(cfg)
+
+
+@cached_jit
+def _compact_active_pairs_result_jit(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+
+    def _impl(state):
+        return ic_compact_active_pairs_result(
+            state,
+            safety_policy=cfg.safety_policy,
+            safe_index_fn=safe_index_fn,
+            compact_cfg=cfg.compact_cfg,
+        )
+
+    return _impl
+
+
+def compact_active_pairs_result_jit(cfg: ICGraphConfig | None = None):
+    """Return a jitted compact_active_pairs_result entrypoint for fixed DI."""
+    if cfg is None:
+        cfg = DEFAULT_GRAPH_CONFIG
+    return _compact_active_pairs_result_jit(cfg)
+
+
+def compact_active_pairs_result_jit_cfg(cfg: ICGraphConfig | None = None):
+    """Alias for compact_active_pairs_result_jit (config-first naming)."""
+    return compact_active_pairs_result_jit(cfg)
 
 
 @cached_jit
@@ -324,6 +352,8 @@ __all__ = [
     "find_active_pairs_jit_cfg",
     "compact_active_pairs_jit",
     "compact_active_pairs_jit_cfg",
+    "compact_active_pairs_result_jit",
+    "compact_active_pairs_result_jit_cfg",
     "wire_jax_jit",
     "wire_jax_jit_cfg",
     "wire_jax_safe_jit",

@@ -80,6 +80,7 @@ from ic_core.graph import (
     ic_alloc_jax,
     ic_alloc_jax_cfg,
     ic_compact_active_pairs,
+    ic_compact_active_pairs_result,
     ic_find_active_pairs,
     ic_init,
     ic_wire,
@@ -99,6 +100,8 @@ from ic_core.jit_entrypoints import (
     find_active_pairs_jit_cfg,
     compact_active_pairs_jit,
     compact_active_pairs_jit_cfg,
+    compact_active_pairs_result_jit,
+    compact_active_pairs_result_jit_cfg,
     wire_jax_jit,
     wire_jax_jit_cfg,
     wire_jax_safe_jit,
@@ -382,6 +385,19 @@ def ic_compact_active_pairs_cfg(
     )
 
 
+def ic_compact_active_pairs_result_cfg(
+    state: ICState, *, cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG
+):
+    """Interface/Control wrapper for CompactResult active pairs with DI bundle."""
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    return ic_compact_active_pairs_result(
+        state,
+        safety_policy=cfg.safety_policy,
+        safe_index_fn=safe_index_fn,
+        compact_cfg=cfg.compact_cfg,
+    )
+
+
 def engine_config_from_rules(
     rule_cfg: ICRuleConfig,
     *,
@@ -524,6 +540,8 @@ __all__ = [
     "ic_find_active_pairs_cfg",
     "ic_compact_active_pairs",
     "ic_compact_active_pairs_cfg",
+    "ic_compact_active_pairs_result",
+    "ic_compact_active_pairs_result_cfg",
     "ic_rule_for_types",
     "ic_rule_for_types_cfg",
     "ic_select_template",
@@ -553,6 +571,8 @@ __all__ = [
     "find_active_pairs_jit_cfg",
     "compact_active_pairs_jit",
     "compact_active_pairs_jit_cfg",
+    "compact_active_pairs_result_jit",
+    "compact_active_pairs_result_jit_cfg",
     "wire_jax_jit",
     "wire_jax_jit_cfg",
     "wire_jax_safe_jit",
