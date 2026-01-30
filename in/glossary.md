@@ -7,6 +7,11 @@
 > what is erased by `q`. Any reuse that does not satisfy these conditions is
 > invalid.
 >
+> **Security Contract (Normative Pointer):**
+> Execution and CI safety are governed by `POLICY_SEED.md`.
+> The semantic obligations in this glossary are enforced only when execution
+> complies with that policy. Both contracts are required for validity.
+>
 > **Reserved Glyphs (Normative):**
 > `q` denotes homomorphic projection / associated sheaf functor (meaning-forming).
 > `σ` denotes BSPˢ permutations (gauge renormalization).

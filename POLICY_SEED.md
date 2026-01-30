@@ -36,6 +36,17 @@ Any system (human, script, LLM, agent) acting on this repository **must treat th
 
 ---
 
+## 0.1 Complementary Semantic Contract
+
+This repository has a separate **normative semantic contract** that governs meaning,
+commutation, and test obligations for polysemous terms: `in/glossary.md`.
+
+**Relationship:** This policy governs *where/when/how* code may execute (security and
+execution safety). The glossary governs *what the code means* and *what must commute*
+(semantic correctness). Both contracts must be satisfied for any change to be valid.
+
+---
+
 ## 1. Prime Invariant (Unbreakable)
 
 > **No untrusted or externally influenced code may execute on self-hosted runners.**

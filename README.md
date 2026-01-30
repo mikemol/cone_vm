@@ -178,6 +178,9 @@ workflow or CI behavior. Install advisory hooks with:
 scripts/install_policy_hooks.sh
 ```
 
+Semantic correctness is governed by `in/glossary.md` and is a co-equal normative
+contract alongside `POLICY_SEED.md`.
+
 See `CONTRIBUTING.md` for the guardrails and required checks.
 
 ## Milestones
