@@ -17,6 +17,8 @@ import jax.numpy as jnp
 from prism_core import jax_safe as _jax_safe
 from prism_core.di import call_with_optional_kwargs
 from prism_core.safety import (
+    PolicyMode,
+    coerce_policy_mode,
     SafetyPolicy,
     DEFAULT_SAFETY_POLICY,
     PolicyValue,
@@ -538,6 +540,8 @@ _scatter_drop = _jax_safe.scatter_drop
 _scatter_strict = _jax_safe.scatter_strict
 SafetyPolicy = SafetyPolicy
 DEFAULT_SAFETY_POLICY = DEFAULT_SAFETY_POLICY
+PolicyMode = PolicyMode
+coerce_policy_mode = coerce_policy_mode
 PolicyValue = PolicyValue
 POLICY_VALUE_CORRUPT = POLICY_VALUE_CORRUPT
 POLICY_VALUE_CLAMP = POLICY_VALUE_CLAMP
@@ -1031,7 +1035,7 @@ def _cycle_candidates_common(
     validate_stratum: bool,
     validate_mode: str,
     *,
-    policy_mode: str,
+    policy_mode: PolicyMode | str,
     intern_fn: InternFn | None,
     intern_cfg: InternConfig | None,
     emit_candidates_fn: EmitCandidatesFn | None,
@@ -1045,6 +1049,7 @@ def _cycle_candidates_common(
     cnf2_slot1_enabled_fn,
 ):
     """Shared wrapper for CNF-2 entrypoints with explicit policy mode."""
+    policy_mode = coerce_policy_mode(policy_mode, context="cycle_candidates")
     if intern_fn is None:
         intern_fn = intern_nodes
     if cnf2_cfg is not None and cnf2_flags is not None:
@@ -1065,13 +1070,13 @@ def _cycle_candidates_common(
         if cnf2_slot1_enabled_fn is None and cnf2_cfg.cnf2_slot1_enabled_fn is not None:
             cnf2_slot1_enabled_fn = cnf2_cfg.cnf2_slot1_enabled_fn
         cnf2_flags = cnf2_cfg.flags if cnf2_flags is None else cnf2_flags
-        if policy_mode == "static":
+        if policy_mode == PolicyMode.STATIC:
             if cnf2_cfg.safe_gather_policy_value is not None:
                 raise PrismPolicyBindingError(
                     "cycle_candidates_static received cfg.safe_gather_policy_value; "
                     "use cycle_candidates_value",
                     context="cycle_candidates_static",
-                    policy_mode="static",
+                    policy_mode=PolicyMode.STATIC,
                 )
             if safe_gather_policy is None and cnf2_cfg.safe_gather_policy is not None:
                 safe_gather_policy = cnf2_cfg.safe_gather_policy
@@ -1081,24 +1086,20 @@ def _cycle_candidates_common(
                     "cycle_candidates_value received cfg.safe_gather_policy; "
                     "use cycle_candidates_static",
                     context="cycle_candidates_value",
-                    policy_mode="value",
+                    policy_mode=PolicyMode.VALUE,
                 )
             if (
                 safe_gather_policy_value is None
                 and cnf2_cfg.safe_gather_policy_value is not None
             ):
                 safe_gather_policy_value = cnf2_cfg.safe_gather_policy_value
-    if policy_mode not in ("static", "value"):
-        raise PrismPolicyModeError(
-            mode=policy_mode, allowed=("static", "value"), context="cycle_candidates"
-        )
-    if policy_mode == "static":
+    if policy_mode == PolicyMode.STATIC:
         if safe_gather_policy_value is not None:
             raise PrismPolicyBindingError(
                 "cycle_candidates_static received safe_gather_policy_value; "
                 "use cycle_candidates_value",
                 context="cycle_candidates_static",
-                policy_mode="static",
+                policy_mode=PolicyMode.STATIC,
             )
     else:
         if safe_gather_policy is not None:
@@ -1106,7 +1107,7 @@ def _cycle_candidates_common(
                 "cycle_candidates_value received safe_gather_policy; "
                 "use cycle_candidates_static",
                 context="cycle_candidates_value",
-                policy_mode="value",
+                policy_mode=PolicyMode.VALUE,
             )
     def _resolve_gate(flag_value, fn_value, default_fn):
         if flag_value is not None:
@@ -1142,7 +1143,7 @@ def _cycle_candidates_common(
         host_raise_if_bad_fn = _host_raise_if_bad
     if not cnf2_enabled_fn():
         raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
-    if policy_mode == "static":
+    if policy_mode == PolicyMode.STATIC:
         if safe_gather_policy is None:
             safe_gather_policy = DEFAULT_SAFETY_POLICY
         ledger, frontier_ids, strata, q_map = _cycle_candidates_static(
@@ -1204,7 +1205,7 @@ def cycle_candidates_static(
         frontier_ids,
         validate_stratum,
         validate_mode,
-        policy_mode="static",
+        policy_mode=PolicyMode.STATIC,
         intern_fn=intern_fn,
         intern_cfg=intern_cfg,
         emit_candidates_fn=emit_candidates_fn,
@@ -1242,7 +1243,7 @@ def cycle_candidates_value(
         frontier_ids,
         validate_stratum,
         validate_mode,
-        policy_mode="value",
+        policy_mode=PolicyMode.VALUE,
         intern_fn=intern_fn,
         intern_cfg=intern_cfg,
         emit_candidates_fn=emit_candidates_fn,

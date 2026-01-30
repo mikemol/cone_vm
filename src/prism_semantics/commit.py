@@ -6,6 +6,8 @@ from jax import lax
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.safety import (
+    PolicyMode,
+    coerce_policy_mode,
     SafetyPolicy,
     PolicyValue,
     POLICY_VALUE_CLAMP,
@@ -371,7 +373,7 @@ def _commit_stratum_common(
     validate: bool = False,
     validate_mode: str = "strict",
     *,
-    policy_mode: str,
+    policy_mode: PolicyMode | str,
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
@@ -406,17 +408,14 @@ def _commit_stratum_common(
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
     q_prev: QMap = prior_q or identity_q_fn
-    if policy_mode not in ("static", "value"):
-        raise PrismPolicyModeError(
-            mode=policy_mode, allowed=("static", "value"), context="commit_stratum"
-        )
-    if policy_mode == "static":
+    policy_mode = coerce_policy_mode(policy_mode, context="commit_stratum")
+    if policy_mode == PolicyMode.STATIC:
         if safe_gather_policy_value is not None:
             raise PrismPolicyBindingError(
                 "commit_stratum_static received safe_gather_policy_value; "
                 "use commit_stratum_value",
                 context="commit_stratum_static",
-                policy_mode="static",
+                policy_mode=PolicyMode.STATIC,
             )
         if safe_gather_policy is None:
             safe_gather_policy = SafetyPolicy()
@@ -436,7 +435,7 @@ def _commit_stratum_common(
                 "commit_stratum_value received safe_gather_policy; "
                 "use commit_stratum_static",
                 context="commit_stratum_value",
-                policy_mode="value",
+                policy_mode=PolicyMode.VALUE,
             )
         if safe_gather_policy_value is None:
             safe_gather_policy_value = POLICY_VALUE_DEFAULT
@@ -485,7 +484,7 @@ def _commit_stratum_common(
     q_meta = QMapMeta(
         stratum=stratum,
         canon_len=jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32),
-        safe_gather_policy=safe_gather_policy if policy_mode == "static" else None,
+        safe_gather_policy=safe_gather_policy if policy_mode == PolicyMode.STATIC else None,
         safe_gather_policy_value=safe_gather_policy_value,
     )
     setattr(q_map, "_prism_meta", q_meta)
@@ -524,7 +523,7 @@ def commit_stratum_static(
         prior_q=prior_q,
         validate=validate,
         validate_mode=validate_mode,
-        policy_mode="static",
+        policy_mode=PolicyMode.STATIC,
         intern_fn=intern_fn,
         node_batch_fn=node_batch_fn,
         identity_q_fn=identity_q_fn,
@@ -574,7 +573,7 @@ def commit_stratum_value(
         prior_q=prior_q,
         validate=validate,
         validate_mode=validate_mode,
-        policy_mode="value",
+        policy_mode=PolicyMode.VALUE,
         intern_fn=intern_fn,
         node_batch_fn=node_batch_fn,
         identity_q_fn=identity_q_fn,

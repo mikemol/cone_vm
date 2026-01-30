@@ -64,6 +64,8 @@ __all__ = [
     "DEFAULT_GUARD_CONFIG",
     "SafetyPolicy",
     "DEFAULT_SAFETY_POLICY",
+    "PolicyMode",
+    "coerce_policy_mode",
     "PolicyValue",
     "POLICY_VALUE_CORRUPT",
     "POLICY_VALUE_CLAMP",

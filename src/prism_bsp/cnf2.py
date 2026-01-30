@@ -12,6 +12,8 @@ from prism_core.guards import (
 )
 from prism_core.compact import scatter_compacted_ids
 from prism_core.safety import (
+    PolicyMode,
+    coerce_policy_mode,
     DEFAULT_SAFETY_POLICY,
     POLICY_VALUE_DEFAULT,
     PolicyValue,
@@ -322,7 +324,7 @@ def _cycle_candidates_core_common(
     validate_mode: str = "strict",
     *,
     cfg: Cnf2Config | None = None,
-    policy_mode: str,
+    policy_mode: PolicyMode | str,
     safe_gather_policy: SafetyPolicy | None = None,
     safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
@@ -416,11 +418,10 @@ def _cycle_candidates_core_common(
             if cfg.flags.slot1_enabled is not None and cnf2_slot1_enabled_fn is _cnf2_slot1_enabled:
                 cnf2_slot1_enabled_fn = lambda: bool(cfg.flags.slot1_enabled)
 
-    if policy_mode not in ("static", "value"):
-        raise ValueError(f"unknown policy_mode={policy_mode!r}")
-    if policy_mode == "static" and safe_gather_policy is None:
+    policy_mode = coerce_policy_mode(policy_mode, context="cycle_candidates_core")
+    if policy_mode == PolicyMode.STATIC and safe_gather_policy is None:
         raise ValueError("cycle_candidates core (static) requires safe_gather_policy")
-    if policy_mode == "value" and safe_gather_policy_value is None:
+    if policy_mode == PolicyMode.VALUE and safe_gather_policy_value is None:
         raise ValueError("cycle_candidates core (value) requires safe_gather_policy_value")
     if intern_cfg is not None and intern_fn is intern_nodes:
         intern_fn = partial(intern_nodes, cfg=intern_cfg)
@@ -628,7 +629,7 @@ def _cycle_candidates_core_common(
         )
         cnf2_metrics_update_fn(rewrite_child, changed_count, int(count2_i))
     validate = validate_stratum or guards_enabled_fn()
-    if policy_mode == "static":
+    if policy_mode == PolicyMode.STATIC:
         commit_optional = {
             "safe_gather_policy": safe_gather_policy,
             "safe_gather_ok_fn": safe_gather_ok_fn,
@@ -679,7 +680,7 @@ def _cycle_candidates_core_common(
     post_ids = None
     ok = None
     if meta is not None:
-        if policy_mode == "static":
+        if policy_mode == PolicyMode.STATIC:
             if meta.safe_gather_policy_value is not None:
                 raise ValueError(
                     "cycle_candidates core (static) received policy_value metadata"
@@ -747,7 +748,7 @@ def _cycle_candidates_core_static(
         validate_stratum=validate_stratum,
         validate_mode=validate_mode,
         cfg=cfg,
-        policy_mode="static",
+        policy_mode=PolicyMode.STATIC,
         safe_gather_policy=safe_gather_policy,
         safe_gather_policy_value=None,
         guard_cfg=guard_cfg,
@@ -809,7 +810,7 @@ def _cycle_candidates_core_value(
         validate_stratum=validate_stratum,
         validate_mode=validate_mode,
         cfg=cfg,
-        policy_mode="value",
+        policy_mode=PolicyMode.VALUE,
         safe_gather_policy=None,
         safe_gather_policy_value=safe_gather_policy_value,
         guard_cfg=guard_cfg,
