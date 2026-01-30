@@ -66,6 +66,7 @@ __all__ = [
     "POLICY_VALUE_CORRUPT",
     "POLICY_VALUE_CLAMP",
     "POLICY_VALUE_DROP",
+    "POLICY_VALUE_DEFAULT",
     "policy_to_value",
     "oob_mask",
     "oob_mask_value",

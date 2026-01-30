@@ -20,6 +20,7 @@ from prism_core.safety import (
     SafetyPolicy,
     DEFAULT_SAFETY_POLICY,
     PolicyValue,
+    POLICY_VALUE_DEFAULT,
     POLICY_VALUE_CLAMP,
     POLICY_VALUE_CORRUPT,
     POLICY_VALUE_DROP,
@@ -536,6 +537,7 @@ PolicyValue = PolicyValue
 POLICY_VALUE_CORRUPT = POLICY_VALUE_CORRUPT
 POLICY_VALUE_CLAMP = POLICY_VALUE_CLAMP
 POLICY_VALUE_DROP = POLICY_VALUE_DROP
+POLICY_VALUE_DEFAULT = POLICY_VALUE_DEFAULT
 policy_to_value = policy_to_value
 oob_mask = oob_mask
 oob_mask_value = oob_mask_value
