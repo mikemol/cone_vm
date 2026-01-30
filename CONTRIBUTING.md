@@ -11,6 +11,10 @@ self-hosted runners. Please read `POLICY_SEED.md` before making changes.
 - Workflow actions must be pinned to full commit SHAs and allow-listed.
 - Workflows must declare `permissions: contents: read`.
 
+## Contract handshake (normative)
+Execution safety is governed by `POLICY_SEED.md`. Semantic correctness is governed
+by `in/glossary.md`. Both contracts must be satisfied for any change to be valid.
+
 ## Guardrails
 Install the advisory hooks:
 ```
