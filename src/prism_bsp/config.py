@@ -86,6 +86,7 @@ class Cnf2Config:
     ledger_roots_hash_host_fn: LedgerRootsHashFn | None = None
     safe_gather_policy: SafetyPolicy | None = None
     safe_gather_policy_value: PolicyValue | None = None
+    policy_binding: PolicyBinding | None = None
     cnf2_enabled_fn: Callable[[], bool] | None = None
     cnf2_slot1_enabled_fn: Callable[[], bool] | None = None
     cnf2_metrics_enabled_fn: Callable[[], bool] | None = None
