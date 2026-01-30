@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from prism_core.safety import SafetyPolicy
 from prism_core.compact import CompactConfig
 
+from ic_core.guards import ICGuardConfig
 from ic_core.protocols import (
     AllocPlanFn,
     ApplyAnnFn,
@@ -28,6 +29,7 @@ class ICGraphConfig:
 
     safety_policy: SafetyPolicy | None = None
     safe_index_fn: SafeIndexFn | None = None
+    guard_cfg: ICGuardConfig | None = None
     compact_cfg: CompactConfig | None = None
 
 

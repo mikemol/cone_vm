@@ -207,7 +207,11 @@ def graph_config_with_guard(
     compact_cfg=None,
 ) -> ICGraphConfig:
     """Return a graph config using safe_index_1d_cfg with guard config."""
-    cfg = replace(cfg, safe_index_fn=make_safe_index_fn(cfg=guard_cfg))
+    cfg = replace(
+        cfg,
+        guard_cfg=guard_cfg,
+        safe_index_fn=make_safe_index_fn(cfg=guard_cfg),
+    )
     if safety_policy is not None:
         cfg = replace(cfg, safety_policy=safety_policy)
     if compact_cfg is not None:
