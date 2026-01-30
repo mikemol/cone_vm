@@ -1,6 +1,7 @@
 import os
 
 from prism_core import jax_safe as _jax_safe
+from prism_core.modes import BspMode, coerce_bsp_mode
 
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
 
@@ -63,16 +64,16 @@ def _cnf2_slot1_enabled():
     return milestone is not None and milestone >= 2
 
 
-def _default_bsp_mode():
+def _default_bsp_mode() -> BspMode:
     # CNF-2 becomes the default at m2; intrinsic remains the oracle path.
     # See IMPLEMENTATION_PLAN.md (m1/m2 engine staging).
-    return "cnf2" if _cnf2_enabled() else "intrinsic"
+    return BspMode.CNF2 if _cnf2_enabled() else BspMode.INTRINSIC
 
 
 def _normalize_bsp_mode(bsp_mode):
-    if bsp_mode in (None, "", "auto"):
-        return _default_bsp_mode()
-    return bsp_mode
+    return coerce_bsp_mode(
+        bsp_mode, default_fn=_default_bsp_mode, context="bsp_mode"
+    )
 
 
 def _servo_enabled():

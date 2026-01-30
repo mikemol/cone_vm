@@ -54,6 +54,7 @@ from prism_vm_core.facade import (
     intern_nodes,
     node_batch,
 )
+from prism_core.modes import BspMode
 from prism_vm_core.guards import _expect_token, _pop_token
 
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
@@ -463,10 +464,8 @@ def run_program_lines_bsp(
     if vm is None:
         vm = PrismVM_BSP()
     bsp_mode = _normalize_bsp_mode(bsp_mode)
-    if bsp_mode == "cnf2" and not _cnf2_enabled():
+    if bsp_mode == BspMode.CNF2 and not _cnf2_enabled():
         raise ValueError("bsp_mode='cnf2' disabled until m2")
-    if bsp_mode not in ("intrinsic", "cnf2"):
-        raise ValueError(f"Unknown bsp_mode={bsp_mode!r}")
     for inp in lines:
         inp = inp.strip()
         if not inp or inp.startswith("#"):
@@ -475,7 +474,7 @@ def run_program_lines_bsp(
         root_ptr = vm.parse(tokens)
         frontier = _committed_ids(jnp.array([int(root_ptr)], dtype=jnp.int32))
         for _ in range(max(1, cycles)):
-            if bsp_mode == "intrinsic":
+            if bsp_mode == BspMode.INTRINSIC:
                 vm.ledger, frontier_arr = cycle_intrinsic(vm.ledger, frontier.a)
                 frontier = _committed_ids(frontier_arr)
             else:
@@ -509,7 +508,7 @@ def repl(
     if mode == "bsp":
         vm = PrismVM_BSP()
         bsp_mode = _normalize_bsp_mode(bsp_mode)
-        mode_label = "CNF-2" if bsp_mode == "cnf2" else "Intrinsic"
+        mode_label = "CNF-2" if bsp_mode == BspMode.CNF2 else "Intrinsic"
         print(f"\n🔮 Prism IR Shell (BSP Ledger, {mode_label})")
         print("   Try: (add (suc zero) (suc zero))")
     elif mode == "arena":
