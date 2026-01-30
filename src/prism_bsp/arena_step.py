@@ -454,7 +454,7 @@ def cycle_core_value(
     op_interact_value_fn=op_interact_value,
 ):
     """Run one BSP cycle with policy_value as data (JAX value)."""
-    safe_gather_value_fn = resolve_safe_gather_value_fn(
+    safe_gather_value_fn_guarded = resolve_safe_gather_value_fn(
         safe_gather_value_fn=safe_gather_value_fn,
         guard_cfg=guard_cfg,
     )
@@ -518,7 +518,7 @@ def cycle_core_value(
                     policy_value,
                 )
         root_idx = jnp.where(root_arr != 0, root_arr, jnp.int32(0))
-        root_g = safe_gather_value_fn(
+        root_g = safe_gather_value_fn_guarded(
             inv_perm, root_idx, "cycle.root_remap", policy_value=policy_value
         )
         root_arr = jnp.where(root_arr != 0, root_g, 0)
@@ -528,7 +528,7 @@ def cycle_core_value(
     damage_metrics_update_fn(arena, tile_size)
     arena = call_with_optional_kwargs(
         op_interact_value_fn,
-        {"safe_gather_value_fn": safe_gather_value_fn},
+        {"safe_gather_value_fn": safe_gather_value_fn_guarded},
         arena,
         policy_value,
     )
