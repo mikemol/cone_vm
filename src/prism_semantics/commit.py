@@ -9,6 +9,7 @@ from prism_core.safety import (
     SafetyPolicy,
     PolicyValue,
     POLICY_VALUE_CLAMP,
+    POLICY_VALUE_DEFAULT,
 )
 from prism_core.di import call_with_optional_kwargs
 from prism_core.guards import (
@@ -362,13 +363,14 @@ def _apply_stratum_q_value(
     return out, ok, corrupt
 
 
-def commit_stratum(
+def _commit_stratum_common(
     ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate: bool = False,
     validate_mode: str = "strict",
     *,
+    policy_mode: str,
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
@@ -403,12 +405,14 @@ def commit_stratum(
     # BSP_t barrier + Collapse_h: project provisional ids via q-map.
     # See IMPLEMENTATION_PLAN.md (m2 q boundary).
     q_prev: QMap = prior_q or identity_q_fn
-    if safe_gather_policy is not None and safe_gather_policy_value is not None:
-        raise ValueError(
-            "commit_stratum received both safe_gather_policy and "
-            "safe_gather_policy_value"
-        )
-    if safe_gather_policy_value is None:
+    if policy_mode not in ("static", "value"):
+        raise ValueError(f"commit_stratum unknown policy_mode={policy_mode!r}")
+    if policy_mode == "static":
+        if safe_gather_policy_value is not None:
+            raise ValueError(
+                "commit_stratum_static received safe_gather_policy_value; "
+                "use commit_stratum_value"
+            )
         if safe_gather_policy is None:
             safe_gather_policy = SafetyPolicy()
         safe_gather_fn = resolve_safe_gather_fn(
@@ -422,6 +426,13 @@ def commit_stratum(
             guard_cfg=guard_cfg,
         )
     else:
+        if safe_gather_policy is not None:
+            raise ValueError(
+                "commit_stratum_value received safe_gather_policy; "
+                "use commit_stratum_static"
+            )
+        if safe_gather_policy_value is None:
+            safe_gather_policy_value = POLICY_VALUE_DEFAULT
         safe_gather_ok_value_fn = resolve_safe_gather_ok_value_fn(
             safe_gather_ok_value_fn=safe_gather_ok_value_fn,
             guard_cfg=guard_cfg,
@@ -467,7 +478,7 @@ def commit_stratum(
     q_meta = QMapMeta(
         stratum=stratum,
         canon_len=jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32),
-        safe_gather_policy=safe_gather_policy if safe_gather_policy_value is None else None,
+        safe_gather_policy=safe_gather_policy if policy_mode == "static" else None,
         safe_gather_policy_value=safe_gather_policy_value,
     )
     setattr(q_map, "_prism_meta", q_meta)
@@ -476,9 +487,189 @@ def commit_stratum(
     return ledger, canon_ids, q_map
 
 
+def commit_stratum_static(
+    ledger,
+    stratum: Stratum,
+    prior_q: QMap | None = None,
+    validate: bool = False,
+    validate_mode: str = "strict",
+    *,
+    intern_fn: InternFn = intern_nodes,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    identity_q_fn=_identity_q,
+    apply_stratum_q_fn=_apply_stratum_q_static,
+    validate_within_fn=validate_stratum_no_within_refs,
+    validate_future_fn=validate_stratum_no_future_refs,
+    guards_enabled_fn=_guards_enabled,
+    host_int_value_fn=_host_int_value,
+    host_raise_fn: HostRaiseFn = _host_raise_if_bad,
+    provisional_ids_fn=_provisional_ids,
+    committed_ids_fn=_committed_ids,
+    safe_gather_fn=safe_gather_1d,
+    safe_gather_ok_fn: SafeGatherOkFn = safe_gather_1d_ok,
+    safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Static-policy wrapper for commit_stratum."""
+    return _commit_stratum_common(
+        ledger,
+        stratum,
+        prior_q=prior_q,
+        validate=validate,
+        validate_mode=validate_mode,
+        policy_mode="static",
+        intern_fn=intern_fn,
+        node_batch_fn=node_batch_fn,
+        identity_q_fn=identity_q_fn,
+        apply_stratum_q_fn=apply_stratum_q_fn,
+        validate_within_fn=validate_within_fn,
+        validate_future_fn=validate_future_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        host_int_value_fn=host_int_value_fn,
+        host_raise_fn=host_raise_fn,
+        provisional_ids_fn=provisional_ids_fn,
+        committed_ids_fn=committed_ids_fn,
+        safe_gather_fn=safe_gather_fn,
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        safe_gather_policy=safe_gather_policy,
+        safe_gather_policy_value=None,
+        safe_gather_ok_value_fn=safe_gather_1d_ok_value,
+        guard_cfg=guard_cfg,
+    )
+
+
+def commit_stratum_value(
+    ledger,
+    stratum: Stratum,
+    prior_q: QMap | None = None,
+    validate: bool = False,
+    validate_mode: str = "strict",
+    *,
+    intern_fn: InternFn = intern_nodes,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    identity_q_fn=_identity_q,
+    apply_stratum_q_fn=_apply_stratum_q_static,
+    validate_within_fn=validate_stratum_no_within_refs,
+    validate_future_fn=validate_stratum_no_future_refs,
+    guards_enabled_fn=_guards_enabled,
+    host_int_value_fn=_host_int_value,
+    host_raise_fn: HostRaiseFn = _host_raise_if_bad,
+    provisional_ids_fn=_provisional_ids,
+    committed_ids_fn=_committed_ids,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = safe_gather_1d_ok_value,
+    safe_gather_policy_value: PolicyValue | None = None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Policy-value wrapper for commit_stratum."""
+    return _commit_stratum_common(
+        ledger,
+        stratum,
+        prior_q=prior_q,
+        validate=validate,
+        validate_mode=validate_mode,
+        policy_mode="value",
+        intern_fn=intern_fn,
+        node_batch_fn=node_batch_fn,
+        identity_q_fn=identity_q_fn,
+        apply_stratum_q_fn=apply_stratum_q_fn,
+        validate_within_fn=validate_within_fn,
+        validate_future_fn=validate_future_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        host_int_value_fn=host_int_value_fn,
+        host_raise_fn=host_raise_fn,
+        provisional_ids_fn=provisional_ids_fn,
+        committed_ids_fn=committed_ids_fn,
+        safe_gather_fn=safe_gather_1d,
+        safe_gather_ok_fn=safe_gather_1d_ok,
+        safe_gather_policy=None,
+        safe_gather_policy_value=safe_gather_policy_value,
+        safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+        guard_cfg=guard_cfg,
+    )
+
+
+def commit_stratum(
+    ledger,
+    stratum: Stratum,
+    prior_q: QMap | None = None,
+    validate: bool = False,
+    validate_mode: str = "strict",
+    *,
+    intern_fn: InternFn = intern_nodes,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    identity_q_fn=_identity_q,
+    apply_stratum_q_fn=_apply_stratum_q_static,
+    validate_within_fn=validate_stratum_no_within_refs,
+    validate_future_fn=validate_stratum_no_future_refs,
+    guards_enabled_fn=_guards_enabled,
+    host_int_value_fn=_host_int_value,
+    host_raise_fn: HostRaiseFn = _host_raise_if_bad,
+    provisional_ids_fn=_provisional_ids,
+    committed_ids_fn=_committed_ids,
+    safe_gather_fn=safe_gather_1d,
+    safe_gather_ok_fn: SafeGatherOkFn = safe_gather_1d_ok,
+    safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = safe_gather_1d_ok_value,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Dispatching wrapper for commit_stratum."""
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "commit_stratum received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if safe_gather_policy_value is not None:
+        return commit_stratum_value(
+            ledger,
+            stratum,
+            prior_q=prior_q,
+            validate=validate,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            node_batch_fn=node_batch_fn,
+            identity_q_fn=identity_q_fn,
+            apply_stratum_q_fn=apply_stratum_q_fn,
+            validate_within_fn=validate_within_fn,
+            validate_future_fn=validate_future_fn,
+            guards_enabled_fn=guards_enabled_fn,
+            host_int_value_fn=host_int_value_fn,
+            host_raise_fn=host_raise_fn,
+            provisional_ids_fn=provisional_ids_fn,
+            committed_ids_fn=committed_ids_fn,
+            safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+        )
+    return commit_stratum_static(
+        ledger,
+        stratum,
+        prior_q=prior_q,
+        validate=validate,
+        validate_mode=validate_mode,
+        intern_fn=intern_fn,
+        node_batch_fn=node_batch_fn,
+        identity_q_fn=identity_q_fn,
+        apply_stratum_q_fn=apply_stratum_q_fn,
+        validate_within_fn=validate_within_fn,
+        validate_future_fn=validate_future_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        host_int_value_fn=host_int_value_fn,
+        host_raise_fn=host_raise_fn,
+        provisional_ids_fn=provisional_ids_fn,
+        committed_ids_fn=committed_ids_fn,
+        safe_gather_fn=safe_gather_fn,
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
+
+
 __all__ = [
     "apply_q",
     "commit_stratum",
+    "commit_stratum_static",
+    "commit_stratum_value",
     "validate_stratum_no_within_refs_jax",
     "validate_stratum_no_within_refs",
     "validate_stratum_no_future_refs_jax",

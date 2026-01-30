@@ -206,6 +206,8 @@ __all__ = [
     "validate_stratum_no_future_refs",
     "apply_q",
     "commit_stratum",
+    "commit_stratum_static",
+    "commit_stratum_value",
     "cycle_candidates",
     "cycle_candidates_static",
     "cycle_candidates_value",

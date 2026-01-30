@@ -488,7 +488,11 @@ from prism_vm_core.guards import (
     guard_zero_args_cfg,
     guard_swizzle_args_cfg,
 )
-from prism_semantics.commit import commit_stratum as _commit_stratum_impl
+from prism_semantics.commit import (
+    commit_stratum as _commit_stratum_impl,
+    commit_stratum_static as _commit_stratum_static_impl,
+    commit_stratum_value as _commit_stratum_value_impl,
+)
 from prism_bsp.cnf2 import (
     cycle_candidates as _cycle_candidates_impl,
     cycle_candidates_static as _cycle_candidates_static,
@@ -923,6 +927,58 @@ def cycle_jit(
     )
 
 
+def commit_stratum_static(
+    ledger,
+    stratum,
+    prior_q=None,
+    validate: bool = False,
+    validate_mode: str = "strict",
+    intern_fn: InternFn | None = None,
+    *,
+    safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Static-policy wrapper for commit_stratum injection."""
+    if intern_fn is None:
+        intern_fn = intern_nodes
+    return _commit_stratum_static_impl(
+        ledger,
+        stratum,
+        prior_q=prior_q,
+        validate=validate,
+        validate_mode=validate_mode,
+        intern_fn=intern_fn,
+        safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+    )
+
+
+def commit_stratum_value(
+    ledger,
+    stratum,
+    prior_q=None,
+    validate: bool = False,
+    validate_mode: str = "strict",
+    intern_fn: InternFn | None = None,
+    *,
+    safe_gather_policy_value: PolicyValue | None = None,
+    guard_cfg: GuardConfig | None = None,
+):
+    """Policy-value wrapper for commit_stratum injection."""
+    if intern_fn is None:
+        intern_fn = intern_nodes
+    return _commit_stratum_value_impl(
+        ledger,
+        stratum,
+        prior_q=prior_q,
+        validate=validate,
+        validate_mode=validate_mode,
+        intern_fn=intern_fn,
+        safe_gather_policy_value=safe_gather_policy_value,
+        guard_cfg=guard_cfg,
+    )
+
+
 def commit_stratum(
     ledger,
     stratum,
@@ -940,9 +996,23 @@ def commit_stratum(
     Axis: Interface/Control. Commutes with q. Erased by q.
     Test: tests/test_commit_stratum.py
     """
-    if intern_fn is None:
-        intern_fn = intern_nodes
-    return _commit_stratum_impl(
+    if safe_gather_policy is not None and safe_gather_policy_value is not None:
+        raise ValueError(
+            "commit_stratum received both safe_gather_policy and "
+            "safe_gather_policy_value"
+        )
+    if safe_gather_policy_value is not None:
+        return commit_stratum_value(
+            ledger,
+            stratum,
+            prior_q=prior_q,
+            validate=validate,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+        )
+    return commit_stratum_static(
         ledger,
         stratum,
         prior_q=prior_q,
@@ -950,7 +1020,6 @@ def commit_stratum(
         validate_mode=validate_mode,
         intern_fn=intern_fn,
         safe_gather_policy=safe_gather_policy,
-        safe_gather_policy_value=safe_gather_policy_value,
         guard_cfg=guard_cfg,
     )
 
@@ -1235,4 +1304,3 @@ def cycle_candidates(
         cnf2_enabled_fn=cnf2_enabled_fn,
         cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
     )
-
