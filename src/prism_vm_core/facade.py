@@ -53,7 +53,9 @@ from prism_bsp.space import RANK_FREE
 from prism_bsp.cnf2 import (
     emit_candidates as _emit_candidates_default,
     compact_candidates as _compact_candidates,
+    compact_candidates_result as _compact_candidates_result,
     compact_candidates_with_index as _compact_candidates_with_index,
+    compact_candidates_with_index_result as _compact_candidates_with_index_result,
     intern_candidates as _intern_candidates,
     emit_candidates_cfg as _emit_candidates_cfg,
     compact_candidates_cfg as _compact_candidates_cfg,
@@ -558,8 +560,10 @@ _cnf2_slot1_enabled = _cnf2_slot1_enabled_default
 emit_candidates = _emit_candidates
 emit_candidates_cfg = _emit_candidates_cfg
 compact_candidates = _compact_candidates
+compact_candidates_result = _compact_candidates_result
 compact_candidates_cfg = _compact_candidates_cfg
 compact_candidates_with_index = _compact_candidates_with_index
+compact_candidates_with_index_result = _compact_candidates_with_index_result
 compact_candidates_with_index_cfg = _compact_candidates_with_index_cfg
 intern_candidates = _intern_candidates
 intern_candidates_cfg = _intern_candidates_cfg
