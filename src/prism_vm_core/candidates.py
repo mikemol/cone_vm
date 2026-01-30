@@ -5,6 +5,7 @@ from prism_core.compact import (
     CompactConfig,
     compact_mask_cfg,
 )
+from prism_core.di import call_with_optional_kwargs
 
 DEFAULT_CANDIDATE_COMPACT_CONFIG = CompactConfig(
     index_dtype=jnp.int32, count_dtype=jnp.int32
@@ -28,7 +29,9 @@ def candidate_indices_cfg(
     """Interface/Control wrapper for candidate index selection."""
     if candidate_indices_fn is None:
         return _candidate_indices(enabled, compact_cfg=compact_cfg)
-    return candidate_indices_fn(enabled)
+    return call_with_optional_kwargs(
+        candidate_indices_fn, {"compact_cfg": compact_cfg}, enabled
+    )
 
 
 __all__ = [
