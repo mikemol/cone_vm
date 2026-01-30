@@ -99,16 +99,21 @@ from prism_bsp.space import (
     op_morton,
     op_rank,
     op_sort_and_swizzle,
+    op_sort_and_swizzle_value,
     op_sort_and_swizzle_blocked,
+    op_sort_and_swizzle_blocked_value,
     op_sort_and_swizzle_blocked_with_perm,
     op_sort_and_swizzle_blocked_with_perm_value,
     op_sort_and_swizzle_hierarchical,
+    op_sort_and_swizzle_hierarchical_value,
     op_sort_and_swizzle_hierarchical_with_perm,
     op_sort_and_swizzle_hierarchical_with_perm_value,
     op_sort_and_swizzle_morton,
+    op_sort_and_swizzle_morton_value,
     op_sort_and_swizzle_morton_with_perm,
     op_sort_and_swizzle_morton_with_perm_value,
     op_sort_and_swizzle_servo,
+    op_sort_and_swizzle_servo_value,
     op_sort_and_swizzle_servo_with_perm,
     op_sort_and_swizzle_servo_with_perm_value,
     op_sort_and_swizzle_with_perm,
@@ -765,16 +770,21 @@ _blocked_perm = _blocked_perm
 op_morton = op_morton
 op_rank = op_rank
 op_sort_and_swizzle = op_sort_and_swizzle
+op_sort_and_swizzle_value = op_sort_and_swizzle_value
 op_sort_and_swizzle_blocked = op_sort_and_swizzle_blocked
+op_sort_and_swizzle_blocked_value = op_sort_and_swizzle_blocked_value
 op_sort_and_swizzle_blocked_with_perm = op_sort_and_swizzle_blocked_with_perm
 op_sort_and_swizzle_blocked_with_perm_value = op_sort_and_swizzle_blocked_with_perm_value
 op_sort_and_swizzle_hierarchical = op_sort_and_swizzle_hierarchical
+op_sort_and_swizzle_hierarchical_value = op_sort_and_swizzle_hierarchical_value
 op_sort_and_swizzle_hierarchical_with_perm = op_sort_and_swizzle_hierarchical_with_perm
 op_sort_and_swizzle_hierarchical_with_perm_value = op_sort_and_swizzle_hierarchical_with_perm_value
 op_sort_and_swizzle_morton = op_sort_and_swizzle_morton
+op_sort_and_swizzle_morton_value = op_sort_and_swizzle_morton_value
 op_sort_and_swizzle_morton_with_perm = op_sort_and_swizzle_morton_with_perm
 op_sort_and_swizzle_morton_with_perm_value = op_sort_and_swizzle_morton_with_perm_value
 op_sort_and_swizzle_servo = op_sort_and_swizzle_servo
+op_sort_and_swizzle_servo_value = op_sort_and_swizzle_servo_value
 op_sort_and_swizzle_servo_with_perm = op_sort_and_swizzle_servo_with_perm
 op_sort_and_swizzle_servo_with_perm_value = op_sort_and_swizzle_servo_with_perm_value
 op_sort_and_swizzle_with_perm = op_sort_and_swizzle_with_perm
