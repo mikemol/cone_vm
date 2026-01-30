@@ -142,6 +142,14 @@ from ic_core.rules import (
 )
 
 
+def _resolve_safe_index_fn(cfg: ICGraphConfig):
+    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    if cfg.guard_cfg is not None and safe_index_fn is safe_index_1d:
+        safe_index_fn = make_safe_index_fn(
+            cfg=cfg.guard_cfg, policy=cfg.safety_policy
+        )
+    return safe_index_fn
+
 
 def ic_apply_active_pairs(
     state: ICState, *, cfg: ICEngineConfig = DEFAULT_ENGINE_CONFIG
@@ -264,6 +272,7 @@ def ic_wire_jax_cfg(
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
     """Interface/Control wrapper for ic_wire_jax with safety policy."""
+    safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_jax(
         state,
         node_a,
@@ -271,7 +280,7 @@ def ic_wire_jax_cfg(
         node_b,
         port_b,
         safety_policy=cfg.safety_policy,
-        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
+        safe_index_fn=safe_index_fn,
     )
 
 
@@ -285,6 +294,7 @@ def ic_wire_jax_safe_cfg(
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
     """Interface/Control wrapper for ic_wire_jax_safe with safety policy."""
+    safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_jax_safe(
         state,
         node_a,
@@ -292,7 +302,7 @@ def ic_wire_jax_safe_cfg(
         node_b,
         port_b,
         safety_policy=cfg.safety_policy,
-        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
+        safe_index_fn=safe_index_fn,
     )
 
 
@@ -304,12 +314,13 @@ def ic_wire_ptrs_jax_cfg(
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
     """Interface/Control wrapper for ic_wire_ptrs_jax with safety policy."""
+    safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_ptrs_jax(
         state,
         ptr_a,
         ptr_b,
         safety_policy=cfg.safety_policy,
-        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
+        safe_index_fn=safe_index_fn,
     )
 
 
@@ -323,6 +334,7 @@ def ic_wire_pairs_jax_cfg(
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
     """Interface/Control wrapper for ic_wire_pairs_jax with safety policy."""
+    safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_pairs_jax(
         state,
         node_a,
@@ -330,7 +342,7 @@ def ic_wire_pairs_jax_cfg(
         node_b,
         port_b,
         safety_policy=cfg.safety_policy,
-        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
+        safe_index_fn=safe_index_fn,
     )
 
 
@@ -342,12 +354,13 @@ def ic_wire_ptr_pairs_jax_cfg(
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
     """Interface/Control wrapper for ic_wire_ptr_pairs_jax with safety policy."""
+    safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_ptr_pairs_jax(
         state,
         ptr_a,
         ptr_b,
         safety_policy=cfg.safety_policy,
-        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
+        safe_index_fn=safe_index_fn,
     )
 
 
@@ -361,6 +374,7 @@ def ic_wire_star_jax_cfg(
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
     """Interface/Control wrapper for ic_wire_star_jax with safety policy."""
+    safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_star_jax(
         state,
         center_node,
@@ -368,7 +382,7 @@ def ic_wire_star_jax_cfg(
         leaf_nodes,
         leaf_ports,
         safety_policy=cfg.safety_policy,
-        safe_index_fn=cfg.safe_index_fn or safe_index_1d,
+        safe_index_fn=safe_index_fn,
     )
 
 
@@ -376,7 +390,7 @@ def ic_find_active_pairs_cfg(
     state: ICState, *, cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Interface/Control wrapper for active pair detection with DI bundle."""
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_find_active_pairs(
         state,
         safety_policy=cfg.safety_policy,
@@ -389,7 +403,7 @@ def ic_compact_active_pairs_cfg(
     state: ICState, *, cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Interface/Control wrapper for compact active pairs with DI bundle."""
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_compact_active_pairs(
         state,
         safety_policy=cfg.safety_policy,
@@ -402,7 +416,7 @@ def ic_compact_active_pairs_result_cfg(
     state: ICState, *, cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG
 ):
     """Interface/Control wrapper for CompactResult active pairs with DI bundle."""
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_compact_active_pairs_result(
         state,
         safety_policy=cfg.safety_policy,
