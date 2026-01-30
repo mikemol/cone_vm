@@ -458,7 +458,7 @@ def run_program_lines_bsp(
     l2_block_size=None,
     l1_block_size=None,
     do_global=False,
-    bsp_mode="auto",
+    bsp_mode=BspMode.AUTO,
     validate_stratum=False,
 ):
     if vm is None:
@@ -502,7 +502,7 @@ def repl(
     mode="baseline",
     use_morton=False,
     block_size=None,
-    bsp_mode="auto",
+    bsp_mode=BspMode.AUTO,
     validate_stratum=False,
 ):
     if mode == "bsp":
@@ -554,7 +554,7 @@ def main():
 
     args = sys.argv[1:]
     mode = "baseline"
-    bsp_mode = "auto"
+    bsp_mode = BspMode.AUTO
     validate_stratum = False
     cycles = 1
     do_sort = True
