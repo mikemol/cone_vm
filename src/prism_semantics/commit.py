@@ -6,7 +6,7 @@ from jax import lax
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.safety import SafetyPolicy
-from prism_core.di import wrap_policy
+from prism_core.di import call_with_optional_kwargs, wrap_policy
 from prism_ledger.intern import intern_nodes
 from prism_vm_core.constants import _PREFIX_SCAN_CHUNK
 from prism_vm_core.domains import (
@@ -211,8 +211,12 @@ def _apply_stratum_q(
     in_range = (ids.a >= start) & (ids.a < start + count)
     idx = jnp.where(in_range, ids.a - start, jnp.int32(0))
     canon_len = jnp.asarray(canon_ids.a.shape[0], dtype=jnp.int32)
-    values, ok_idx, corrupt = safe_gather_ok_fn(
-        canon_ids.a, idx, label, policy=oob_policy
+    values, ok_idx, corrupt = call_with_optional_kwargs(
+        safe_gather_ok_fn,
+        {"policy": oob_policy},
+        canon_ids.a,
+        idx,
+        label,
     )
     ok = jnp.where(in_range, ok_idx, True)
     mapped = values
