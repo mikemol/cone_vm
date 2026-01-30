@@ -38,6 +38,19 @@ from prism_bsp.config import (
     DEFAULT_INTRINSIC_CONFIG,
 )
 from prism_vm_core.protocols import EmitCandidatesFn, HostRaiseFn, InternFn
+
+
+def _default_policy_for_safe_gather(
+    safe_gather_fn,
+    safe_gather_policy,
+    safe_gather_policy_value,
+) -> bool:
+    """Return True if resolve_policy_binding should inject the default policy."""
+    if safe_gather_policy is not None or safe_gather_policy_value is not None:
+        return True
+    if safe_gather_fn is None:
+        return True
+    return not getattr(safe_gather_fn, "_prism_policy_bound", False)
 from prism_vm_core.structures import NodeBatch
 from prism_vm_core.candidates import _candidate_indices, candidate_indices_cfg
 from prism_bsp.cnf2 import (
@@ -194,6 +207,9 @@ def op_interact_jit_cfg(
         policy=safe_gather_policy,
         policy_value=safe_gather_policy_value,
         context="op_interact_jit_cfg",
+        default_policy=_default_policy_for_safe_gather(
+            cfg.safe_gather_fn, safe_gather_policy, safe_gather_policy_value
+        ),
     )
     if binding.mode == PolicyMode.VALUE:
         return op_interact_value_jit(
@@ -894,6 +910,9 @@ def cycle_jit_cfg(
         policy=safe_gather_policy,
         policy_value=safe_gather_policy_value,
         context="cycle_jit_cfg",
+        default_policy=_default_policy_for_safe_gather(
+            cfg.safe_gather_fn, safe_gather_policy, safe_gather_policy_value
+        ),
     )
     if binding.mode == PolicyMode.VALUE:
         return cycle_value_jit(

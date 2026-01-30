@@ -98,6 +98,7 @@ def resolve_policy_binding(
     policy: SafetyPolicy | None = None,
     policy_value: PolicyValue | None = None,
     context: str | None = None,
+    default_policy: bool = True,
 ) -> PolicyBinding:
     """Resolve a policy binding, enforcing that only one of policy/value is set."""
     if policy is not None and policy_value is not None:
@@ -109,6 +110,8 @@ def resolve_policy_binding(
     if policy_value is not None:
         return PolicyBinding(PolicyMode.VALUE, policy=None, policy_value=policy_value)
     if policy is None:
+        if not default_policy:
+            return PolicyBinding(PolicyMode.STATIC, policy=None, policy_value=None)
         policy = DEFAULT_SAFETY_POLICY
     return PolicyBinding(PolicyMode.STATIC, policy=policy, policy_value=None)
 
