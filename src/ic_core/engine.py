@@ -25,7 +25,7 @@ class ICRewriteStats(NamedTuple):
 
 DEFAULT_ENGINE_CONFIG = ICEngineConfig(
     compact_pairs_fn=ic_compact_active_pairs,
-    compact_pairs_result_fn=None,
+    compact_pairs_result_fn=ic_compact_active_pairs_result,
     decode_port_fn=decode_port,
     alloc_plan_fn=_alloc_plan,
     apply_template_planned_fn=_apply_template_planned,
