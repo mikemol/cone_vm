@@ -4,6 +4,7 @@ from functools import partial
 
 from prism_core.di import cached_jit
 from prism_core.jax_safe import safe_index_1d
+from ic_core.guards import make_safe_index_fn
 from ic_core.config import ICGraphConfig, ICEngineConfig, DEFAULT_GRAPH_CONFIG
 from ic_core.engine import (
     DEFAULT_ENGINE_CONFIG,
@@ -21,6 +22,14 @@ from ic_core.graph import (
     ic_wire_ptrs_jax,
     ic_wire_star_jax,
 )
+
+def _resolve_safe_index_fn(cfg: ICGraphConfig):
+    safe_index_fn = _resolve_safe_index_fn(cfg)
+    if cfg.guard_cfg is not None and safe_index_fn is safe_index_1d:
+        safe_index_fn = make_safe_index_fn(
+            cfg=cfg.guard_cfg, policy=cfg.safety_policy
+        )
+    return safe_index_fn
 
 
 @cached_jit
@@ -90,7 +99,7 @@ def reduce_jit_cfg(cfg: ICEngineConfig | None = None):
 
 @cached_jit
 def _find_active_pairs_jit(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
 
     def _impl(state):
         return ic_find_active_pairs(
@@ -117,7 +126,7 @@ def find_active_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _compact_active_pairs_jit(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
 
     def _impl(state):
         return ic_compact_active_pairs(
@@ -144,7 +153,7 @@ def compact_active_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _compact_active_pairs_result_jit(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
 
     def _impl(state):
         return ic_compact_active_pairs_result(
@@ -171,7 +180,7 @@ def compact_active_pairs_result_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_jax_jit(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
 
     def _impl(state, node_a, port_a, node_b, port_b):
         return ic_wire_jax(
@@ -201,7 +210,7 @@ def wire_jax_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_jax_safe_jit(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
 
     def _impl(state, node_a, port_a, node_b, port_b):
         return ic_wire_jax_safe(
@@ -231,7 +240,7 @@ def wire_jax_safe_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_ptrs_jit(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
 
     def _impl(state, ptr_a, ptr_b):
         return ic_wire_ptrs_jax(
@@ -259,7 +268,7 @@ def wire_ptrs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_pairs_jit(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
 
     def _impl(state, node_a, port_a, node_b, port_b):
         return ic_wire_pairs_jax(
@@ -289,7 +298,7 @@ def wire_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_ptr_pairs_jit(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
 
     def _impl(state, ptr_a, ptr_b):
         return ic_wire_ptr_pairs_jax(
@@ -317,7 +326,7 @@ def wire_ptr_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_star_jit(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn or safe_index_1d
+    safe_index_fn = _resolve_safe_index_fn(cfg)
 
     def _impl(state, center_node, center_port, leaf_nodes, leaf_ports):
         return ic_wire_star_jax(
