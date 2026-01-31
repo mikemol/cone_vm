@@ -714,6 +714,8 @@ def _emit_report(
         lines.append("```")
     if type_suggestions or type_ambiguities:
         lines.append("Type-flow audit:")
+        if type_suggestions or type_ambiguities:
+            lines.append(_render_type_mermaid(type_suggestions or [], type_ambiguities or []))
         if type_suggestions:
             lines.append("Type tightening candidates:")
             lines.append("```")
@@ -725,6 +727,51 @@ def _emit_report(
             lines.extend(type_ambiguities)
             lines.append("```")
     return "\n".join(lines), violations
+
+
+def _render_type_mermaid(
+    suggestions: list[str],
+    ambiguities: list[str],
+) -> str:
+    lines = ["```mermaid", "flowchart LR"]
+    node_id = 0
+    def _node(label: str) -> str:
+        nonlocal node_id
+        node_id += 1
+        node = f"type_{node_id}"
+        safe = label.replace('"', "'")
+        lines.append(f'  {node}["{safe}"]')
+        return node
+
+    for entry in suggestions:
+        # Format: file:func.param can tighten to Type
+        if " can tighten to " not in entry:
+            continue
+        lhs, rhs = entry.split(" can tighten to ", 1)
+        src = _node(lhs)
+        dst = _node(rhs)
+        lines.append(f"  {src} --> {dst}")
+    for entry in ambiguities:
+        if " downstream types conflict: " not in entry:
+            continue
+        lhs, rhs = entry.split(" downstream types conflict: ", 1)
+        src = _node(lhs)
+        # rhs is a repr of list; keep as string nodes per type
+        rhs = rhs.strip()
+        if rhs.startswith("[") and rhs.endswith("]"):
+            rhs = rhs[1:-1]
+        type_names = []
+        for item in rhs.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            item = item.strip("'\"")
+            type_names.append(item)
+        for type_name in type_names:
+            dst = _node(type_name)
+            lines.append(f"  {src} -.-> {dst}")
+    lines.append("```")
+    return "\n".join(lines)
 
 
 def main() -> None:
