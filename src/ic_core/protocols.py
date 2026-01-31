@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Protocol, Tuple, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, Tuple, runtime_checkable
 
 import jax.numpy as jnp
 
-from ic_core.graph import ICState
 from prism_core.compact import CompactResult
 from prism_core.protocols import SafeIndexFn
+
+if TYPE_CHECKING:
+    from ic_core.graph import ICState
 
 
 @runtime_checkable
