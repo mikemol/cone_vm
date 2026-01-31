@@ -10,10 +10,12 @@ from ic_core.config import (
     ICRuntimeResolved,
     DEFAULT_GRAPH_CONFIG,
     DEFAULT_GRAPH_RESOLVED,
-    DEFAULT_ENGINE_CONFIG,
-    DEFAULT_ENGINE_RESOLVED,
     resolve_engine_config,
     resolve_graph_config,
+)
+from ic_core.engine import (
+    DEFAULT_ENGINE_CONFIG,
+    DEFAULT_ENGINE_RESOLVED,
 )
 from ic_core.engine import ic_apply_active_pairs, ic_reduce
 from ic_core.graph import (
