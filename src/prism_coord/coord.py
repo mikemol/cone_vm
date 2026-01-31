@@ -15,8 +15,22 @@ from prism_vm_core.protocols import InternFn, NodeBatchFn
 # dataflow-bundle: left_id, right_id
 
 
+@dataclass(frozen=True)
+class _CoordNodeArgs:
+    op: object
+    a1: object
+    a2: object
+
+
+@dataclass(frozen=True)
+class _CoordBinaryArgs:
+    left_id: object
+    right_id: object
+
+
 def _node_batch(op, a1, a2) -> NodeBatch:
-    return NodeBatch(op=op, a1=a1, a2=a2)
+    bundle = _CoordNodeArgs(op=op, a1=a1, a2=a2)
+    return NodeBatch(op=bundle.op, a1=bundle.a1, a2=bundle.a2)
 
 
 @jax.jit(static_argnames=("coord_norm_id_jax_fn",))
@@ -331,8 +345,9 @@ def cd_lift_binary(
     If both inputs are OP_COORD_PAIR, apply op componentwise and re-pair.
     Otherwise, fall back to op(left, right).
     """
-    left_id = int(left_id)
-    right_id = int(right_id)
+    bundle = _CoordBinaryArgs(left_id=left_id, right_id=right_id)
+    left_id = int(bundle.left_id)
+    right_id = int(bundle.right_id)
     left_op = host_int_value_fn(ledger.opcode[left_id])
     right_op = host_int_value_fn(ledger.opcode[right_id])
     if left_op == OP_COORD_PAIR and right_op == OP_COORD_PAIR:
@@ -391,6 +406,7 @@ def cd_lift_binary_cfg(
     host_int_value_fn=_host_int_value,
 ):
     """Interface/Control wrapper for cd_lift_binary with DI bundle."""
+    bundle = _CoordBinaryArgs(left_id=left_id, right_id=right_id)
     if cfg.intern_cfg is not None and intern_cfg is not None:
         raise ValueError("Pass either cfg.intern_cfg or intern_cfg, not both.")
     intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
@@ -399,8 +415,8 @@ def cd_lift_binary_cfg(
     return cd_lift_binary(
         ledger,
         op,
-        left_id,
-        right_id,
+        bundle.left_id,
+        bundle.right_id,
         intern_fn=intern_fn,
         node_batch_fn=node_batch_fn,
         host_int_value_fn=host_int_value_fn,

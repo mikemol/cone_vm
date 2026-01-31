@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 
@@ -7,6 +8,13 @@ from prism_vm_core.ontology import OP_NULL
 from prism_vm_core.structures import NodeBatch
 
 # dataflow-bundle: arg1, arg2, opcode
+
+
+@dataclass(frozen=True)
+class _ProjectArgs:
+    opcode: object
+    arg1: object
+    arg2: object
 
 
 def _node_batch(op, a1, a2):
@@ -23,9 +31,10 @@ def _project_graph_to_ledger(
     label,
     limit=None,
 ):
-    ops = jax.device_get(opcode[:count])
-    a1s = jax.device_get(arg1[:count])
-    a2s = jax.device_get(arg2[:count])
+    bundle = _ProjectArgs(opcode=opcode, arg1=arg1, arg2=arg2)
+    ops = jax.device_get(bundle.opcode[:count])
+    a1s = jax.device_get(bundle.arg1[:count])
+    a2s = jax.device_get(bundle.arg2[:count])
     mapping = {0: 0}
     visiting = set()
 

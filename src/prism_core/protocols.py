@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol, TypeAlias, runtime_checkable
 
 import jax.numpy as jnp
@@ -7,6 +8,14 @@ import jax.numpy as jnp
 # dataflow-bundle: idx, label, policy_value, size
 
 PolicyValue: TypeAlias = jnp.ndarray
+
+
+@dataclass(frozen=True)
+class SafeGatherPolicyArgs:
+    idx: object
+    label: str
+    policy_value: PolicyValue
+    size: object
 
 
 @runtime_checkable

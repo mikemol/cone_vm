@@ -1,4 +1,5 @@
 from typing import Callable, Optional
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
@@ -27,6 +28,11 @@ from prism_core.guards import (
     resolve_safe_index_value_fn as _resolve_safe_index_value_fn,
 )
 from prism_vm_core.ontology import OP_NULL, OP_ZERO
+
+@dataclass(frozen=True)
+class _BinaryArgs:
+    arg1: object
+    arg2: object
 
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
 _HAS_DEBUG_CALLBACK = _jax_safe.HAS_DEBUG_CALLBACK
@@ -320,7 +326,8 @@ def _guard_zero_args(mask, arg1, arg2, label):
         return
     if mask.size == 0:
         return
-    bad = jnp.any(mask & ((arg1 != 0) | (arg2 != 0)))
+    bundle = _BinaryArgs(arg1=arg1, arg2=arg2)
+    bad = jnp.any(mask & ((bundle.arg1 != 0) | (bundle.arg2 != 0)))
 
     def _raise(bad_val):
         if bad_val:

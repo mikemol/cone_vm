@@ -14,7 +14,7 @@ shadowing or monkeypatching drift.
 
 from typing import Optional
 from functools import partial
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 import jax
 import jax.numpy as jnp
@@ -329,10 +329,16 @@ def op_sort_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_with_perm with guard cfg."""
+    bundle = _GuardSafeGatherValueBundle(
+        guard_cfg=guard_cfg, safe_gather_value_fn=safe_gather_value_fn
+    )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_with_perm_value,
-            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            {
+                "guard_cfg": bundle.guard_cfg,
+                "safe_gather_value_fn": bundle.safe_gather_value_fn,
+            },
             arena,
             safe_gather_policy_value,
         )
@@ -372,10 +378,16 @@ def op_sort_blocked_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_blocked_with_perm with guard cfg."""
+    bundle = _GuardSafeGatherValueBundle(
+        guard_cfg=guard_cfg, safe_gather_value_fn=safe_gather_value_fn
+    )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_blocked_with_perm_value,
-            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            {
+                "guard_cfg": bundle.guard_cfg,
+                "safe_gather_value_fn": bundle.safe_gather_value_fn,
+            },
             arena,
             block_size,
             safe_gather_policy_value,
@@ -423,10 +435,16 @@ def op_sort_hierarchical_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_hierarchical_with_perm with guard cfg."""
+    bundle = _GuardSafeGatherValueBundle(
+        guard_cfg=guard_cfg, safe_gather_value_fn=safe_gather_value_fn
+    )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_hierarchical_with_perm_value,
-            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            {
+                "guard_cfg": bundle.guard_cfg,
+                "safe_gather_value_fn": bundle.safe_gather_value_fn,
+            },
             arena,
             l2_block_size,
             l1_block_size,
@@ -477,10 +495,16 @@ def op_sort_morton_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_morton_with_perm with guard cfg."""
+    bundle = _GuardSafeGatherValueBundle(
+        guard_cfg=guard_cfg, safe_gather_value_fn=safe_gather_value_fn
+    )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_morton_with_perm_value,
-            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            {
+                "guard_cfg": bundle.guard_cfg,
+                "safe_gather_value_fn": bundle.safe_gather_value_fn,
+            },
             arena,
             morton,
             safe_gather_policy_value,
@@ -523,10 +547,16 @@ def op_sort_servo_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_servo_with_perm with guard cfg."""
+    bundle = _GuardSafeGatherValueBundle(
+        guard_cfg=guard_cfg, safe_gather_value_fn=safe_gather_value_fn
+    )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_servo_with_perm_value,
-            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            {
+                "guard_cfg": bundle.guard_cfg,
+                "safe_gather_value_fn": bundle.safe_gather_value_fn,
+            },
             arena,
             morton,
             servo_mask,
@@ -654,6 +684,33 @@ from prism_vm_core.guards import (
     guard_zero_args_cfg,
     guard_swizzle_args_cfg,
 )
+
+
+@dataclass(frozen=True)
+class _SafeGatherCfgArgs:
+    cfg: GuardConfig
+    guard: object
+    policy: SafetyPolicy | None
+
+
+@dataclass(frozen=True)
+class _SafeGatherCfgReturnOkArgs:
+    cfg: GuardConfig
+    guard: object
+    policy: SafetyPolicy | None
+    return_ok: bool
+
+
+@dataclass(frozen=True)
+class _EmitInternFns:
+    emit_candidates_fn: object
+    intern_fn: object
+
+
+@dataclass(frozen=True)
+class _GuardSafeGatherValueBundle:
+    guard_cfg: GuardConfig
+    safe_gather_value_fn: object
 from prism_semantics.commit import (
     commit_stratum as _commit_stratum_impl,
     commit_stratum_static as _commit_stratum_static_impl,
@@ -820,9 +877,17 @@ def safe_gather_1d_cfg(
     return_ok: bool = False,
 ):
     """Interface/Control wrapper for safe_gather_1d with guard config."""
+    bundle = _SafeGatherCfgReturnOkArgs(
+        cfg=cfg, guard=guard, policy=policy, return_ok=return_ok
+    )
     return call_with_optional_kwargs(
         _safe_gather_1d_cfg,
-        {"guard": guard, "policy": policy, "cfg": cfg, "return_ok": return_ok},
+        {
+            "guard": bundle.guard,
+            "policy": bundle.policy,
+            "cfg": bundle.cfg,
+            "return_ok": bundle.return_ok,
+        },
         arr,
         idx,
         label,
@@ -839,9 +904,10 @@ def safe_gather_1d_ok_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Interface/Control wrapper for safe_gather_1d_ok with guard config."""
+    bundle = _SafeGatherCfgArgs(cfg=cfg, guard=guard, policy=policy)
     return call_with_optional_kwargs(
         _safe_gather_1d_ok_cfg,
-        {"guard": guard, "policy": policy, "cfg": cfg},
+        {"guard": bundle.guard, "policy": bundle.policy, "cfg": bundle.cfg},
         arr,
         idx,
         label,
@@ -881,9 +947,10 @@ def safe_index_1d_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Interface/Control wrapper for safe_index_1d with guard config."""
+    bundle = _SafeGatherCfgArgs(cfg=cfg, guard=guard, policy=policy)
     return call_with_optional_kwargs(
         _safe_index_1d_cfg,
-        {"guard": guard, "policy": policy, "cfg": cfg},
+        {"guard": bundle.guard, "policy": bundle.policy, "cfg": bundle.cfg},
         idx,
         size,
         label,
@@ -1584,15 +1651,16 @@ def cycle_candidates_bound(
     if cnf2_mode is not None:
         base_cfg = replace(base_cfg, cnf2_mode=cnf2_mode)
     cfg = cnf2_config_bound(cfg.policy_binding, cfg=base_cfg)
+    bundle = _EmitInternFns(emit_candidates_fn=emit_candidates_fn, intern_fn=intern_fn)
     ledger, frontier_ids, strata, q_map = _cycle_candidates_bound(
         ledger,
         frontier_ids,
         cfg,
         validate_mode=validate_mode,
         guard_cfg=guard_cfg,
-        intern_fn=intern_fn if intern_fn is not None else _ledger_intern.intern_nodes,
+        intern_fn=bundle.intern_fn if bundle.intern_fn is not None else _ledger_intern.intern_nodes,
         intern_cfg=intern_cfg,
-        emit_candidates_fn=emit_candidates_fn if emit_candidates_fn is not None else _emit_candidates_default,
+        emit_candidates_fn=bundle.emit_candidates_fn if bundle.emit_candidates_fn is not None else _emit_candidates_default,
         cnf2_enabled_fn=cnf2_enabled_fn,
         cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
     )

@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 from functools import partial
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.di import call_with_optional_kwargs
@@ -90,7 +90,21 @@ EMPTY_COMMIT_OPTIONAL: dict = {}
 # root-assertion guard hook bundle (debug-only)
 # dataflow-bundle: next_frontier, post_ids
 # root-assertion bundle (debug-only)
+@dataclass(frozen=True)
+class _RootAssertNoopArgs:
+    ledger: object
+    frontier: object
+    post_ids: object
+
+
+@dataclass(frozen=True)
+class _RootAssertArgs:
+    next_frontier: object
+    post_ids: object
+
+
 def _assert_roots_noop(_ledger, _frontier, _post_ids):
+    _ = _RootAssertNoopArgs(_ledger, _frontier, _post_ids)
     return None
 
 
@@ -737,8 +751,9 @@ def _cycle_candidates_core_static_bound(
         # Test guard: denotation invariance under q projection.
         if not _TEST_GUARDS:
             return
-        pre_hash = ledger_roots_hash_host_fn(ledger2, next_frontier.a)
-        post_hash = ledger_roots_hash_host_fn(ledger2, post_ids.a)
+        args = _RootAssertArgs(next_frontier, post_ids)
+        pre_hash = ledger_roots_hash_host_fn(ledger2, args.next_frontier.a)
+        post_hash = ledger_roots_hash_host_fn(ledger2, args.post_ids.a)
         if pre_hash != post_hash:
             raise RuntimeError("BSPᵗ projection changed root structure")
 
@@ -855,8 +870,9 @@ def _cycle_candidates_core_value_bound(
         # Test guard: denotation invariance under q projection.
         if not _TEST_GUARDS:
             return
-        pre_hash = ledger_roots_hash_host_fn(ledger2, next_frontier.a)
-        post_hash = ledger_roots_hash_host_fn(ledger2, post_ids.a)
+        args = _RootAssertArgs(next_frontier, post_ids)
+        pre_hash = ledger_roots_hash_host_fn(ledger2, args.next_frontier.a)
+        post_hash = ledger_roots_hash_host_fn(ledger2, args.post_ids.a)
         if pre_hash != post_hash:
             raise RuntimeError("BSPᵗ projection changed root structure")
 

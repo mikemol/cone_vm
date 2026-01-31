@@ -6,7 +6,7 @@ from __future__ import annotations
 # dataflow-bundle: _arena, _tile_size
 # dataflow-bundle: _args, _kwargs
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from functools import partial
 from typing import Optional
 
@@ -52,6 +52,24 @@ from prism_bsp.config import (
     SwizzleWithPermFnsBound,
 )
 from prism_vm_core.protocols import EmitCandidatesFn, HostRaiseFn, InternFn
+
+
+@dataclass(frozen=True)
+class _ArenaRootArgs:
+    arena: object
+    root: object
+
+
+@dataclass(frozen=True)
+class _ArenaTileArgs:
+    arena: object
+    tile_size: object
+
+
+@dataclass(frozen=True)
+class _ArgsKwargs:
+    args: tuple
+    kwargs: dict
 
 
 def _safe_gather_is_bound(safe_gather_fn) -> bool:
@@ -119,14 +137,17 @@ from prism_ledger.intern import _coord_norm_id_jax
 
 
 def _noop_root_hash(_arena, _root):
+    _ = _ArenaRootArgs(arena=_arena, root=_root)
     return jnp.int32(0)
 
 
 def _noop_tile_size(*_args, **_kwargs):
+    _ = _ArgsKwargs(args=_args, kwargs=_kwargs)
     return jnp.int32(0)
 
 
 def _noop_metrics(_arena, _tile_size):
+    _ = _ArenaTileArgs(arena=_arena, tile_size=_tile_size)
     return jnp.int32(0)
 
 

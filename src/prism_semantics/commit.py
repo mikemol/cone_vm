@@ -28,6 +28,12 @@ from prism_core.guards import (
 
 # dataflow-bundle: act_val, exp_val
 
+
+@dataclass(frozen=True)
+class _ExpectedActualArgs:
+    exp_val: object
+    act_val: object
+
 from prism_ledger.intern import intern_nodes
 from prism_vm_core.constants import _PREFIX_SCAN_CHUNK
 from prism_vm_core.domains import (
@@ -234,7 +240,8 @@ def _apply_stratum_q_core(
                     f"guard failed: {label} count={int(exp_val)} canon_ids={int(act_val)}"
                 )
 
-        jax.debug.callback(_raise, mismatch, expected, actual)
+        bundle = _ExpectedActualArgs(exp_val=expected, act_val=actual)
+        jax.debug.callback(_raise, mismatch, bundle.exp_val, bundle.act_val)
     if canon_ids.a.shape[0] == 0:
         return ids
     start = jnp.asarray(stratum.start, dtype=jnp.int32)
@@ -351,7 +358,8 @@ def _apply_stratum_q_value(
                     f"guard failed: {label} count={int(exp_val)} canon_ids={int(act_val)}"
                 )
 
-        jax.debug.callback(_raise, mismatch, expected, actual)
+        bundle = _ExpectedActualArgs(exp_val=expected, act_val=actual)
+        jax.debug.callback(_raise, mismatch, bundle.exp_val, bundle.act_val)
     if canon_ids.a.shape[0] == 0:
         return ids
     start = jnp.asarray(stratum.start, dtype=jnp.int32)

@@ -6,6 +6,41 @@ from dataclasses import dataclass
 # dataflow-bundle: new_ids, new_keys
 # dataflow-bundle: t_b0, t_b1, t_b2, t_b3
 
+
+@dataclass(frozen=True)
+class _LexLessArgs:
+    a0: object
+    a1: object
+    a2: object
+    a3: object
+    a4: object
+    b0: object
+    b1: object
+    b2: object
+    b3: object
+    b4: object
+
+
+@dataclass(frozen=True)
+class _SearchKeyArgs:
+    t_b0: object
+    t_b1: object
+    t_b2: object
+    t_b3: object
+    t_b4: object
+
+
+@dataclass(frozen=True)
+class _NewKeysIds:
+    new_keys: object
+    new_ids: object
+
+
+@dataclass(frozen=True)
+class _CoordNormProbeFns:
+    coord_norm_probe_assert_fn: object
+    coord_norm_probe_reset_cb_fn: object
+
 import jax
 import jax.numpy as jnp
 from jax import lax
@@ -142,20 +177,36 @@ def _lookup_node_id(ledger, op, a1, a2, *, pack_key_fn=_pack_key):
     count = ledger.count.astype(jnp.int32)
 
     def _lex_less(a0, a1, a2, a3, a4, b0, b1, b2, b3, b4):
+        bundle = _LexLessArgs(
+            a0=a0,
+            a1=a1,
+            a2=a2,
+            a3=a3,
+            a4=a4,
+            b0=b0,
+            b1=b1,
+            b2=b2,
+            b3=b3,
+            b4=b4,
+        )
         return jnp.logical_or(
-            a0 < b0,
+            bundle.a0 < bundle.b0,
             jnp.logical_and(
-                a0 == b0,
+                bundle.a0 == bundle.b0,
                 jnp.logical_or(
-                    a1 < b1,
+                    bundle.a1 < bundle.b1,
                     jnp.logical_and(
-                        a1 == b1,
+                        bundle.a1 == bundle.b1,
                         jnp.logical_or(
-                            a2 < b2,
+                            bundle.a2 < bundle.b2,
                             jnp.logical_and(
-                                a2 == b2,
+                                bundle.a2 == bundle.b2,
                                 jnp.logical_or(
-                                    a3 < b3, jnp.logical_and(a3 == b3, a4 < b4)
+                                    bundle.a3 < bundle.b3,
+                                    jnp.logical_and(
+                                        bundle.a3 == bundle.b3,
+                                        bundle.a4 < bundle.b4,
+                                    ),
                                 ),
                             ),
                         ),
@@ -261,6 +312,10 @@ def _intern_nodes_impl_core(
     coord_norm_probe_assert_fn=_coord_norm_probe_assert,
     scatter_drop_fn=_scatter_drop,
 ):
+    probe_bundle = _CoordNormProbeFns(
+        coord_norm_probe_assert_fn=coord_norm_probe_assert_fn,
+        coord_norm_probe_reset_cb_fn=coord_norm_probe_reset_cb_fn,
+    )
     max_key = jnp.uint8(0xFF)
     # Interning pipeline (vectorized):
     # - Key-safe normalization only (coord pairs); no semantic rewrites.
@@ -279,7 +334,11 @@ def _intern_nodes_impl_core(
 
     has_coord = jnp.any(is_coord_pair)
     if guards_enabled_fn() and coord_norm_probe_enabled_fn():
-        jax.debug.callback(coord_norm_probe_reset_cb_fn, jnp.int32(0), ordered=True)
+        jax.debug.callback(
+            probe_bundle.coord_norm_probe_reset_cb_fn,
+            jnp.int32(0),
+            ordered=True,
+        )
     # CD_r/CD_a: normalize coord pairs before packing keys for stable lookup.
 
     def _norm(args):
@@ -308,7 +367,9 @@ def _intern_nodes_impl_core(
         has_coord, _norm, _no_norm, (proposed_a1, proposed_a2)
     )
     if guards_enabled_fn() and coord_norm_probe_enabled_fn():
-        jax.debug.callback(coord_norm_probe_assert_fn, has_coord, ordered=True)
+        jax.debug.callback(
+            probe_bundle.coord_norm_probe_assert_fn, has_coord, ordered=True
+        )
 
     # Key-safety: Normalize𝚌 before packing.
     # Sort proposals by packed key so duplicates collapse deterministically.
@@ -374,20 +435,36 @@ def _intern_nodes_impl_core(
     # remains an m1 tradeoff (see IMPLEMENTATION_PLAN.md).
 
     def _lex_less(a0, a1, a2, a3, a4, b0, b1, b2, b3, b4):
+        bundle = _LexLessArgs(
+            a0=a0,
+            a1=a1,
+            a2=a2,
+            a3=a3,
+            a4=a4,
+            b0=b0,
+            b1=b1,
+            b2=b2,
+            b3=b3,
+            b4=b4,
+        )
         return jnp.logical_or(
-            a0 < b0,
+            bundle.a0 < bundle.b0,
             jnp.logical_and(
-                a0 == b0,
+                bundle.a0 == bundle.b0,
                 jnp.logical_or(
-                    a1 < b1,
+                    bundle.a1 < bundle.b1,
                     jnp.logical_and(
-                        a1 == b1,
+                        bundle.a1 == bundle.b1,
                         jnp.logical_or(
-                            a2 < b2,
+                            bundle.a2 < bundle.b2,
                             jnp.logical_and(
-                                a2 == b2,
+                                bundle.a2 == bundle.b2,
                                 jnp.logical_or(
-                                    a3 < b3, jnp.logical_and(a3 == b3, a4 < b4)
+                                    bundle.a3 < bundle.b3,
+                                    jnp.logical_and(
+                                        bundle.a3 == bundle.b3,
+                                        bundle.a4 < bundle.b4,
+                                    ),
                                 ),
                             ),
                         ),
@@ -397,6 +474,9 @@ def _intern_nodes_impl_core(
         )
 
     def _search_one(t_b0, t_b1, t_b2, t_b3, t_b4, start, end):
+        bundle = _SearchKeyArgs(
+            t_b0=t_b0, t_b1=t_b1, t_b2=t_b2, t_b3=t_b3, t_b4=t_b4
+        )
         lo = start
         hi = end
 
@@ -418,11 +498,11 @@ def _intern_nodes_impl_core(
                 mid_b2,
                 mid_b3,
                 mid_b4,
-                t_b0,
-                t_b1,
-                t_b2,
-                t_b3,
-                t_b4,
+                bundle.t_b0,
+                bundle.t_b1,
+                bundle.t_b2,
+                bundle.t_b3,
+                bundle.t_b4,
             )
             lo_i = jnp.where(go_right, mid + 1, lo_i)
             hi_i = jnp.where(go_right, hi_i, mid)
@@ -478,6 +558,9 @@ def _intern_nodes_impl_core(
         new_ids,
         new_items,
     ):
+        bundle = _NewKeysIds(new_keys=new_keys, new_ids=new_ids)
+        new_keys = bundle.new_keys
+        new_ids = bundle.new_ids
         out_b0 = jnp.full_like(old_keys.b0, max_key)
         out_b1 = jnp.full_like(old_keys.b1, max_key)
         out_b2 = jnp.full_like(old_keys.b2, max_key)
@@ -566,6 +649,9 @@ def _intern_nodes_impl_core(
         op_start,
         op_end,
     ):
+        bundle = _NewKeysIds(new_keys=new_keys, new_ids=new_ids)
+        new_keys = bundle.new_keys
+        new_ids = bundle.new_ids
         out_b0 = jnp.full_like(old_keys.b0, max_key)
         out_b1 = jnp.full_like(old_keys.b1, max_key)
         out_b2 = jnp.full_like(old_keys.b2, max_key)

@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 
@@ -41,6 +42,32 @@ GATHER_GUARD = TEST_GUARDS or os.environ.get(
     "on",
 )
 HAS_DEBUG_CALLBACK = hasattr(jax, "debug") and hasattr(jax.debug, "callback")
+
+
+@dataclass(frozen=True)
+class _IndexPolicyValue:
+    idx: object
+    policy_value: PolicyValue
+
+
+@dataclass(frozen=True)
+class _IndexPolicyValueSize:
+    idx: object
+    policy_value: PolicyValue
+    size: object
+
+
+@dataclass(frozen=True)
+class _IndexSizeArgs:
+    idx: object
+    size: object
+
+
+@dataclass(frozen=True)
+class _BoundsArgs:
+    max_val: object
+    min_val: object
+    size_val: object
 
 
 def scatter_guard(indices, max_index, label):
@@ -113,7 +140,10 @@ def guard_gather_index(idx, size, label, guard=None):
                 f"{label} (min={int(min_val)}, max={int(max_val)}, size={int(size_val)})"
             )
 
-    jax.debug.callback(_raise, bad, min_idx, max_idx, size)
+    bounds = _BoundsArgs(max_val=max_idx, min_val=min_idx, size_val=size)
+    jax.debug.callback(
+        _raise, bad, bounds.min_val, bounds.max_val, bounds.size_val
+    )
 
 
 def safe_gather_1d(
@@ -178,9 +208,10 @@ def safe_gather_1d_value(
     return_ok: bool = False,
 ):
     """Guarded gather that accepts policy as a JAX value."""
+    bundle = _IndexPolicyValue(idx=idx, policy_value=policy_value)
     size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
-    idx_i = jnp.asarray(idx, dtype=jnp.int32)
-    policy_val = jnp.asarray(policy_value, dtype=jnp.int32)
+    idx_i = jnp.asarray(bundle.idx, dtype=jnp.int32)
+    policy_val = jnp.asarray(bundle.policy_value, dtype=jnp.int32)
     guard_gather_index(idx_i, size, label, guard=guard)
     ok = (idx_i >= 0) & (idx_i < size)
     idx_safe = jnp.clip(idx_i, 0, size - 1)
@@ -212,7 +243,8 @@ def safe_gather_1d_ok_value(
         policy_value=policy_value,
         return_ok=True,
     )
-    policy_val = jnp.asarray(policy_value, dtype=jnp.int32)
+    bundle = _IndexPolicyValue(idx=idx, policy_value=policy_value)
+    policy_val = jnp.asarray(bundle.policy_value, dtype=jnp.int32)
     corrupt = jnp.where(policy_val == POLICY_VALUE_CORRUPT, ~ok, False)
     return values, ok, corrupt
 
@@ -228,8 +260,9 @@ def safe_index_1d(
     """Return a policy-aware safe index and in-bounds mask."""
     if policy is None:
         policy = DEFAULT_SAFETY_POLICY
-    size_i = jnp.asarray(size, dtype=jnp.int32)
-    idx_i = jnp.asarray(idx, dtype=jnp.int32)
+    bundle = _IndexSizeArgs(idx=idx, size=size)
+    size_i = jnp.asarray(bundle.size, dtype=jnp.int32)
+    idx_i = jnp.asarray(bundle.idx, dtype=jnp.int32)
     guard_gather_index(idx_i, size_i, label, guard=guard)
     ok = (idx_i >= 0) & (idx_i < size_i)
     idx_safe = jnp.clip(idx_i, 0, size_i - 1)
@@ -249,9 +282,10 @@ def safe_index_1d_value(
     policy_value: PolicyValue,
 ):
     """Return a policy-aware safe index using policy value."""
-    size_i = jnp.asarray(size, dtype=jnp.int32)
-    idx_i = jnp.asarray(idx, dtype=jnp.int32)
-    policy_val = jnp.asarray(policy_value, dtype=jnp.int32)
+    bundle = _IndexPolicyValueSize(idx=idx, policy_value=policy_value, size=size)
+    size_i = jnp.asarray(bundle.size, dtype=jnp.int32)
+    idx_i = jnp.asarray(bundle.idx, dtype=jnp.int32)
+    policy_val = jnp.asarray(bundle.policy_value, dtype=jnp.int32)
     guard_gather_index(idx_i, size_i, label, guard=guard)
     ok = (idx_i >= 0) & (idx_i < size_i)
     idx_safe = jnp.clip(idx_i, 0, size_i - 1)

@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 
@@ -11,9 +12,17 @@ from prism_vm_core.ontology import OP_ADD, OP_MUL
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
 
 
+@dataclass(frozen=True)
+class _RootStructArgs:
+    ops: object
+    a1: object
+    a2: object
+
+
 def _root_struct_hash_host(ops, a1, a2, root_i, count, limit):
     if root_i <= 0 or root_i >= count:
         return 0
+    bundle = _RootStructArgs(ops=ops, a1=a1, a2=a2)
     cache = {}
     visiting = set()
 
@@ -27,9 +36,9 @@ def _root_struct_hash_host(ops, a1, a2, root_i, count, limit):
         if len(cache) >= int(limit):
             return 0
         visiting.add(idx)
-        op = int(ops[idx])
-        h1 = _hash(int(a1[idx]))
-        h2 = _hash(int(a2[idx]))
+        op = int(bundle.ops[idx])
+        h1 = _hash(int(bundle.a1[idx]))
+        h2 = _hash(int(bundle.a2[idx]))
         if op in (OP_ADD, OP_MUL) and h2 < h1:
             h1, h2 = h2, h1
         h = (op * 1315423911) ^ (h1 + 0x9E3779B9) ^ ((h2 << 1) & 0xFFFFFFFF)

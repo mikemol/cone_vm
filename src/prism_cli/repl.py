@@ -1,5 +1,6 @@
 import re
 import time
+from dataclasses import dataclass
 
 # dataflow-bundle: block_size, do_global, do_sort, l1_block_size, l2_block_size, use_morton
 # CLI sort/schedule bundle intentionally kept at the host interface.
@@ -7,6 +8,29 @@ import time
 # Minimal CLI sort bundle for BSP entrypoints.
 # dataflow-bundle: a1, a2
 # Host-side pointer pair bundle in baseline/arena allocators.
+
+
+@dataclass(frozen=True)
+class CliSortBundle:
+    block_size: int | None
+    do_global: bool
+    do_sort: bool
+    l1_block_size: int | None
+    l2_block_size: int | None
+    use_morton: bool
+
+
+@dataclass(frozen=True)
+class CliSortMiniBundle:
+    block_size: int | None
+    use_morton: bool
+
+
+@dataclass(frozen=True)
+class HostPtrPair:
+    a1: object
+    a2: object
+
 from typing import Dict, Tuple
 
 import jax
@@ -86,9 +110,10 @@ class PrismVM:
         self.kernels = {OP_ADD: kernel_add, OP_MUL: kernel_mul}
 
     def _cons_raw(self, op: int, a1: ManifestPtr, a2: ManifestPtr) -> ManifestPtr:
-        _require_manifest_ptr(a1, "PrismVM._cons_raw a1")
-        _require_manifest_ptr(a2, "PrismVM._cons_raw a2")
-        a1_i, a2_i = _key_order_commutative_host(op, int(a1), int(a2))
+        pair = HostPtrPair(a1=a1, a2=a2)
+        _require_manifest_ptr(pair.a1, "PrismVM._cons_raw a1")
+        _require_manifest_ptr(pair.a2, "PrismVM._cons_raw a2")
+        a1_i, a2_i = _key_order_commutative_host(op, int(pair.a1), int(pair.a2))
         cap = int(self.manifest.opcode.shape[0])
         if self.active_count_host >= cap:
             self.manifest = self.manifest._replace(
@@ -131,10 +156,11 @@ class PrismVM:
         a1: ManifestPtr = ManifestPtr(0),
         a2: ManifestPtr = ManifestPtr(0),
     ) -> ManifestPtr:
-        _require_manifest_ptr(a1, "PrismVM.cons a1")
-        _require_manifest_ptr(a2, "PrismVM.cons a2")
-        a1_i = int(self._canonical_ptr(a1))
-        a2_i = int(self._canonical_ptr(a2))
+        pair = HostPtrPair(a1=a1, a2=a2)
+        _require_manifest_ptr(pair.a1, "PrismVM.cons a1")
+        _require_manifest_ptr(pair.a2, "PrismVM.cons a2")
+        a1_i = int(self._canonical_ptr(pair.a1))
+        a2_i = int(self._canonical_ptr(pair.a2))
         a1_i, a2_i = _key_order_commutative_host(op, a1_i, a2_i)
         signature = (op, _manifest_ptr(a1_i), _manifest_ptr(a2_i))
         if signature in self.trace_cache:
@@ -223,14 +249,15 @@ class PrismVM_BSP_Legacy:
     def _alloc(
         self, op: int, a1: ArenaPtr = ArenaPtr(0), a2: ArenaPtr = ArenaPtr(0)
     ) -> ArenaPtr:
+        pair = HostPtrPair(a1=a1, a2=a2)
         cap = int(self.arena.opcode.shape[0])
         idx = _host_int_value(self.arena.count)
         if idx >= cap:
             self.arena = self.arena._replace(oom=jnp.array(True, dtype=jnp.bool_))
             raise ValueError("Arena capacity exceeded")
-        _require_arena_ptr(a1, "PrismVM_BSP_Legacy._alloc a1")
-        _require_arena_ptr(a2, "PrismVM_BSP_Legacy._alloc a2")
-        a1_i, a2_i = _key_order_commutative_host(op, int(a1), int(a2))
+        _require_arena_ptr(pair.a1, "PrismVM_BSP_Legacy._alloc a1")
+        _require_arena_ptr(pair.a2, "PrismVM_BSP_Legacy._alloc a2")
+        a1_i, a2_i = _key_order_commutative_host(op, int(pair.a1), int(pair.a2))
         self.arena = self.arena._replace(
             opcode=self.arena.opcode.at[idx].set(op),
             arg1=self.arena.arg1.at[idx].set(a1_i),
@@ -280,9 +307,10 @@ class PrismVM_BSP:
     def _intern(
         self, op: int, a1: LedgerId = LedgerId(0), a2: LedgerId = LedgerId(0)
     ) -> LedgerId:
-        _require_ledger_id(a1, "PrismVM_BSP._intern a1")
-        _require_ledger_id(a2, "PrismVM_BSP._intern a2")
-        a1_i, a2_i = _key_order_commutative_host(op, int(a1), int(a2))
+        pair = HostPtrPair(a1=a1, a2=a2)
+        _require_ledger_id(pair.a1, "PrismVM_BSP._intern a1")
+        _require_ledger_id(pair.a2, "PrismVM_BSP._intern a2")
+        a1_i, a2_i = _key_order_commutative_host(op, int(pair.a1), int(pair.a2))
         ids, self.ledger = intern_nodes(
             self.ledger,
             node_batch(
@@ -463,6 +491,20 @@ def run_program_lines_bsp(
     bsp_mode=BspMode.AUTO,
     validate_mode: ValidateMode = ValidateMode.NONE,
 ):
+    sort_bundle = CliSortBundle(
+        block_size=block_size,
+        do_global=do_global,
+        do_sort=do_sort,
+        l1_block_size=l1_block_size,
+        l2_block_size=l2_block_size,
+        use_morton=use_morton,
+    )
+    block_size = sort_bundle.block_size
+    do_global = sort_bundle.do_global
+    do_sort = sort_bundle.do_sort
+    l1_block_size = sort_bundle.l1_block_size
+    l2_block_size = sort_bundle.l2_block_size
+    use_morton = sort_bundle.use_morton
     validate_mode = coerce_validate_mode(
         validate_mode, context="run_program_lines_bsp"
     )
@@ -510,6 +552,9 @@ def repl(
     bsp_mode=BspMode.AUTO,
     validate_mode: ValidateMode = ValidateMode.NONE,
 ):
+    cli_bundle = CliSortMiniBundle(block_size=block_size, use_morton=use_morton)
+    block_size = cli_bundle.block_size
+    use_morton = cli_bundle.use_morton
     validate_mode = coerce_validate_mode(validate_mode, context="repl")
     if mode == "bsp":
         vm = PrismVM_BSP()
