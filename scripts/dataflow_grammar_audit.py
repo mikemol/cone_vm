@@ -350,11 +350,31 @@ def _resolve_callee(
         ]
         if len(candidates) == 1:
             return candidates[0]
+        # If caller's module matches a candidate, prefer it.
+        same_module = [
+            info
+            for info in candidates
+            if info.path == caller.path
+        ]
+        if len(same_module) == 1:
+            return same_module[0]
         return None
     # Fallback: unique function name across repo.
     candidates = by_name.get(callee_name, [])
     if len(candidates) == 1:
         return candidates[0]
+    # Prefer same-module definition when ambiguous.
+    same_module = [info for info in candidates if info.path == caller.path]
+    if len(same_module) == 1:
+        return same_module[0]
+    # If callee is self.foo/cls.foo, prefer same-module foo.
+    if callee_name.startswith(("self.", "cls.")):
+        func = callee_name.split(".")[-1]
+        same_module = [
+            info for info in by_name.get(func, []) if info.path == caller.path
+        ]
+        if len(same_module) == 1:
+            return same_module[0]
     return None
 
 
@@ -632,6 +652,9 @@ def _render_mermaid_component(
 def _emit_report(
     groups_by_path: dict[Path, dict[str, list[set[str]]]],
     max_components: int,
+    *,
+    type_suggestions: list[str] | None = None,
+    type_ambiguities: list[str] | None = None,
 ) -> tuple[str, list[str]]:
     nodes, adj, bundle_map = _component_graph(groups_by_path)
     components = _connected_components(nodes, adj)
@@ -689,6 +712,18 @@ def _emit_report(
         lines.append("```")
         lines.extend(violations)
         lines.append("```")
+    if type_suggestions or type_ambiguities:
+        lines.append("Type-flow audit:")
+        if type_suggestions:
+            lines.append("Type tightening candidates:")
+            lines.append("```")
+            lines.extend(type_suggestions)
+            lines.append("```")
+        if type_ambiguities:
+            lines.append("Type ambiguities (conflicting downstream expectations):")
+            lines.append("```")
+            lines.extend(type_ambiguities)
+            lines.append("```")
     return "\n".join(lines), violations
 
 
@@ -711,6 +746,11 @@ def main() -> None:
         help="Max type-tightening entries to print.",
     )
     parser.add_argument(
+        "--type-audit-report",
+        action="store_true",
+        help="Include type-flow audit summary in the markdown report.",
+    )
+    parser.add_argument(
         "--fail-on-violations",
         action="store_true",
         help="Exit non-zero if undocumented/undeclared bundle violations are detected.",
@@ -728,24 +768,35 @@ def main() -> None:
             Path(args.dot).write_text(dot)
         if args.report is None:
             return
+    type_suggestions: list[str] = []
+    type_ambiguities: list[str] = []
+    if args.type_audit or args.type_audit_report:
+        type_suggestions, type_ambiguities = analyze_type_flow_repo(paths)
+        if args.type_audit:
+            if type_suggestions:
+                print("Type tightening candidates:")
+                for line in type_suggestions[: args.type_audit_max]:
+                    print(f"- {line}")
+            if type_ambiguities:
+                print("Type ambiguities (conflicting downstream expectations):")
+                for line in type_ambiguities[: args.type_audit_max]:
+                    print(f"- {line}")
+            return
+        if args.type_audit_report:
+            type_suggestions = type_suggestions[: args.type_audit_max]
+            type_ambiguities = type_ambiguities[: args.type_audit_max]
     if args.report is not None:
-        report, violations = _emit_report(groups_by_path, args.max_components)
+        report, violations = _emit_report(
+            groups_by_path,
+            args.max_components,
+            type_suggestions=type_suggestions if args.type_audit_report else None,
+            type_ambiguities=type_ambiguities if args.type_audit_report else None,
+        )
         Path(args.report).write_text(report)
         if args.fail_on_violations and violations:
             raise SystemExit(
                 f"dataflow grammar violations detected: {len(violations)}"
             )
-        return
-    if args.type_audit:
-        suggestions, ambiguities = analyze_type_flow_repo(paths)
-        if suggestions:
-            print("Type tightening candidates:")
-            for line in suggestions[: args.type_audit_max]:
-                print(f"- {line}")
-        if ambiguities:
-            print("Type ambiguities (conflicting downstream expectations):")
-            for line in ambiguities[: args.type_audit_max]:
-                print(f"- {line}")
         return
     for path, groups in groups_by_path.items():
         print(f"# {path}")
