@@ -158,8 +158,50 @@ jobs:
         run: |
           scripts/check_agda.sh
 
-  baseline-tests:
+  preflight-smoke:
     needs: [changes, policy-check, audit, smoke-exports, agda-check]
+    if: needs.changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install dependencies (preflight)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest jax jaxlib
+      - name: Import smoke (ic_vm, prism_vm)
+        run: |
+          python -c "import ic_vm; import prism_vm"
+      - name: Collect-only harness import graph
+        run: |
+          mkdir -p artifacts
+          set -euo pipefail
+          pytest -c pytest.baseline.ini \
+            --collect-only tests/harness.py \
+            2>&1 | tee artifacts/pytest-preflight-collect.txt
+      - name: Run pytest smokes (preflight)
+        run: |
+          mkdir -p artifacts
+          set -euo pipefail
+          pytest -c pytest.baseline.ini -q \
+            tests/test_harness_jit_cfg_smoke.py \
+            tests/test_harness_cnf2_cfg_smoke.py \
+            tests/test_ic_guard_cfg_smoke.py \
+            --junitxml artifacts/pytest-preflight.xml \
+            2>&1 | tee artifacts/pytest-preflight.txt
+      - name: Upload preflight artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pytest-preflight
+          path: artifacts/
+          if-no-files-found: ignore
+
+  baseline-tests:
+    needs: [changes, policy-check, audit, smoke-exports, agda-check, preflight-smoke]
     if: needs.changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -197,7 +239,7 @@ jobs:
           if-no-files-found: ignore
 
   tests:
-    needs: [changes, policy-check, audit, smoke-exports, agda-check, baseline-tests]
+    needs: [changes, policy-check, audit, smoke-exports, agda-check, preflight-smoke, baseline-tests]
     if: needs.changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -310,7 +352,7 @@ jobs:
           if-no-files-found: ignore
 
   baseline-tests-gpu:
-    needs: [changes, policy-check, audit, smoke-exports, agda-check, baseline-tests]
+    needs: [changes, policy-check, audit, smoke-exports, agda-check, preflight-smoke, baseline-tests]
     if: needs.changes.outputs.code_changed == 'true' && github.actor == github.repository_owner && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     runs-on: [self-hosted, cassian, gpu, local]
     timeout-minutes: 30
@@ -374,7 +416,7 @@ jobs:
           if-no-files-found: ignore
 
   tests-gpu:
-    needs: [changes, policy-check, audit, smoke-exports, agda-check, baseline-tests, baseline-tests-gpu]
+    needs: [changes, policy-check, audit, smoke-exports, agda-check, preflight-smoke, baseline-tests, baseline-tests-gpu]
     if: needs.changes.outputs.code_changed == 'true' && github.actor == github.repository_owner && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     runs-on: [self-hosted, cassian, gpu, local]
     timeout-minutes: 30
@@ -459,7 +501,7 @@ jobs:
 
   collect-report:
     runs-on: ubuntu-latest
-    needs: [changes, policy-check, audit, smoke-exports, agda-check, baseline-tests, baseline-tests-gpu, tests, tests-gpu]
+    needs: [changes, policy-check, audit, smoke-exports, agda-check, preflight-smoke, baseline-tests, baseline-tests-gpu, tests, tests-gpu]
     if: always() && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
