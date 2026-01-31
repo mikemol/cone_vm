@@ -61,8 +61,11 @@ from prism_bsp.config import (
     Cnf2Flags,
     DEFAULT_CNF2_CONFIG,
     DEFAULT_CNF2_FLAGS,
+    Cnf2CandidateFns,
+    Cnf2PolicyFns,
     ArenaInteractConfig,
     DEFAULT_ARENA_INTERACT_CONFIG,
+    SwizzleWithPermFns,
     ArenaCycleConfig,
     DEFAULT_ARENA_CYCLE_CONFIG,
     IntrinsicConfig,
@@ -650,6 +653,7 @@ from prism_semantics.commit import (
 )
 from prism_bsp.cnf2 import (
     cycle_candidates as _cycle_candidates_impl,
+    cycle_candidates_bound as _cycle_candidates_bound,
     cycle_candidates_static as _cycle_candidates_static,
     cycle_candidates_value as _cycle_candidates_value,
 )
@@ -1565,27 +1569,35 @@ def cycle_candidates_bound(
     cnf2_slot1_enabled_fn=None,
 ):
     """Interface/Control wrapper for CNF-2 evaluation with required PolicyBinding."""
-    policy_binding = cfg.policy_binding
-    cnf2_cfg = cfg.as_cfg()
-    return _cycle_candidates_common(
+    if host_raise_if_bad_fn is None:
+        host_raise_if_bad_fn = _host_raise_if_bad
+    if cnf2_mode is not None:
+        _ = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates_bound")
+    base_cfg = cfg.as_cfg() if cnf2_cfg is None else cnf2_cfg
+    if base_cfg.policy_binding is not None or base_cfg.safe_gather_policy is not None or base_cfg.safe_gather_policy_value is not None:
+        base_cfg = replace(
+            base_cfg,
+            policy_binding=None,
+            safe_gather_policy=None,
+            safe_gather_policy_value=None,
+        )
+    if cnf2_flags is not None:
+        base_cfg = replace(base_cfg, flags=cnf2_flags)
+    if cnf2_mode is not None:
+        base_cfg = replace(base_cfg, cnf2_mode=cnf2_mode)
+    cfg = cnf2_config_bound(cfg.policy_binding, cfg=base_cfg)
+    ledger, frontier_ids, strata, q_map = _cycle_candidates_bound(
         ledger,
         frontier_ids,
-        validate_mode,
-        policy_mode=policy_binding.mode,
-        intern_fn=intern_fn,
-        intern_cfg=intern_cfg,
-        emit_candidates_fn=emit_candidates_fn,
-        host_raise_if_bad_fn=host_raise_if_bad_fn,
-        safe_gather_policy=require_static_policy(
-            policy_binding, context="cycle_candidates_bound"
-        ) if policy_binding.mode == PolicyMode.STATIC else None,
-        safe_gather_policy_value=require_value_policy(
-            policy_binding, context="cycle_candidates_bound"
-        ) if policy_binding.mode == PolicyMode.VALUE else None,
+        cfg,
+        validate_mode=validate_mode,
         guard_cfg=guard_cfg,
-        cnf2_cfg=cnf2_cfg,
-        cnf2_flags=cnf2_flags,
-        cnf2_mode=cnf2_mode,
+        intern_fn=intern_fn if intern_fn is not None else _ledger_intern.intern_nodes,
+        intern_cfg=intern_cfg,
+        emit_candidates_fn=emit_candidates_fn if emit_candidates_fn is not None else _emit_candidates_default,
         cnf2_enabled_fn=cnf2_enabled_fn,
         cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
     )
+    if not bool(jax.device_get(ledger.corrupt)):
+        host_raise_if_bad_fn(ledger, "Ledger capacity exceeded during cycle")
+    return ledger, frontier_ids, strata, q_map

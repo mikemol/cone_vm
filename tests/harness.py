@@ -72,7 +72,7 @@ def make_cnf2_bound_static_cfg(
     guard_cfg=None,
     cfg=None,
 ):
-    """Return (cfg, policy) with a static policy bound at the edge."""
+    """Return a Cnf2BoundConfig with a static policy bound at the edge."""
     if cfg is None:
         cfg = pv.DEFAULT_CNF2_CONFIG
     if guard_cfg is not None:
@@ -84,11 +84,10 @@ def make_cnf2_bound_static_cfg(
         policy_value=None,
         context="tests.harness.make_cnf2_bound_static_cfg",
     )
-    bound = pv.cnf2_config_bound(binding, cfg=cfg)
-    return bound.bind_cfg()
+    return pv.cnf2_config_bound(binding, cfg=cfg)
 
 
-_DEFAULT_CNF2_BOUND_CFG, _DEFAULT_CNF2_BOUND_POLICY = make_cnf2_bound_static_cfg()
+_DEFAULT_CNF2_BOUND_CFG = make_cnf2_bound_static_cfg()
 
 
 def make_cnf2_bound_value_cfg(
@@ -97,7 +96,7 @@ def make_cnf2_bound_value_cfg(
     guard_cfg=None,
     cfg=None,
 ):
-    """Return (cfg, policy_value) with a value policy bound at the edge."""
+    """Return a Cnf2BoundConfig with a value policy bound at the edge."""
     if cfg is None:
         cfg = pv.DEFAULT_CNF2_CONFIG
     if guard_cfg is not None:
@@ -109,8 +108,7 @@ def make_cnf2_bound_value_cfg(
         policy_value=policy_value,
         context="tests.harness.make_cnf2_bound_value_cfg",
     )
-    bound = pv.cnf2_config_bound(binding, cfg=cfg)
-    return bound.bind_cfg()
+    return pv.cnf2_config_bound(binding, cfg=cfg)
 
 
 def cycle_candidates_static_bound(
@@ -126,19 +124,17 @@ def cycle_candidates_static_bound(
     """Run CNF-2 candidates with static policy bound at the edge."""
     if cfg is None and safety_policy is None and guard_cfg is None:
         cfg = _DEFAULT_CNF2_BOUND_CFG
-        safety_policy = _DEFAULT_CNF2_BOUND_POLICY
-    elif cfg is None or safety_policy is None:
-        cfg, safety_policy = make_cnf2_bound_static_cfg(
+    elif cfg is None:
+        cfg = make_cnf2_bound_static_cfg(
             safety_policy=safety_policy,
             guard_cfg=guard_cfg,
             cfg=cfg,
         )
-    return pv.cycle_candidates_static(
+    return pv.cycle_candidates_bound(
         ledger,
         frontier_ids,
         validate_mode=validate_mode,
-        cnf2_cfg=cfg,
-        safe_gather_policy=safety_policy,
+        cfg=cfg,
         **kwargs,
     )
 
@@ -154,18 +150,17 @@ def cycle_candidates_value_bound(
     **kwargs,
 ):
     """Run CNF-2 candidates with value policy bound at the edge."""
-    if cfg is None or policy_value is None:
-        cfg, policy_value = make_cnf2_bound_value_cfg(
+    if cfg is None:
+        cfg = make_cnf2_bound_value_cfg(
             policy_value=policy_value,
             guard_cfg=guard_cfg,
             cfg=cfg,
         )
-    return pv.cycle_candidates_value(
+    return pv.cycle_candidates_bound(
         ledger,
         frontier_ids,
         validate_mode=validate_mode,
-        cnf2_cfg=cfg,
-        safe_gather_policy_value=policy_value,
+        cfg=cfg,
         **kwargs,
     )
 

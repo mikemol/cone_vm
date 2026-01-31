@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import jax
 import jax.numpy as jnp
 from jax import lax
@@ -31,6 +33,17 @@ from prism_vm_core.ontology import (
 from prism_vm_core.structures import Ledger, NodeBatch
 
 _scatter_drop = _jax_safe.scatter_drop
+
+
+@dataclass(frozen=True, slots=True)
+class KeyColumns:
+    """Bundle of sorted key columns."""
+
+    b0: jnp.ndarray
+    b1: jnp.ndarray
+    b2: jnp.ndarray
+    b3: jnp.ndarray
+    b4: jnp.ndarray
 
 def _coord_norm_id_jax_core(ledger, coord_id, *, lookup_node_id_fn=None):
     # CDᵣ + Normalize𝚌 (core, no probe)
@@ -452,29 +465,21 @@ def _intern_nodes_impl_core(
     # NOTE: global merge is an m1 tradeoff; performance roadmap is tracked in
     # IMPLEMENTATION_PLAN.md.
     def _merge_sorted_keys(
-        old_b0,
-        old_b1,
-        old_b2,
-        old_b3,
-        old_b4,
+        old_keys: KeyColumns,
         old_ids,
         old_count,
-        new_b0,
-        new_b1,
-        new_b2,
-        new_b3,
-        new_b4,
+        new_keys: KeyColumns,
         new_ids,
         new_items,
     ):
-        out_b0 = jnp.full_like(old_b0, max_key)
-        out_b1 = jnp.full_like(old_b1, max_key)
-        out_b2 = jnp.full_like(old_b2, max_key)
-        out_b3 = jnp.full_like(old_b3, max_key)
-        out_b4 = jnp.full_like(old_b4, max_key)
+        out_b0 = jnp.full_like(old_keys.b0, max_key)
+        out_b1 = jnp.full_like(old_keys.b1, max_key)
+        out_b2 = jnp.full_like(old_keys.b2, max_key)
+        out_b3 = jnp.full_like(old_keys.b3, max_key)
+        out_b4 = jnp.full_like(old_keys.b4, max_key)
         out_ids = jnp.zeros_like(old_ids)
         total = old_count + new_items
-        guard_max_fn(total, jnp.int32(old_b0.shape[0]), "merge.total")
+        guard_max_fn(total, jnp.int32(old_keys.b0.shape[0]), "merge.total")
 
         def body(k, state):
             i, j, b0, b1, b2, b3, b4, ids = state
@@ -483,17 +488,17 @@ def _intern_nodes_impl_core(
             safe_i = jnp.where(old_valid, i, 0)
             safe_j = jnp.where(new_valid, j, 0)
 
-            old0 = jnp.where(old_valid, old_b0[safe_i], max_key)
-            old1 = jnp.where(old_valid, old_b1[safe_i], max_key)
-            old2 = jnp.where(old_valid, old_b2[safe_i], max_key)
-            old3 = jnp.where(old_valid, old_b3[safe_i], max_key)
-            old4 = jnp.where(old_valid, old_b4[safe_i], max_key)
+            old0 = jnp.where(old_valid, old_keys.b0[safe_i], max_key)
+            old1 = jnp.where(old_valid, old_keys.b1[safe_i], max_key)
+            old2 = jnp.where(old_valid, old_keys.b2[safe_i], max_key)
+            old3 = jnp.where(old_valid, old_keys.b3[safe_i], max_key)
+            old4 = jnp.where(old_valid, old_keys.b4[safe_i], max_key)
 
-            new0 = jnp.where(new_valid, new_b0[safe_j], max_key)
-            new1 = jnp.where(new_valid, new_b1[safe_j], max_key)
-            new2 = jnp.where(new_valid, new_b2[safe_j], max_key)
-            new3 = jnp.where(new_valid, new_b3[safe_j], max_key)
-            new4 = jnp.where(new_valid, new_b4[safe_j], max_key)
+            new0 = jnp.where(new_valid, new_keys.b0[safe_j], max_key)
+            new1 = jnp.where(new_valid, new_keys.b1[safe_j], max_key)
+            new2 = jnp.where(new_valid, new_keys.b2[safe_j], max_key)
+            new3 = jnp.where(new_valid, new_keys.b3[safe_j], max_key)
+            new4 = jnp.where(new_valid, new_keys.b4[safe_j], max_key)
 
             new_less = _lex_less(
                 new0,
@@ -546,37 +551,29 @@ def _intern_nodes_impl_core(
         return out_b0, out_b1, out_b2, out_b3, out_b4, out_ids
 
     def _merge_sorted_keys_bucketed(
-        old_b0,
-        old_b1,
-        old_b2,
-        old_b3,
-        old_b4,
+        old_keys: KeyColumns,
         old_ids,
         old_count,
-        new_b0,
-        new_b1,
-        new_b2,
-        new_b3,
-        new_b4,
+        new_keys: KeyColumns,
         new_ids,
         new_items,
         op_start,
         op_end,
     ):
-        out_b0 = jnp.full_like(old_b0, max_key)
-        out_b1 = jnp.full_like(old_b1, max_key)
-        out_b2 = jnp.full_like(old_b2, max_key)
-        out_b3 = jnp.full_like(old_b3, max_key)
-        out_b4 = jnp.full_like(old_b4, max_key)
+        out_b0 = jnp.full_like(old_keys.b0, max_key)
+        out_b1 = jnp.full_like(old_keys.b1, max_key)
+        out_b2 = jnp.full_like(old_keys.b2, max_key)
+        out_b3 = jnp.full_like(old_keys.b3, max_key)
+        out_b4 = jnp.full_like(old_keys.b4, max_key)
         out_ids = jnp.zeros_like(old_ids)
         total = old_count + new_items
-        guard_max_fn(total, jnp.int32(old_b0.shape[0]), "merge.total")
+        guard_max_fn(total, jnp.int32(old_keys.b0.shape[0]), "merge.total")
 
         op_values = jnp.arange(256, dtype=jnp.uint8)
-        new_op_start = jnp.searchsorted(new_b0, op_values, side="left").astype(
+        new_op_start = jnp.searchsorted(new_keys.b0, op_values, side="left").astype(
             jnp.int32
         )
-        new_op_end = jnp.searchsorted(new_b0, op_values, side="right").astype(
+        new_op_end = jnp.searchsorted(new_keys.b0, op_values, side="right").astype(
             jnp.int32
         )
         new_op_start = jnp.minimum(new_op_start, new_items)
@@ -602,17 +599,17 @@ def _intern_nodes_impl_core(
                 old_idx = old_lo + i
                 new_idx = new_lo + j
 
-                old0 = jnp.where(old_valid, old_b0[old_idx], max_key)
-                old1 = jnp.where(old_valid, old_b1[old_idx], max_key)
-                old2 = jnp.where(old_valid, old_b2[old_idx], max_key)
-                old3 = jnp.where(old_valid, old_b3[old_idx], max_key)
-                old4 = jnp.where(old_valid, old_b4[old_idx], max_key)
+                old0 = jnp.where(old_valid, old_keys.b0[old_idx], max_key)
+                old1 = jnp.where(old_valid, old_keys.b1[old_idx], max_key)
+                old2 = jnp.where(old_valid, old_keys.b2[old_idx], max_key)
+                old3 = jnp.where(old_valid, old_keys.b3[old_idx], max_key)
+                old4 = jnp.where(old_valid, old_keys.b4[old_idx], max_key)
 
-                new0 = jnp.where(new_valid, new_b0[new_idx], max_key)
-                new1 = jnp.where(new_valid, new_b1[new_idx], max_key)
-                new2 = jnp.where(new_valid, new_b2[new_idx], max_key)
-                new3 = jnp.where(new_valid, new_b3[new_idx], max_key)
-                new4 = jnp.where(new_valid, new_b4[new_idx], max_key)
+                new0 = jnp.where(new_valid, new_keys.b0[new_idx], max_key)
+                new1 = jnp.where(new_valid, new_keys.b1[new_idx], max_key)
+                new2 = jnp.where(new_valid, new_keys.b2[new_idx], max_key)
+                new3 = jnp.where(new_valid, new_keys.b3[new_idx], max_key)
+                new4 = jnp.where(new_valid, new_keys.b4[new_idx], max_key)
 
                 new_less = _lex_less(
                     new0,
@@ -790,6 +787,14 @@ def _intern_nodes_impl_core(
             )
 
             # Merge sorted new keys into the ledger's sorted key arrays.
+            old_keys = KeyColumns(L_b0, L_b1, L_b2, L_b3, L_b4)
+            new_keys = KeyColumns(
+                new_entry_b0_sorted,
+                new_entry_b1_sorted,
+                new_entry_b2_sorted,
+                new_entry_b3_sorted,
+                new_entry_b4_sorted,
+            )
             (
                 new_keys_b0_sorted,
                 new_keys_b1_sorted,
@@ -798,18 +803,10 @@ def _intern_nodes_impl_core(
                 new_keys_b4_sorted,
                 new_ids_sorted,
             ) = _merge_sorted_keys_bucketed(
-                L_b0,
-                L_b1,
-                L_b2,
-                L_b3,
-                L_b4,
+                old_keys,
                 L_ids,
                 count,
-                new_entry_b0_sorted,
-                new_entry_b1_sorted,
-                new_entry_b2_sorted,
-                new_entry_b3_sorted,
-                new_entry_b4_sorted,
+                new_keys,
                 new_entry_ids_sorted,
                 num_new,
                 op_start,
@@ -1012,6 +1009,7 @@ __all__ = [
     "_coord_norm_id_jax",
     "_coord_norm_id_jax_noprobe",
     "_lookup_node_id",
+    "KeyColumns",
     "InternConfig",
     "DEFAULT_INTERN_CONFIG",
     "intern_nodes",

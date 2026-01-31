@@ -12,13 +12,11 @@ from prism_core.guards import (
 )
 from prism_core.compact import scatter_compacted_ids
 from prism_core.safety import (
-    PolicyBinding,
     PolicyMode,
     DEFAULT_SAFETY_POLICY,
     POLICY_VALUE_DEFAULT,
     PolicyValue,
     SafetyPolicy,
-    resolve_policy_binding,
     require_static_policy,
     require_value_policy,
 )
@@ -31,6 +29,8 @@ from prism_metrics.metrics import _cnf2_metrics_enabled, _cnf2_metrics_update
 from prism_bsp.config import (
     Cnf2Config,
     Cnf2BoundConfig,
+    Cnf2StaticBoundConfig,
+    Cnf2ValueBoundConfig,
     resolve_cnf2_inputs,
     resolve_cnf2_candidate_inputs,
     resolve_cnf2_intern_inputs,
@@ -694,8 +694,6 @@ def _cycle_candidates_core_static_bound(
     mode = resolve_validate_mode(
         validate_mode, guards_enabled_fn=guards_enabled_fn, context="cycle_candidates"
     )
-    if commit_stratum_fn is commit_stratum:
-        commit_stratum_fn = commit_stratum_static
     commit_optional = {
         "safe_gather_policy": safe_gather_policy,
         "safe_gather_ok_fn": safe_gather_ok_fn,
@@ -814,8 +812,6 @@ def _cycle_candidates_core_value_bound(
     mode = resolve_validate_mode(
         validate_mode, guards_enabled_fn=guards_enabled_fn, context="cycle_candidates"
     )
-    if commit_stratum_fn is commit_stratum:
-        commit_stratum_fn = commit_stratum_value
     commit_optional = {
         "safe_gather_policy_value": safe_gather_policy_value,
         "safe_gather_ok_value_fn": safe_gather_ok_value_fn,
@@ -998,6 +994,8 @@ def cycle_candidates_static(
             )
         safe_gather_ok_fn = safe_gather_ok_bound_fn
     guard_cfg = _resolve_guard_cfg(guard_cfg, cfg)
+    if commit_stratum_fn is commit_stratum:
+        commit_stratum_fn = commit_stratum_static
     return _cycle_candidates_core_static_bound(
         ledger,
         frontier_ids,
@@ -1097,6 +1095,8 @@ def cycle_candidates_value(
         safe_gather_ok_value_fn=safe_gather_ok_value_fn,
         guard_cfg=guard_cfg,
     )
+    if commit_stratum_fn is commit_stratum:
+        commit_stratum_fn = commit_stratum_value
     return _cycle_candidates_core_value_bound(
         ledger,
         frontier_ids,
@@ -1253,19 +1253,23 @@ def cycle_candidates_bound(
     cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
     cnf2_metrics_update_fn=_cnf2_metrics_update,
 ):
-    """PolicyBinding-required wrapper for cycle_candidates."""
-    policy_binding = cfg.policy_binding
-    cfg = cfg.as_cfg()
-    if policy_binding.mode == PolicyMode.VALUE:
-        return cycle_candidates_value(
+    """PolicyBinding-required wrapper for cycle_candidates.
+
+    Binds policy + guard exactly once, then delegates to branch-free core.
+    """
+    if isinstance(cfg, Cnf2ValueBoundConfig):
+        cfg_resolved, policy_value = cfg.bind_cfg(
+            safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+            guard_cfg=guard_cfg,
+            commit_stratum_fn=commit_stratum_fn,
+        )
+        return _cycle_candidates_core_value_bound(
             ledger,
             frontier_ids,
             validate_mode=validate_mode,
-            cfg=cfg,
-            safe_gather_policy_value=require_value_policy(
-                policy_binding, context="cycle_candidates_bound"
-            ),
-            guard_cfg=guard_cfg,
+            cfg=cfg_resolved,
+            safe_gather_policy_value=policy_value,
+            guard_cfg=None,
             intern_fn=intern_fn,
             intern_cfg=intern_cfg,
             node_batch_fn=node_batch_fn,
@@ -1273,10 +1277,11 @@ def cycle_candidates_bound(
             emit_candidates_fn=emit_candidates_fn,
             candidate_indices_fn=candidate_indices_fn,
             scatter_drop_fn=scatter_drop_fn,
-            commit_stratum_fn=commit_stratum_fn,
+            commit_stratum_fn=cfg_resolved.commit_stratum_fn or commit_stratum_value,
             apply_q_fn=apply_q_fn,
             identity_q_fn=identity_q_fn,
-            safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+            safe_gather_ok_value_fn=cfg_resolved.safe_gather_ok_value_fn
+            or safe_gather_ok_value_fn,
             host_bool_value_fn=host_bool_value_fn,
             host_int_value_fn=host_int_value_fn,
             guards_enabled_fn=guards_enabled_fn,
@@ -1286,15 +1291,24 @@ def cycle_candidates_bound(
             cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
             cnf2_metrics_update_fn=cnf2_metrics_update_fn,
         )
-    return cycle_candidates_static(
+    if not isinstance(cfg, Cnf2StaticBoundConfig):
+        raise PrismPolicyBindingError(
+            "cycle_candidates_bound expected Cnf2StaticBoundConfig or Cnf2ValueBoundConfig",
+            context="cycle_candidates_bound",
+            policy_mode="ambiguous",
+        )
+    cfg_resolved, policy = cfg.bind_cfg(
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        guard_cfg=guard_cfg,
+        commit_stratum_fn=commit_stratum_fn,
+    )
+    return _cycle_candidates_core_static_bound(
         ledger,
         frontier_ids,
         validate_mode=validate_mode,
-        cfg=cfg,
-        safe_gather_policy=require_static_policy(
-            policy_binding, context="cycle_candidates_bound"
-        ),
-        guard_cfg=guard_cfg,
+        cfg=cfg_resolved,
+        safe_gather_policy=policy,
+        guard_cfg=None,
         intern_fn=intern_fn,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
@@ -1302,10 +1316,10 @@ def cycle_candidates_bound(
         emit_candidates_fn=emit_candidates_fn,
         candidate_indices_fn=candidate_indices_fn,
         scatter_drop_fn=scatter_drop_fn,
-        commit_stratum_fn=commit_stratum_fn,
+        commit_stratum_fn=cfg_resolved.commit_stratum_fn or commit_stratum_bound,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
-        safe_gather_ok_fn=safe_gather_ok_fn,
+        safe_gather_ok_fn=cfg_resolved.safe_gather_ok_bound_fn or safe_gather_ok_fn,
         host_bool_value_fn=host_bool_value_fn,
         host_int_value_fn=host_int_value_fn,
         guards_enabled_fn=guards_enabled_fn,

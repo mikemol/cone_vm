@@ -95,11 +95,13 @@ class Cnf2Config:
     coord_xor_batch_fn: CoordXorBatchFn | None = None
     emit_candidates_fn: EmitCandidatesFn | None = None
     candidate_indices_fn: CandidateIndicesFn | None = None
+    candidate_fns: "Cnf2CandidateFns" | None = None
     compact_cfg: CompactConfig | None = None
     scatter_drop_fn: ScatterDropFn | None = None
     commit_stratum_fn: CommitStratumFn | None = None
     apply_q_fn: ApplyQFn | None = None
     identity_q_fn: IdentityQFn | None = None
+    policy_fns: "Cnf2PolicyFns" | None = None
     safe_gather_ok_fn: SafeGatherOkFn | None = None
     safe_gather_ok_bound_fn: SafeGatherOkBoundFn | None = None
     safe_gather_ok_value_fn: SafeGatherOkValueFn | None = None
@@ -154,6 +156,27 @@ class Cnf2CandidateInputs:
     scatter_drop_fn: ScatterDropFn
 
 
+@dataclass(frozen=True, slots=True)
+class Cnf2CandidateFns:
+    """Bundle of candidate helper functions observed as a forwarding group."""
+
+    emit_candidates_fn: EmitCandidatesFn | None = None
+    candidate_indices_fn: CandidateIndicesFn | None = None
+    scatter_drop_fn: ScatterDropFn | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Cnf2PolicyFns:
+    """Bundle of policy-sensitive core functions observed as a forwarding group."""
+
+    commit_stratum_fn: CommitStratumFn | None = None
+    apply_q_fn: ApplyQFn | None = None
+    identity_q_fn: IdentityQFn | None = None
+    safe_gather_ok_fn: SafeGatherOkFn | None = None
+    safe_gather_ok_bound_fn: SafeGatherOkBoundFn | None = None
+    safe_gather_ok_value_fn: SafeGatherOkValueFn | None = None
+
+
 def resolve_cnf2_candidate_inputs(
     cfg: Cnf2Config | None,
     *,
@@ -163,6 +186,14 @@ def resolve_cnf2_candidate_inputs(
     scatter_drop_fn: ScatterDropFn,
 ) -> Cnf2CandidateInputs:
     if cfg is not None:
+        if cfg.candidate_fns is not None:
+            bundle = cfg.candidate_fns
+            if bundle.emit_candidates_fn is not None:
+                emit_candidates_fn = bundle.emit_candidates_fn
+            if bundle.candidate_indices_fn is not None:
+                candidate_indices_fn = bundle.candidate_indices_fn
+            if bundle.scatter_drop_fn is not None:
+                scatter_drop_fn = bundle.scatter_drop_fn
         if cfg.emit_candidates_fn is not None:
             emit_candidates_fn = cfg.emit_candidates_fn
         if cfg.candidate_indices_fn is not None:
@@ -284,6 +315,21 @@ def resolve_cnf2_inputs(
 
     cnf2_mode = None
     if cfg is not None:
+        if cfg.policy_fns is not None:
+            policy_bundle = cfg.policy_fns
+            if policy_bundle.commit_stratum_fn is not None:
+                commit_stratum_fn = policy_bundle.commit_stratum_fn
+            if policy_bundle.apply_q_fn is not None:
+                apply_q_fn = policy_bundle.apply_q_fn
+            if policy_bundle.identity_q_fn is not None:
+                identity_q_fn = policy_bundle.identity_q_fn
+            if policy_bundle.safe_gather_ok_fn is not None:
+                safe_gather_ok_fn = policy_bundle.safe_gather_ok_fn
+            if policy_bundle.safe_gather_ok_bound_fn is not None:
+                if safe_gather_ok_fn is safe_gather_ok_default:
+                    safe_gather_ok_fn = policy_bundle.safe_gather_ok_bound_fn
+            if policy_bundle.safe_gather_ok_value_fn is not None:
+                safe_gather_ok_value_fn = policy_bundle.safe_gather_ok_value_fn
         if cfg.policy_binding is not None:
             raise PrismPolicyBindingError(
                 "cycle_candidates_core received cfg.policy_binding; bind at wrapper",
@@ -602,6 +648,17 @@ DEFAULT_ARENA_INTERACT_CONFIG = ArenaInteractConfig()
 
 
 @dataclass(frozen=True, slots=True)
+class SwizzleWithPermFns:
+    """Bundle of swizzle-with-perm functions observed as a forwarding group."""
+
+    with_perm: OpSortWithPermFn | None = None
+    morton_with_perm: OpSortWithPermFn | None = None
+    blocked_with_perm: OpSortWithPermFn | None = None
+    hierarchical_with_perm: OpSortWithPermFn | None = None
+    servo_with_perm: OpSortWithPermFn | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ArenaCycleConfig:
     """Arena cycle DI bundle."""
 
@@ -609,6 +666,8 @@ class ArenaCycleConfig:
     servo_enabled_fn: ServoEnabledFn | None = None
     servo_update_fn: ServoUpdateFn | None = None
     op_morton_fn: OpMortonFn | None = None
+    swizzle_with_perm_fns: SwizzleWithPermFns | None = None
+    swizzle_with_perm_value_fns: SwizzleWithPermFns | None = None
     op_sort_and_swizzle_with_perm_fn: OpSortWithPermFn | None = None
     op_sort_and_swizzle_morton_with_perm_fn: OpSortWithPermFn | None = None
     op_sort_and_swizzle_blocked_with_perm_fn: OpSortWithPermFn | None = None
@@ -652,6 +711,7 @@ __all__ = [
     "Cnf2BoundConfig",
     "ArenaInteractConfig",
     "DEFAULT_ARENA_INTERACT_CONFIG",
+    "SwizzleWithPermFns",
     "ArenaCycleConfig",
     "DEFAULT_ARENA_CYCLE_CONFIG",
     "IntrinsicConfig",
@@ -659,6 +719,8 @@ __all__ = [
     "Cnf2ResolvedInputs",
     "resolve_cnf2_inputs",
     "Cnf2CandidateInputs",
+    "Cnf2CandidateFns",
+    "Cnf2PolicyFns",
     "resolve_cnf2_candidate_inputs",
     "Cnf2InternInputs",
     "resolve_cnf2_intern_inputs",

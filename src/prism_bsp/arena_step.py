@@ -732,6 +732,20 @@ def cycle_cfg(
         cfg.op_sort_and_swizzle_servo_with_perm_fn
         or op_sort_and_swizzle_servo_with_perm
     )
+    if cfg.swizzle_with_perm_fns is not None:
+        swizzle_bundle = cfg.swizzle_with_perm_fns
+        if swizzle_bundle.with_perm is not None:
+            op_sort_and_swizzle_with_perm_fn = swizzle_bundle.with_perm
+        if swizzle_bundle.morton_with_perm is not None:
+            op_sort_and_swizzle_morton_with_perm_fn = swizzle_bundle.morton_with_perm
+        if swizzle_bundle.blocked_with_perm is not None:
+            op_sort_and_swizzle_blocked_with_perm_fn = swizzle_bundle.blocked_with_perm
+        if swizzle_bundle.hierarchical_with_perm is not None:
+            op_sort_and_swizzle_hierarchical_with_perm_fn = (
+                swizzle_bundle.hierarchical_with_perm
+            )
+        if swizzle_bundle.servo_with_perm is not None:
+            op_sort_and_swizzle_servo_with_perm_fn = swizzle_bundle.servo_with_perm
     safe_gather_policy = cfg.safe_gather_policy
     safe_gather_policy_value = cfg.safe_gather_policy_value
     if cfg.policy_binding is not None:
@@ -768,21 +782,35 @@ def cycle_cfg(
     if safe_gather_policy_value is not None:
         if safe_gather_value_fn is None:
             safe_gather_value_fn = _jax_safe.safe_gather_1d_value
-        if cfg.op_sort_and_swizzle_with_perm_fn is None:
+        if cfg.swizzle_with_perm_value_fns is not None:
+            swizzle_value_bundle = cfg.swizzle_with_perm_value_fns
+            if swizzle_value_bundle.with_perm is not None:
+                op_sort_and_swizzle_with_perm_fn = swizzle_value_bundle.with_perm
+            if swizzle_value_bundle.morton_with_perm is not None:
+                op_sort_and_swizzle_morton_with_perm_fn = swizzle_value_bundle.morton_with_perm
+            if swizzle_value_bundle.blocked_with_perm is not None:
+                op_sort_and_swizzle_blocked_with_perm_fn = swizzle_value_bundle.blocked_with_perm
+            if swizzle_value_bundle.hierarchical_with_perm is not None:
+                op_sort_and_swizzle_hierarchical_with_perm_fn = (
+                    swizzle_value_bundle.hierarchical_with_perm
+                )
+            if swizzle_value_bundle.servo_with_perm is not None:
+                op_sort_and_swizzle_servo_with_perm_fn = swizzle_value_bundle.servo_with_perm
+        if cfg.op_sort_and_swizzle_with_perm_fn is None and cfg.swizzle_with_perm_fns is None:
             op_sort_and_swizzle_with_perm_fn = op_sort_and_swizzle_with_perm_value
-        if cfg.op_sort_and_swizzle_morton_with_perm_fn is None:
+        if cfg.op_sort_and_swizzle_morton_with_perm_fn is None and cfg.swizzle_with_perm_fns is None:
             op_sort_and_swizzle_morton_with_perm_fn = (
                 op_sort_and_swizzle_morton_with_perm_value
             )
-        if cfg.op_sort_and_swizzle_blocked_with_perm_fn is None:
+        if cfg.op_sort_and_swizzle_blocked_with_perm_fn is None and cfg.swizzle_with_perm_fns is None:
             op_sort_and_swizzle_blocked_with_perm_fn = (
                 op_sort_and_swizzle_blocked_with_perm_value
             )
-        if cfg.op_sort_and_swizzle_hierarchical_with_perm_fn is None:
+        if cfg.op_sort_and_swizzle_hierarchical_with_perm_fn is None and cfg.swizzle_with_perm_fns is None:
             op_sort_and_swizzle_hierarchical_with_perm_fn = (
                 op_sort_and_swizzle_hierarchical_with_perm_value
             )
-        if cfg.op_sort_and_swizzle_servo_with_perm_fn is None:
+        if cfg.op_sort_and_swizzle_servo_with_perm_fn is None and cfg.swizzle_with_perm_fns is None:
             op_sort_and_swizzle_servo_with_perm_fn = (
                 op_sort_and_swizzle_servo_with_perm_value
             )
