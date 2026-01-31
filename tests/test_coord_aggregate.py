@@ -26,7 +26,9 @@ def _coord_frontier_with_op(op):
 def test_coord_add_aggregates_in_cycle_candidates():
     _require_cycle_candidates()
     ledger, frontier, left, right, _ = _coord_frontier_with_op(pv.OP_ADD)
-    ledger, next_frontier_prov, _, q_map = pv.cycle_candidates(ledger, frontier)
+    ledger, next_frontier_prov, _, q_map = harness.cycle_candidates_static_bound(
+        ledger, frontier
+    )
     next_id = int(pv.apply_q(q_map, next_frontier_prov).a[0])
     expected_id, _ = pv.coord_xor(ledger, left, right)
     assert next_id == int(expected_id)
@@ -35,7 +37,9 @@ def test_coord_add_aggregates_in_cycle_candidates():
 def test_coord_mul_does_not_aggregate():
     _require_cycle_candidates()
     ledger, frontier, _, _, root_id = _coord_frontier_with_op(pv.OP_MUL)
-    ledger, next_frontier_prov, _, q_map = pv.cycle_candidates(ledger, frontier)
+    ledger, next_frontier_prov, _, q_map = harness.cycle_candidates_static_bound(
+        ledger, frontier
+    )
     next_id = int(pv.apply_q(q_map, next_frontier_prov).a[0])
     assert next_id == root_id
 

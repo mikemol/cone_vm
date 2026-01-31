@@ -8,7 +8,12 @@ from prism_core import jax_safe as _jax_safe
 from prism_core.errors import PrismPolicyBindingError
 from prism_core.di import call_with_optional_kwargs
 from prism_core.guards import resolve_safe_gather_fn, resolve_safe_gather_value_fn
-from prism_core.safety import PolicyBinding
+from prism_core.safety import (
+    PolicyBinding,
+    PolicyMode,
+    require_static_policy,
+    require_value_policy,
+)
 from prism_metrics.metrics import _damage_metrics_update, _damage_tile_size
 from prism_vm_core.domains import _host_int_value
 from prism_vm_core.gating import _servo_enabled
@@ -304,8 +309,14 @@ def op_interact_cfg(
                 context="op_interact_cfg",
                 policy_mode="ambiguous",
             )
-        safe_gather_policy = cfg.policy_binding.policy
-        safe_gather_policy_value = cfg.policy_binding.policy_value
+        if cfg.policy_binding.mode == PolicyMode.VALUE:
+            safe_gather_policy_value = require_value_policy(
+                cfg.policy_binding, context="op_interact_cfg"
+            )
+        else:
+            safe_gather_policy = require_static_policy(
+                cfg.policy_binding, context="op_interact_cfg"
+            )
     if (
         safe_gather_policy is not None
         and safe_gather_policy_value is not None
@@ -731,8 +742,14 @@ def cycle_cfg(
                 context="cycle_cfg",
                 policy_mode="ambiguous",
             )
-        safe_gather_policy = cfg.policy_binding.policy
-        safe_gather_policy_value = cfg.policy_binding.policy_value
+        if cfg.policy_binding.mode == PolicyMode.VALUE:
+            safe_gather_policy_value = require_value_policy(
+                cfg.policy_binding, context="cycle_cfg"
+            )
+        else:
+            safe_gather_policy = require_static_policy(
+                cfg.policy_binding, context="cycle_cfg"
+            )
     if (
         safe_gather_policy is not None
         and safe_gather_policy_value is not None

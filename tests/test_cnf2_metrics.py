@@ -29,7 +29,7 @@ def test_cnf2_metrics_disabled_noop(monkeypatch):
     monkeypatch.setenv("PRISM_ENABLE_CNF2", "1")
     pv.cnf2_metrics_reset()
     ledger, frontier = _build_add_suc_frontier()
-    pv.cycle_candidates(ledger, frontier)
+    harness.cycle_candidates_static_bound(ledger, frontier)
     metrics = pv.cnf2_metrics_get()
     assert metrics["cycles"] == 0
     assert metrics["rewrite_child"] == 0
@@ -43,7 +43,7 @@ def test_cnf2_metrics_counts(monkeypatch):
     monkeypatch.setenv("PRISM_ENABLE_CNF2_SLOT1", "1")
     pv.cnf2_metrics_reset()
     ledger, frontier = _build_add_suc_frontier()
-    pv.cycle_candidates(ledger, frontier)
+    harness.cycle_candidates_static_bound(ledger, frontier)
     metrics = pv.cnf2_metrics_get()
     assert metrics["cycles"] == 1
     assert metrics["rewrite_child"] >= 1

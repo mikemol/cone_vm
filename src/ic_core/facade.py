@@ -15,6 +15,7 @@ from prism_core.safety import (
     PolicyBinding,
     PolicyMode,
     SafetyPolicy,
+    require_static_policy,
 )
 from prism_core.guards import resolve_safe_index_fn
 from prism_core.alloc import (
@@ -163,7 +164,9 @@ def _resolve_safe_index_fn(cfg: ICGraphConfig):
                 context="ic_graph_config",
                 policy_mode=PolicyMode.VALUE,
             )
-        safety_policy = cfg.policy_binding.policy
+        safety_policy = require_static_policy(
+            cfg.policy_binding, context="ic_graph_config"
+        )
     if safety_policy is None:
         if safe_index_fn is None or not getattr(safe_index_fn, "_prism_policy_bound", False):
             safety_policy = DEFAULT_SAFETY_POLICY

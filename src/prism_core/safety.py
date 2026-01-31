@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Literal, TypeAlias
 
 import jax.numpy as jnp
-from typing import TypeAlias
 
 from prism_core.errors import (
     PrismPolicyModeError,
@@ -85,12 +85,22 @@ POLICY_VALUE_DEFAULT = policy_to_value(DEFAULT_SAFETY_POLICY)
 
 
 @dataclass(frozen=True, slots=True)
-class PolicyBinding:
-    """Resolved policy binding for static vs value policy modes."""
+class StaticPolicyBinding:
+    """Static policy binding (policy embedded, no policy_value)."""
 
-    mode: PolicyMode
-    policy: SafetyPolicy | None = None
-    policy_value: PolicyValue | None = None
+    mode: Literal[PolicyMode.STATIC] = PolicyMode.STATIC
+    policy: SafetyPolicy = DEFAULT_SAFETY_POLICY
+
+
+@dataclass(frozen=True, slots=True)
+class ValuePolicyBinding:
+    """Value policy binding (policy_value embedded, no policy object)."""
+
+    mode: Literal[PolicyMode.VALUE] = PolicyMode.VALUE
+    policy_value: PolicyValue = field(default_factory=lambda: POLICY_VALUE_DEFAULT)
+
+
+PolicyBinding: TypeAlias = StaticPolicyBinding | ValuePolicyBinding
 
 
 def resolve_policy_binding(
@@ -98,7 +108,6 @@ def resolve_policy_binding(
     policy: SafetyPolicy | None = None,
     policy_value: PolicyValue | None = None,
     context: str | None = None,
-    default_policy: bool = True,
 ) -> PolicyBinding:
     """Resolve a policy binding, enforcing that only one of policy/value is set."""
     if policy is not None and policy_value is not None:
@@ -108,12 +117,40 @@ def resolve_policy_binding(
             policy_mode="ambiguous",
         )
     if policy_value is not None:
-        return PolicyBinding(PolicyMode.VALUE, policy=None, policy_value=policy_value)
+        return ValuePolicyBinding(policy_value=policy_value)
     if policy is None:
-        if not default_policy:
-            return PolicyBinding(PolicyMode.STATIC, policy=None, policy_value=None)
         policy = DEFAULT_SAFETY_POLICY
-    return PolicyBinding(PolicyMode.STATIC, policy=policy, policy_value=None)
+    return StaticPolicyBinding(policy=policy)
+
+
+def require_static_policy(
+    binding: PolicyBinding,
+    *,
+    context: str | None = None,
+) -> SafetyPolicy:
+    """Return policy from a static binding, raising if value-mode."""
+    if isinstance(binding, ValuePolicyBinding):
+        raise PrismPolicyBindingError(
+            "expected static policy binding",
+            context=context,
+            policy_mode=PolicyMode.VALUE,
+        )
+    return binding.policy
+
+
+def require_value_policy(
+    binding: PolicyBinding,
+    *,
+    context: str | None = None,
+) -> PolicyValue:
+    """Return policy_value from a value binding, raising if static-mode."""
+    if isinstance(binding, StaticPolicyBinding):
+        raise PrismPolicyBindingError(
+            "expected value policy binding",
+            context=context,
+            policy_mode=PolicyMode.STATIC,
+        )
+    return binding.policy_value
 
 
 def oob_mask(ok, *, policy: SafetyPolicy = DEFAULT_SAFETY_POLICY):
@@ -146,6 +183,9 @@ __all__ = [
     "coerce_policy_mode",
     "SafetyPolicy",
     "DEFAULT_SAFETY_POLICY",
+    "StaticPolicyBinding",
+    "ValuePolicyBinding",
+    "PolicyBinding",
     "PolicyValue",
     "POLICY_VALUE_CORRUPT",
     "POLICY_VALUE_CLAMP",
@@ -156,6 +196,7 @@ __all__ = [
     "oob_any",
     "oob_mask_value",
     "oob_any_value",
-    "PolicyBinding",
     "resolve_policy_binding",
+    "require_static_policy",
+    "require_value_policy",
 ]

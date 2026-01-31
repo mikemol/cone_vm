@@ -30,6 +30,8 @@ def test_cqrs_replay_matches_cnf2_cycles():
     root_ptr = harness.parse_expr(vm, "(mul (suc zero) (suc zero))")
     frontier = pv._committed_ids(jnp.array([int(root_ptr)], dtype=jnp.int32))
     for _ in range(3):
-        vm.ledger, frontier_prov, _, q_map = pv.cycle_candidates(vm.ledger, frontier)
+        vm.ledger, frontier_prov, _, q_map = harness.cycle_candidates_static_bound(
+            vm.ledger, frontier
+        )
         frontier = pv.apply_q(q_map, frontier_prov)
     _assert_rebuild_matches(vm.ledger)

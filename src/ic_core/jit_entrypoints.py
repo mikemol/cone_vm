@@ -5,7 +5,12 @@ from functools import partial
 from prism_core.di import cached_jit
 from prism_core.errors import PrismPolicyBindingError
 from prism_core.guards import resolve_safe_index_fn
-from prism_core.safety import DEFAULT_SAFETY_POLICY, PolicyMode, resolve_policy_binding
+from prism_core.safety import (
+    DEFAULT_SAFETY_POLICY,
+    PolicyMode,
+    resolve_policy_binding,
+    require_static_policy,
+)
 from ic_core.config import ICGraphConfig, ICEngineConfig, DEFAULT_GRAPH_CONFIG
 from ic_core.engine import (
     DEFAULT_ENGINE_CONFIG,
@@ -40,7 +45,9 @@ def _resolve_safe_index_fn(cfg: ICGraphConfig):
                 context="ic_graph_config",
                 policy_mode=PolicyMode.VALUE,
             )
-        safety_policy = cfg.policy_binding.policy
+        safety_policy = require_static_policy(
+            cfg.policy_binding, context="ic_graph_config"
+        )
     policy = safety_policy
     if policy is None:
         if safe_index_fn is None or not getattr(safe_index_fn, "_prism_policy_bound", False):

@@ -74,6 +74,7 @@ __all__ = [
     "cnf2_config_with_policy",
     "cnf2_config_with_policy_value",
     "cnf2_config_with_guard",
+    "cnf2_config_bound",
     "IntrinsicConfig",
     "DEFAULT_INTRINSIC_CONFIG",
     "CoordConfig",

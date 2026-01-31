@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 from functools import partial
+from dataclasses import replace
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.di import call_with_optional_kwargs
@@ -13,28 +14,39 @@ from prism_core.compact import scatter_compacted_ids
 from prism_core.safety import (
     PolicyBinding,
     PolicyMode,
-    coerce_policy_mode,
     DEFAULT_SAFETY_POLICY,
     POLICY_VALUE_DEFAULT,
     PolicyValue,
     SafetyPolicy,
-    oob_any,
-    oob_any_value,
+    resolve_policy_binding,
+    require_static_policy,
+    require_value_policy,
 )
-from prism_core.errors import PrismPolicyBindingError, PrismCnf2ModeConflictError
-from prism_core.modes import (
-    ValidateMode,
-    require_validate_mode,
-    Cnf2Mode,
-    coerce_cnf2_mode,
-)
+from prism_core.errors import PrismPolicyBindingError
+from prism_core.modes import ValidateMode
 from prism_coord.coord import coord_xor_batch
 from prism_ledger.intern import intern_nodes
 from prism_ledger.config import InternConfig
 from prism_metrics.metrics import _cnf2_metrics_enabled, _cnf2_metrics_update
-from prism_bsp.config import Cnf2Config
-from prism_semantics.commit import _identity_q, apply_q, commit_stratum
-from prism_vm_core.candidates import _candidate_indices, candidate_indices_cfg
+from prism_bsp.config import (
+    Cnf2Config,
+    Cnf2BoundConfig,
+    resolve_cnf2_inputs,
+    resolve_cnf2_candidate_inputs,
+    resolve_cnf2_intern_inputs,
+    resolve_validate_mode,
+    make_cnf2_post_q_handler_static,
+    make_cnf2_post_q_handler_value,
+)
+from prism_semantics.commit import (
+    _identity_q,
+    apply_q,
+    commit_stratum,
+    commit_stratum_bound,
+    commit_stratum_static,
+    commit_stratum_value,
+)
+from prism_vm_core.candidates import _candidate_indices
 from prism_vm_core.domains import (
     _committed_ids,
     _host_bool_value,
@@ -71,6 +83,12 @@ from prism_vm_core.protocols import (
     ScatterDropFn,
 )
 
+EMPTY_COMMIT_OPTIONAL: dict = {}
+
+
+def _assert_roots_noop(_ledger, _frontier, _post_ids):
+    return None
+
 
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
 _scatter_drop = _jax_safe.scatter_drop
@@ -87,9 +105,6 @@ def emit_candidates(ledger, frontier_ids):
     opcode = jnp.zeros(size, dtype=jnp.int32)
     arg1 = jnp.zeros(size, dtype=jnp.int32)
     arg2 = jnp.zeros(size, dtype=jnp.int32)
-
-    if num_frontier == 0:
-        return CandidateBuffer(enabled=enabled, opcode=opcode, arg1=arg1, arg2=arg2)
 
     f_ops = ledger.opcode[frontier_ids]
     f_a1 = ledger.arg1[frontier_ids]
@@ -159,9 +174,14 @@ def emit_candidates_cfg(
     emit_candidates_fn: EmitCandidatesFn = emit_candidates,
 ):
     """Interface/Control wrapper for emit_candidates with DI bundle."""
-    if cfg is not None and cfg.emit_candidates_fn is not None:
-        emit_candidates_fn = cfg.emit_candidates_fn
-    return emit_candidates_fn(ledger, frontier_ids)
+    resolved = resolve_cnf2_candidate_inputs(
+        cfg,
+        emit_candidates_fn=emit_candidates_fn,
+        candidate_indices_fn=_candidate_indices,
+        candidate_indices_default=_candidate_indices,
+        scatter_drop_fn=_scatter_drop,
+    )
+    return resolved.emit_candidates_fn(ledger, frontier_ids)
 
 
 def compact_candidates_result(
@@ -195,12 +215,14 @@ def compact_candidates_cfg(
     candidates, *, cfg: Cnf2Config | None = None
 ):
     """Interface/Control wrapper for compact_candidates with DI bundle."""
-    candidate_indices_fn = _candidate_indices
-    if cfg is not None and cfg.candidate_indices_fn is not None:
-        candidate_indices_fn = cfg.candidate_indices_fn
-    if cfg is not None and cfg.compact_cfg is not None and candidate_indices_fn is _candidate_indices:
-        candidate_indices_fn = partial(candidate_indices_cfg, compact_cfg=cfg.compact_cfg)
-    return compact_candidates(candidates, candidate_indices_fn=candidate_indices_fn)
+    resolved = resolve_cnf2_candidate_inputs(
+        cfg,
+        emit_candidates_fn=emit_candidates,
+        candidate_indices_fn=_candidate_indices,
+        candidate_indices_default=_candidate_indices,
+        scatter_drop_fn=_scatter_drop,
+    )
+    return compact_candidates(candidates, candidate_indices_fn=resolved.candidate_indices_fn)
 
 
 def compact_candidates_with_index_result(
@@ -225,13 +247,15 @@ def compact_candidates_with_index_cfg(
     candidates, *, cfg: Cnf2Config | None = None
 ):
     """Interface/Control wrapper for compact_candidates_with_index with DI bundle."""
-    candidate_indices_fn = _candidate_indices
-    if cfg is not None and cfg.candidate_indices_fn is not None:
-        candidate_indices_fn = cfg.candidate_indices_fn
-    if cfg is not None and cfg.compact_cfg is not None and candidate_indices_fn is _candidate_indices:
-        candidate_indices_fn = partial(candidate_indices_cfg, compact_cfg=cfg.compact_cfg)
+    resolved = resolve_cnf2_candidate_inputs(
+        cfg,
+        emit_candidates_fn=emit_candidates,
+        candidate_indices_fn=_candidate_indices,
+        candidate_indices_default=_candidate_indices,
+        scatter_drop_fn=_scatter_drop,
+    )
     return compact_candidates_with_index(
-        candidates, candidate_indices_fn=candidate_indices_fn
+        candidates, candidate_indices_fn=resolved.candidate_indices_fn
     )
 
 
@@ -262,16 +286,37 @@ def scatter_compacted_ids_cfg(
     cfg: Cnf2Config | None = None,
 ):
     """Interface/Control wrapper for _scatter_compacted_ids with DI bundle."""
-    scatter_drop_fn = _scatter_drop
-    if cfg is not None and cfg.scatter_drop_fn is not None:
-        scatter_drop_fn = cfg.scatter_drop_fn
+    resolved = resolve_cnf2_candidate_inputs(
+        cfg,
+        emit_candidates_fn=emit_candidates,
+        candidate_indices_fn=_candidate_indices,
+        candidate_indices_default=_candidate_indices,
+        scatter_drop_fn=_scatter_drop,
+    )
     return _scatter_compacted_ids(
         comp_idx,
         ids_compact,
         count,
         size,
-        scatter_drop_fn=scatter_drop_fn,
+        scatter_drop_fn=resolved.scatter_drop_fn,
     )
+
+
+def _intern_candidates_core(
+    ledger,
+    candidates,
+    *,
+    compact_candidates_fn,
+    intern_fn: InternFn,
+    node_batch_fn: NodeBatchFn,
+):
+    compacted, count = compact_candidates_fn(candidates)
+    enabled = compacted.enabled.astype(jnp.int32)
+    ops = jnp.where(enabled, compacted.opcode, jnp.int32(0))
+    a1 = jnp.where(enabled, compacted.arg1, jnp.int32(0))
+    a2 = jnp.where(enabled, compacted.arg2, jnp.int32(0))
+    ids, new_ledger = intern_fn(ledger, node_batch_fn(ops, a1, a2))
+    return ids, new_ledger, count
 
 
 def intern_candidates(
@@ -283,15 +328,24 @@ def intern_candidates(
     intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
 ):
-    if intern_cfg is not None and intern_fn is intern_nodes:
-        intern_fn = partial(intern_nodes, cfg=intern_cfg)
-    compacted, count = compact_candidates_fn(candidates)
-    enabled = compacted.enabled.astype(jnp.int32)
-    ops = jnp.where(enabled, compacted.opcode, jnp.int32(0))
-    a1 = jnp.where(enabled, compacted.arg1, jnp.int32(0))
-    a2 = jnp.where(enabled, compacted.arg2, jnp.int32(0))
-    ids, new_ledger = intern_fn(ledger, node_batch_fn(ops, a1, a2))
-    return ids, new_ledger, count
+    resolved = resolve_cnf2_intern_inputs(
+        None,
+        compact_candidates_fn=compact_candidates_fn,
+        compact_candidates_default=compact_candidates,
+        candidate_indices_default=_candidate_indices,
+        intern_fn=intern_fn,
+        intern_fn_default=intern_nodes,
+        intern_cfg=intern_cfg,
+        node_batch_fn=node_batch_fn,
+        node_batch_default=_node_batch,
+    )
+    return _intern_candidates_core(
+        ledger,
+        candidates,
+        compact_candidates_fn=resolved.compact_candidates_fn,
+        intern_fn=resolved.intern_fn,
+        node_batch_fn=resolved.node_batch_fn,
+    )
 
 
 def intern_candidates_cfg(
@@ -305,34 +359,33 @@ def intern_candidates_cfg(
     node_batch_fn: NodeBatchFn = _node_batch,
 ):
     """Interface/Control wrapper for intern_candidates with DI bundle."""
-    if cfg is not None:
-        intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
-        if cfg.intern_fn is not None and intern_fn is intern_nodes:
-            intern_fn = cfg.intern_fn
-        if cfg.node_batch_fn is not None and node_batch_fn is _node_batch:
-            node_batch_fn = cfg.node_batch_fn
-        if cfg.candidate_indices_fn is not None:
-            compact_candidates_fn = partial(
-                compact_candidates, candidate_indices_fn=cfg.candidate_indices_fn
-            )
-    return intern_candidates(
-        ledger,
-        candidates,
+    resolved = resolve_cnf2_intern_inputs(
+        cfg,
         compact_candidates_fn=compact_candidates_fn,
+        compact_candidates_default=compact_candidates,
+        candidate_indices_default=_candidate_indices,
         intern_fn=intern_fn,
+        intern_fn_default=intern_nodes,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
+        node_batch_default=_node_batch,
+    )
+    return _intern_candidates_core(
+        ledger,
+        candidates,
+        compact_candidates_fn=resolved.compact_candidates_fn,
+        intern_fn=resolved.intern_fn,
+        node_batch_fn=resolved.node_batch_fn,
     )
 
-def _cycle_candidates_core_common(
+def _cycle_candidates_core_impl(
     ledger,
     frontier_ids,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     cfg: Cnf2Config | None = None,
-    policy_mode: PolicyMode | str,
-    safe_gather_policy: SafetyPolicy | None = None,
-    safe_gather_policy_value: PolicyValue | None = None,
+    commit_optional: dict = EMPTY_COMMIT_OPTIONAL,
+    post_q_handler,
     guard_cfg: GuardConfig | None = None,
     intern_fn: InternFn = intern_nodes,
     intern_cfg: InternConfig | None = None,
@@ -344,159 +397,60 @@ def _cycle_candidates_core_common(
     commit_stratum_fn: CommitStratumFn = commit_stratum,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
+    assert_roots_fn=_assert_roots_noop,
     safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
     safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
-    guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
-    ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
     cnf2_enabled_fn=_cnf2_enabled,
     cnf2_slot1_enabled_fn=_cnf2_slot1_enabled,
     cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
     cnf2_metrics_update_fn=_cnf2_metrics_update,
 ):
-    def _maybe_override(current, default, override):
-        if override is None:
-            return current
-        if current is default:
-            return override
-        return current
-
-    cnf2_mode = None
-    if cfg is not None:
-        cnf2_mode = cfg.cnf2_mode
-        guard_cfg = cfg.guard_cfg if guard_cfg is None else guard_cfg
-        intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
-        if cfg.coord_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
-            coord_xor_batch_fn = partial(coord_xor_batch, cfg=cfg.coord_cfg)
-        intern_fn = _maybe_override(intern_fn, intern_nodes, cfg.intern_fn)
-        node_batch_fn = _maybe_override(node_batch_fn, _node_batch, cfg.node_batch_fn)
-        coord_xor_batch_fn = _maybe_override(
-            coord_xor_batch_fn, coord_xor_batch, cfg.coord_xor_batch_fn
-        )
-        emit_candidates_fn = _maybe_override(
-            emit_candidates_fn, emit_candidates, cfg.emit_candidates_fn
-        )
-        candidate_indices_fn = _maybe_override(
-            candidate_indices_fn, _candidate_indices, cfg.candidate_indices_fn
-        )
-        if cfg.compact_cfg is not None and candidate_indices_fn is _candidate_indices:
-            candidate_indices_fn = partial(candidate_indices_cfg, compact_cfg=cfg.compact_cfg)
-        scatter_drop_fn = _maybe_override(
-            scatter_drop_fn, _scatter_drop, cfg.scatter_drop_fn
-        )
-        commit_stratum_fn = _maybe_override(
-            commit_stratum_fn, commit_stratum, cfg.commit_stratum_fn
-        )
-        apply_q_fn = _maybe_override(apply_q_fn, apply_q, cfg.apply_q_fn)
-        identity_q_fn = _maybe_override(identity_q_fn, _identity_q, cfg.identity_q_fn)
-        safe_gather_ok_fn = _maybe_override(
-            safe_gather_ok_fn, _jax_safe.safe_gather_1d_ok, cfg.safe_gather_ok_fn
-        )
-        safe_gather_ok_value_fn = _maybe_override(
-            safe_gather_ok_value_fn,
-            _jax_safe.safe_gather_1d_ok_value,
-            cfg.safe_gather_ok_value_fn,
-        )
-        host_bool_value_fn = _maybe_override(
-            host_bool_value_fn, _host_bool_value, cfg.host_bool_value_fn
-        )
-        host_int_value_fn = _maybe_override(
-            host_int_value_fn, _host_int_value, cfg.host_int_value_fn
-        )
-        guards_enabled_fn = _maybe_override(
-            guards_enabled_fn, _guards_enabled, cfg.guards_enabled_fn
-        )
-        ledger_roots_hash_host_fn = _maybe_override(
-            ledger_roots_hash_host_fn,
-            _ledger_roots_hash_host,
-            cfg.ledger_roots_hash_host_fn,
-        )
-        if cfg.cnf2_metrics_enabled_fn is not None and cnf2_metrics_enabled_fn is _cnf2_metrics_enabled:
-            cnf2_metrics_enabled_fn = cfg.cnf2_metrics_enabled_fn
-        if cfg.cnf2_metrics_update_fn is not None and cnf2_metrics_update_fn is _cnf2_metrics_update:
-            cnf2_metrics_update_fn = cfg.cnf2_metrics_update_fn
-        if cfg.cnf2_enabled_fn is not None and cnf2_enabled_fn is _cnf2_enabled:
-            cnf2_enabled_fn = cfg.cnf2_enabled_fn
-        if cfg.cnf2_slot1_enabled_fn is not None and cnf2_slot1_enabled_fn is _cnf2_slot1_enabled:
-            cnf2_slot1_enabled_fn = cfg.cnf2_slot1_enabled_fn
-        if cfg.flags is not None:
-            if cfg.flags.enabled is not None and cnf2_enabled_fn is _cnf2_enabled:
-                cnf2_enabled_fn = lambda: bool(cfg.flags.enabled)
-            if cfg.flags.slot1_enabled is not None and cnf2_slot1_enabled_fn is _cnf2_slot1_enabled:
-                cnf2_slot1_enabled_fn = lambda: bool(cfg.flags.slot1_enabled)
-        if cfg.policy_binding is not None:
-            if safe_gather_policy is not None or safe_gather_policy_value is not None:
-                raise PrismPolicyBindingError(
-                    "cycle_candidates_core received both policy_binding and "
-                    "safe_gather_policy/safe_gather_policy_value",
-                    context="cycle_candidates_core",
-                    policy_mode="ambiguous",
-                )
-            policy_mode = cfg.policy_binding.mode
-            if policy_mode == PolicyMode.VALUE:
-                safe_gather_policy_value = cfg.policy_binding.policy_value
-            else:
-                safe_gather_policy = cfg.policy_binding.policy
-
-    policy_mode = coerce_policy_mode(policy_mode, context="cycle_candidates_core")
-    if policy_mode == PolicyMode.STATIC and safe_gather_policy is None:
-        raise PrismPolicyBindingError(
-            "cycle_candidates core (static) requires safe_gather_policy",
-            context="cycle_candidates_core",
-            policy_mode="static",
-        )
-    if policy_mode == PolicyMode.VALUE and safe_gather_policy_value is None:
-        raise PrismPolicyBindingError(
-            "cycle_candidates core (value) requires safe_gather_policy_value",
-            context="cycle_candidates_core",
-            policy_mode="value",
-        )
-    if cnf2_mode is not None:
-        mode = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates_core")
-        if mode != Cnf2Mode.AUTO:
-            if (
-                cfg is not None
-                and cfg.flags is not None
-            ) or cnf2_enabled_fn is not _cnf2_enabled or cnf2_slot1_enabled_fn is not _cnf2_slot1_enabled:
-                raise PrismCnf2ModeConflictError(
-                    "cycle_candidates_core received cnf2_mode alongside cnf2_flags or cnf2_*_enabled_fn",
-                    context="cycle_candidates_core",
-                )
-            enabled_value = mode in (Cnf2Mode.BASE, Cnf2Mode.SLOT1)
-            slot1_value = mode == Cnf2Mode.SLOT1
-            cnf2_enabled_fn = lambda: enabled_value
-            cnf2_slot1_enabled_fn = lambda: slot1_value
-    if intern_cfg is not None and intern_fn is intern_nodes:
-        intern_fn = partial(intern_nodes, cfg=intern_cfg)
-    if intern_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
-        coord_xor_batch_fn = partial(coord_xor_batch, intern_cfg=intern_cfg)
+    resolved = resolve_cnf2_inputs(
+        cfg,
+        guard_cfg=guard_cfg,
+        intern_cfg=intern_cfg,
+        intern_fn=intern_fn,
+        node_batch_fn=node_batch_fn,
+        coord_xor_batch_fn=coord_xor_batch_fn,
+        emit_candidates_fn=emit_candidates_fn,
+        candidate_indices_fn=candidate_indices_fn,
+        scatter_drop_fn=scatter_drop_fn,
+        commit_stratum_fn=commit_stratum_fn,
+        apply_q_fn=apply_q_fn,
+        identity_q_fn=identity_q_fn,
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+        host_bool_value_fn=host_bool_value_fn,
+        host_int_value_fn=host_int_value_fn,
+        guards_enabled_fn=_guards_enabled,
+        ledger_roots_hash_host_fn=_ledger_roots_hash_host,
+        cnf2_enabled_fn=cnf2_enabled_fn,
+        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
+        cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+    )
+    guard_cfg = resolved.guard_cfg
+    intern_cfg = resolved.intern_cfg
+    intern_fn = resolved.intern_fn
+    node_batch_fn = resolved.node_batch_fn
+    coord_xor_batch_fn = resolved.coord_xor_batch_fn
+    emit_candidates_fn = resolved.emit_candidates_fn
+    candidate_indices_fn = resolved.candidate_indices_fn
+    scatter_drop_fn = resolved.scatter_drop_fn
+    commit_stratum_fn = resolved.commit_stratum_fn
+    apply_q_fn = resolved.apply_q_fn
+    identity_q_fn = resolved.identity_q_fn
+    host_bool_value_fn = resolved.host_bool_value_fn
+    host_int_value_fn = resolved.host_int_value_fn
+    cnf2_slot1_enabled_fn = resolved.cnf2_slot1_enabled_fn
+    cnf2_metrics_update_fn = resolved.cnf2_metrics_update_fn
     # BSPᵗ: temporal superstep / barrier semantics.
     frontier_ids = _committed_ids(frontier_ids)
-    if not cnf2_enabled_fn():
-        # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
-        # See IMPLEMENTATION_PLAN.md (m2 CNF-2 pipeline).
-        raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
-    # SYNC: host read to short-circuit on corrupt ledgers (m1).
-    if host_bool_value_fn(ledger.corrupt):
-        empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
-        return (
-            ledger,
-            _provisional_ids(frontier_ids.a),
-            (empty, empty, empty),
-            identity_q_fn,
-        )
     frontier_arr = jnp.atleast_1d(frontier_ids.a)
     frontier_ids = _committed_ids(frontier_arr)
     num_frontier = frontier_arr.shape[0]
-    if num_frontier == 0:
-        empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
-        return (
-            ledger,
-            _provisional_ids(frontier_ids.a),
-            (empty, empty, empty),
-            identity_q_fn,
-        )
 
     def _peel_one(ptr):
         def cond(state):
@@ -537,22 +491,21 @@ def _cycle_candidates_core_common(
     coord_valid = coord_result.valid
     coord_count = coord_result.count
     coord_count_i = host_int_value_fn(coord_count)
-    if coord_count_i > 0:
-        coord_idx_safe = jnp.where(coord_valid, coord_idx, 0)
-        coord_left = r_a1[coord_idx_safe][:coord_count_i]
-        coord_right = r_a2[coord_idx_safe][:coord_count_i]
-        coord_ids_compact, ledger = coord_xor_batch_fn(
-            ledger, coord_left, coord_right
-        )
-        coord_ids_full = jnp.zeros_like(coord_idx_safe)
-        coord_ids_full = coord_ids_full.at[:coord_count_i].set(coord_ids_compact)
-        coord_ids = _scatter_compacted_ids(
-            coord_idx,
-            coord_ids_full,
-            coord_count,
-            num_frontier,
-            scatter_drop_fn=scatter_drop_fn,
-        )
+    coord_idx_safe = jnp.where(coord_valid, coord_idx, 0)
+    coord_left = r_a1[coord_idx_safe][:coord_count_i]
+    coord_right = r_a2[coord_idx_safe][:coord_count_i]
+    coord_ids_compact, ledger = coord_xor_batch_fn(
+        ledger, coord_left, coord_right
+    )
+    coord_ids_full = jnp.zeros_like(coord_idx_safe)
+    coord_ids_full = coord_ids_full.at[:coord_count_i].set(coord_ids_compact)
+    coord_ids = _scatter_compacted_ids(
+        coord_idx,
+        coord_ids_full,
+        coord_count,
+        num_frontier,
+        scatter_drop_fn=scatter_drop_fn,
+    )
 
     start0 = ledger.count.astype(jnp.int32)
     candidates = emit_candidates_fn(ledger, rewrite_ids)
@@ -615,13 +568,9 @@ def _cycle_candidates_core_common(
     slot1_ops = jnp.where(slot1_enabled, slot1_ops, jnp.int32(0))
     slot1_a1 = jnp.where(slot1_enabled, slot1_a1, jnp.int32(0))
     slot1_a2 = jnp.where(slot1_enabled, slot1_a2, jnp.int32(0))
-    if slot1_gate:
-        slot1_ids, ledger1 = intern_fn(
-            ledger0, node_batch_fn(slot1_ops, slot1_a1, slot1_a2)
-        )
-    else:
-        slot1_ids = jnp.zeros_like(rewrite_ids)
-        ledger1 = ledger0
+    slot1_ids, ledger1 = intern_fn(
+        ledger0, node_batch_fn(slot1_ops, slot1_a1, slot1_a2)
+    )
     zero_on_a1 = is_zero_a1
     zero_on_a2 = (~is_zero_a1) & is_zero_a2
     zero_other = jnp.where(zero_on_a1, r_a2, r_a1)
@@ -633,7 +582,7 @@ def _cycle_candidates_core_common(
     base_next = jnp.where(is_coord_add, coord_ids, base_next)
     changed_mask = base_next != rewrite_ids
 
-    wrap_strata = []
+    wrap_strata = [(host_int_value_fn(ledger1.count), 0)]
     wrap_depths = depths
     next_frontier = base_next
     ledger2 = ledger1
@@ -645,8 +594,7 @@ def _cycle_candidates_core_common(
         start = host_int_value_fn(ledger2.count)
         new_ids, ledger2 = intern_fn(ledger2, node_batch_fn(ops, a1, a2))
         end = host_int_value_fn(ledger2.count)
-        if end > start:
-            wrap_strata.append((start, end - start))
+        wrap_strata.append((start, end - start))
         next_frontier = jnp.where(to_wrap, new_ids, next_frontier)
         wrap_depths = wrap_depths - to_wrap.astype(jnp.int32)
 
@@ -659,42 +607,20 @@ def _cycle_candidates_core_common(
     stratum1 = Stratum(
         start=start1, count=(ledger1.count - start1).astype(jnp.int32)
     )
-    if wrap_strata:
-        start2_i = wrap_strata[0][0]
-        count2_i = sum(count for _, count in wrap_strata)
-    else:
-        start2_i = host_int_value_fn(ledger1.count)
-        count2_i = 0
+    start2_i = wrap_strata[0][0]
+    count2_i = sum(count for _, count in wrap_strata)
     stratum2 = Stratum(
         start=jnp.int32(start2_i), count=jnp.int32(count2_i)
     )
-    if cnf2_metrics_enabled_fn():
-        rewrite_child = host_int_value_fn(count0)
-        changed_count = host_int_value_fn(
-            jnp.sum(changed_mask.astype(jnp.int32))
-        )
-        cnf2_metrics_update_fn(rewrite_child, changed_count, int(count2_i))
-    mode = require_validate_mode(validate_mode, context="cycle_candidates")
-    if guards_enabled_fn() and mode == ValidateMode.NONE:
-        mode = ValidateMode.STRICT
-    if policy_mode == PolicyMode.STATIC:
-        commit_optional = {
-            "safe_gather_policy": safe_gather_policy,
-            "safe_gather_ok_fn": safe_gather_ok_fn,
-            "guard_cfg": guard_cfg,
-        }
-    else:
-        commit_optional = {
-            "safe_gather_policy_value": safe_gather_policy_value,
-            "safe_gather_ok_value_fn": safe_gather_ok_value_fn,
-            "guard_cfg": guard_cfg,
-        }
+    rewrite_child = host_int_value_fn(count0)
+    changed_count = host_int_value_fn(jnp.sum(changed_mask.astype(jnp.int32)))
+    cnf2_metrics_update_fn(rewrite_child, changed_count, int(count2_i))
     ledger2, _, q_map = call_with_optional_kwargs(
         commit_stratum_fn,
         commit_optional,
         ledger2,
         stratum0,
-        validate_mode=mode,
+        validate_mode=validate_mode,
         intern_fn=intern_fn,
     )
     ledger2, _, q_map = call_with_optional_kwargs(
@@ -703,7 +629,7 @@ def _cycle_candidates_core_common(
         ledger2,
         stratum1,
         prior_q=q_map,
-        validate_mode=mode,
+        validate_mode=validate_mode,
         intern_fn=intern_fn,
     )
     # Wrapper strata are micro-strata in s=2; commit in order for hyperstrata visibility.
@@ -717,52 +643,16 @@ def _cycle_candidates_core_common(
             ledger2,
             micro_stratum,
             prior_q=q_map,
-            validate_mode=mode,
+            validate_mode=validate_mode,
             intern_fn=intern_fn,
         )
     next_frontier = _provisional_ids(next_frontier)
-    meta = getattr(q_map, "_prism_meta", None)
-    post_ids = None
-    ok = None
-    if meta is not None:
-        if policy_mode == PolicyMode.STATIC:
-            if meta.safe_gather_policy_value is not None:
-                raise PrismPolicyBindingError(
-                    "cycle_candidates core (static) received policy_value metadata",
-                    context="cycle_candidates_core",
-                    policy_mode="static",
-                )
-            if meta.safe_gather_policy is not None:
-                post_ids, ok = _apply_q_optional_ok(apply_q_fn, q_map, next_frontier)
-                if ok is not None:
-                    corrupt = oob_any(ok, policy=meta.safe_gather_policy)
-                    ledger2 = ledger2._replace(corrupt=ledger2.corrupt | corrupt)
-        else:
-            if meta.safe_gather_policy is not None:
-                raise PrismPolicyBindingError(
-                    "cycle_candidates core (value) received policy metadata",
-                    context="cycle_candidates_core",
-                    policy_mode="value",
-                )
-            if meta.safe_gather_policy_value is not None:
-                post_ids, ok = _apply_q_optional_ok(apply_q_fn, q_map, next_frontier)
-                if ok is not None:
-                    corrupt = oob_any_value(
-                        ok, policy_value=meta.safe_gather_policy_value
-                    )
-                    ledger2 = ledger2._replace(corrupt=ledger2.corrupt | corrupt)
-    if _TEST_GUARDS:
-        pre_hash = ledger_roots_hash_host_fn(ledger2, next_frontier.a)
-        if post_ids is None:
-            post_ids, ok = _apply_q_optional_ok(apply_q_fn, q_map, next_frontier)
-        post_ids = post_ids.a
-        post_hash = ledger_roots_hash_host_fn(ledger2, post_ids)
-        if pre_hash != post_hash:
-            raise RuntimeError("BSPᵗ projection changed root structure")
+    ledger2, post_ids = post_q_handler(ledger2, q_map, next_frontier)
+    assert_roots_fn(ledger2, next_frontier, post_ids)
     return ledger2, next_frontier, (stratum0, stratum1, stratum2), q_map
 
 
-def _cycle_candidates_core_static(
+def _cycle_candidates_core_static_bound(
     ledger,
     frontier_ids,
     validate_mode: ValidateMode = ValidateMode.NONE,
@@ -777,7 +667,7 @@ def _cycle_candidates_core_static(
     emit_candidates_fn: EmitCandidatesFn = emit_candidates,
     candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
     scatter_drop_fn: ScatterDropFn = _scatter_drop,
-    commit_stratum_fn: CommitStratumFn = commit_stratum,
+    commit_stratum_fn: CommitStratumFn = commit_stratum_static,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
     safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
@@ -790,14 +680,75 @@ def _cycle_candidates_core_static(
     cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
     cnf2_metrics_update_fn=_cnf2_metrics_update,
 ):
-    return _cycle_candidates_core_common(
+    """CNF-2 core (static policy) with policy decisions pre-bound at the edge.
+
+    This entrypoint assumes:
+    - safe_gather_policy is already resolved (non-optional),
+    - safe_gather_ok_fn is already bound if policy-bound behavior is required,
+    - commit_stratum_fn is already the correct bound/static variant.
+
+    All policy binding / guard binding / config resolution must happen
+    outside this function so the core remains branch-free with respect to
+    policy composition. Only algorithmic guards remain below.
+    """
+    mode = resolve_validate_mode(
+        validate_mode, guards_enabled_fn=guards_enabled_fn, context="cycle_candidates"
+    )
+    if commit_stratum_fn is commit_stratum:
+        commit_stratum_fn = commit_stratum_static
+    commit_optional = {
+        "safe_gather_policy": safe_gather_policy,
+        "safe_gather_ok_fn": safe_gather_ok_fn,
+        "guard_cfg": guard_cfg,
+    }
+
+    frontier_ids = _committed_ids(frontier_ids)
+    # --- Algorithmic guards (explicit, non-policy) ---
+    # CNF-2 pipeline gate: explicitly staged by milestone/flags.
+    if not cnf2_enabled_fn():
+        # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
+        # See IMPLEMENTATION_PLAN.md (m2 CNF-2 pipeline).
+        raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
+    # Corrupt ledger short-circuit: no rewrite on invalid state.
+    # SYNC: host read to short-circuit on corrupt ledgers (m1).
+    if host_bool_value_fn(ledger.corrupt):
+        empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
+        return (
+            ledger,
+            _provisional_ids(frontier_ids.a),
+            (empty, empty, empty),
+            identity_q_fn,
+        )
+    frontier_arr = jnp.atleast_1d(frontier_ids.a)
+    frontier_ids = _committed_ids(frontier_arr)
+    # Empty frontier short-circuit: no rewrite or allocation.
+    if frontier_arr.shape[0] == 0:
+        empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
+        return (
+            ledger,
+            _provisional_ids(frontier_ids.a),
+            (empty, empty, empty),
+            identity_q_fn,
+        )
+
+    def _assert_roots(ledger2, next_frontier, post_ids):
+        # Test guard: denotation invariance under q projection.
+        if not _TEST_GUARDS:
+            return
+        pre_hash = ledger_roots_hash_host_fn(ledger2, next_frontier.a)
+        post_hash = ledger_roots_hash_host_fn(ledger2, post_ids.a)
+        if pre_hash != post_hash:
+            raise RuntimeError("BSPᵗ projection changed root structure")
+
+    _post_q_handler = make_cnf2_post_q_handler_static(apply_q_fn)
+
+    return _cycle_candidates_core_impl(
         ledger,
         frontier_ids,
-        validate_mode=validate_mode,
+        validate_mode=mode,
         cfg=cfg,
-        policy_mode=PolicyMode.STATIC,
-        safe_gather_policy=safe_gather_policy,
-        safe_gather_policy_value=None,
+        commit_optional=commit_optional,
+        post_q_handler=_post_q_handler,
         guard_cfg=guard_cfg,
         intern_fn=intern_fn,
         intern_cfg=intern_cfg,
@@ -809,12 +760,11 @@ def _cycle_candidates_core_static(
         commit_stratum_fn=commit_stratum_fn,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
+        assert_roots_fn=_assert_roots,
         safe_gather_ok_fn=safe_gather_ok_fn,
-        safe_gather_ok_value_fn=None,
+        safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
         host_bool_value_fn=host_bool_value_fn,
         host_int_value_fn=host_int_value_fn,
-        guards_enabled_fn=guards_enabled_fn,
-        ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
         cnf2_enabled_fn=cnf2_enabled_fn,
         cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
         cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
@@ -822,7 +772,7 @@ def _cycle_candidates_core_static(
     )
 
 
-def _cycle_candidates_core_value(
+def _cycle_candidates_core_value_bound(
     ledger,
     frontier_ids,
     validate_mode: ValidateMode = ValidateMode.NONE,
@@ -837,7 +787,7 @@ def _cycle_candidates_core_value(
     emit_candidates_fn: EmitCandidatesFn = emit_candidates,
     candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
     scatter_drop_fn: ScatterDropFn = _scatter_drop,
-    commit_stratum_fn: CommitStratumFn = commit_stratum,
+    commit_stratum_fn: CommitStratumFn = commit_stratum_value,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
     safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
@@ -850,14 +800,75 @@ def _cycle_candidates_core_value(
     cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
     cnf2_metrics_update_fn=_cnf2_metrics_update,
 ):
-    return _cycle_candidates_core_common(
+    """CNF-2 core (policy as JAX value) with policy decisions pre-bound at the edge.
+
+    This entrypoint assumes:
+    - safe_gather_policy_value is already resolved (non-optional),
+    - safe_gather_ok_value_fn is already guard-bound,
+    - commit_stratum_fn is already the correct value-policy variant.
+
+    All policy binding / guard binding / config resolution must happen
+    outside this function so the core remains branch-free with respect to
+    policy composition. Only algorithmic guards remain below.
+    """
+    mode = resolve_validate_mode(
+        validate_mode, guards_enabled_fn=guards_enabled_fn, context="cycle_candidates"
+    )
+    if commit_stratum_fn is commit_stratum:
+        commit_stratum_fn = commit_stratum_value
+    commit_optional = {
+        "safe_gather_policy_value": safe_gather_policy_value,
+        "safe_gather_ok_value_fn": safe_gather_ok_value_fn,
+        "guard_cfg": guard_cfg,
+    }
+
+    frontier_ids = _committed_ids(frontier_ids)
+    # --- Algorithmic guards (explicit, non-policy) ---
+    # CNF-2 pipeline gate: explicitly staged by milestone/flags.
+    if not cnf2_enabled_fn():
+        # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
+        # See IMPLEMENTATION_PLAN.md (m2 CNF-2 pipeline).
+        raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
+    # Corrupt ledger short-circuit: no rewrite on invalid state.
+    # SYNC: host read to short-circuit on corrupt ledgers (m1).
+    if host_bool_value_fn(ledger.corrupt):
+        empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
+        return (
+            ledger,
+            _provisional_ids(frontier_ids.a),
+            (empty, empty, empty),
+            identity_q_fn,
+        )
+    frontier_arr = jnp.atleast_1d(frontier_ids.a)
+    frontier_ids = _committed_ids(frontier_arr)
+    # Empty frontier short-circuit: no rewrite or allocation.
+    if frontier_arr.shape[0] == 0:
+        empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
+        return (
+            ledger,
+            _provisional_ids(frontier_ids.a),
+            (empty, empty, empty),
+            identity_q_fn,
+        )
+
+    def _assert_roots(ledger2, next_frontier, post_ids):
+        # Test guard: denotation invariance under q projection.
+        if not _TEST_GUARDS:
+            return
+        pre_hash = ledger_roots_hash_host_fn(ledger2, next_frontier.a)
+        post_hash = ledger_roots_hash_host_fn(ledger2, post_ids.a)
+        if pre_hash != post_hash:
+            raise RuntimeError("BSPᵗ projection changed root structure")
+
+    _post_q_handler = make_cnf2_post_q_handler_value(apply_q_fn)
+
+    return _cycle_candidates_core_impl(
         ledger,
         frontier_ids,
-        validate_mode=validate_mode,
+        validate_mode=mode,
         cfg=cfg,
-        policy_mode=PolicyMode.VALUE,
-        safe_gather_policy=None,
-        safe_gather_policy_value=safe_gather_policy_value,
+        commit_optional=commit_optional,
+        post_q_handler=_post_q_handler,
         guard_cfg=guard_cfg,
         intern_fn=intern_fn,
         intern_cfg=intern_cfg,
@@ -869,12 +880,11 @@ def _cycle_candidates_core_value(
         commit_stratum_fn=commit_stratum_fn,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
-        safe_gather_ok_fn=None,
+        assert_roots_fn=_assert_roots,
+        safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
         safe_gather_ok_value_fn=safe_gather_ok_value_fn,
         host_bool_value_fn=host_bool_value_fn,
         host_int_value_fn=host_int_value_fn,
-        guards_enabled_fn=guards_enabled_fn,
-        ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
         cnf2_enabled_fn=cnf2_enabled_fn,
         cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
         cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
@@ -912,10 +922,11 @@ def cycle_candidates_static(
     emit_candidates_fn: EmitCandidatesFn = emit_candidates,
     candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
     scatter_drop_fn: ScatterDropFn = _scatter_drop,
-    commit_stratum_fn: CommitStratumFn = commit_stratum,
+    commit_stratum_fn: CommitStratumFn = commit_stratum_static,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
     safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
+    safe_gather_ok_bound_fn=None,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
@@ -934,7 +945,9 @@ def cycle_candidates_static(
                 policy_mode="static",
             )
         if safe_gather_policy is None:
-            safe_gather_policy = cfg.policy_binding.policy
+            safe_gather_policy = require_static_policy(
+                cfg.policy_binding, context="cycle_candidates_static"
+            )
     if cfg is not None and cfg.safe_gather_policy_value is not None:
         raise PrismPolicyBindingError(
             "cycle_candidates_static received cfg.safe_gather_policy_value; "
@@ -944,10 +957,48 @@ def cycle_candidates_static(
         )
     if safe_gather_policy is None and cfg is not None and cfg.safe_gather_policy is not None:
         safe_gather_policy = cfg.safe_gather_policy
+    if cfg is not None and cfg.safe_gather_ok_bound_fn is not None:
+        if safe_gather_ok_bound_fn is not None:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_static received safe_gather_ok_bound_fn twice",
+                context="cycle_candidates_static",
+                policy_mode="static",
+            )
+        safe_gather_ok_bound_fn = cfg.safe_gather_ok_bound_fn
+    if (
+        cfg is not None
+        and cfg.safe_gather_ok_fn is not None
+        and safe_gather_ok_fn is _jax_safe.safe_gather_1d_ok
+    ):
+        safe_gather_ok_fn = cfg.safe_gather_ok_fn
     if safe_gather_policy is None:
         safe_gather_policy = DEFAULT_SAFETY_POLICY
+    if safe_gather_ok_bound_fn is not None:
+        if safe_gather_ok_fn is not _jax_safe.safe_gather_1d_ok:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_static received both safe_gather_ok_fn and "
+                "safe_gather_ok_bound_fn",
+                context="cycle_candidates_static",
+                policy_mode="static",
+            )
+        if guard_cfg is not None:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_static received guard_cfg with "
+                "safe_gather_ok_bound_fn; bind guard config into safe_gather_ok_fn",
+                context="cycle_candidates_static",
+                policy_mode="static",
+            )
+        if commit_stratum_fn in (commit_stratum, commit_stratum_static):
+            commit_stratum_fn = commit_stratum_bound
+        if commit_stratum_fn is not commit_stratum_bound:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_static received safe_gather_ok_bound_fn without commit_stratum_bound",
+                context="cycle_candidates_static",
+                policy_mode="static",
+            )
+        safe_gather_ok_fn = safe_gather_ok_bound_fn
     guard_cfg = _resolve_guard_cfg(guard_cfg, cfg)
-    return _cycle_candidates_core_static(
+    return _cycle_candidates_core_static_bound(
         ledger,
         frontier_ids,
         validate_mode=validate_mode,
@@ -991,10 +1042,11 @@ def cycle_candidates_value(
     emit_candidates_fn: EmitCandidatesFn = emit_candidates,
     candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
     scatter_drop_fn: ScatterDropFn = _scatter_drop,
-    commit_stratum_fn: CommitStratumFn = commit_stratum,
+    commit_stratum_fn: CommitStratumFn = commit_stratum_value,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
     safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
+    safe_gather_ok_bound_fn=None,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
@@ -1013,10 +1065,21 @@ def cycle_candidates_value(
                 policy_mode="value",
             )
         if safe_gather_policy_value is None:
-            safe_gather_policy_value = cfg.policy_binding.policy_value
+            safe_gather_policy_value = require_value_policy(
+                cfg.policy_binding, context="cycle_candidates_value"
+            )
     if cfg is not None and cfg.safe_gather_policy is not None:
         raise PrismPolicyBindingError(
             "cycle_candidates_value received cfg.safe_gather_policy; "
+            "use cycle_candidates_static",
+            context="cycle_candidates_value",
+            policy_mode="value",
+        )
+    if safe_gather_ok_bound_fn is not None or (
+        cfg is not None and cfg.safe_gather_ok_bound_fn is not None
+    ):
+        raise PrismPolicyBindingError(
+            "cycle_candidates_value received safe_gather_ok_bound_fn; "
             "use cycle_candidates_static",
             context="cycle_candidates_value",
             policy_mode="value",
@@ -1034,7 +1097,7 @@ def cycle_candidates_value(
         safe_gather_ok_value_fn=safe_gather_ok_value_fn,
         guard_cfg=guard_cfg,
     )
-    return _cycle_candidates_core_value(
+    return _cycle_candidates_core_value_bound(
         ledger,
         frontier_ids,
         validate_mode=validate_mode,
@@ -1084,6 +1147,7 @@ def cycle_candidates(
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
     safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
+    safe_gather_ok_bound_fn=None,
     safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
@@ -1149,6 +1213,7 @@ def cycle_candidates(
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         safe_gather_ok_fn=safe_gather_ok_fn,
+        safe_gather_ok_bound_fn=safe_gather_ok_bound_fn,
         host_bool_value_fn=host_bool_value_fn,
         host_int_value_fn=host_int_value_fn,
         guards_enabled_fn=guards_enabled_fn,
@@ -1163,10 +1228,9 @@ def cycle_candidates(
 def cycle_candidates_bound(
     ledger,
     frontier_ids,
-    policy_binding: PolicyBinding,
-    validate_mode: ValidateMode = ValidateMode.NONE,
+    cfg: Cnf2BoundConfig,
     *,
-    cfg: Cnf2Config | None = None,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     guard_cfg: GuardConfig | None = None,
     intern_fn: InternFn = intern_nodes,
     intern_cfg: InternConfig | None = None,
@@ -1190,22 +1254,17 @@ def cycle_candidates_bound(
     cnf2_metrics_update_fn=_cnf2_metrics_update,
 ):
     """PolicyBinding-required wrapper for cycle_candidates."""
-    if cfg is None:
-        cfg = Cnf2Config(policy_binding=policy_binding)
-    else:
-        cfg = replace(
-            cfg,
-            policy_binding=policy_binding,
-            safe_gather_policy=None,
-            safe_gather_policy_value=None,
-        )
+    policy_binding = cfg.policy_binding
+    cfg = cfg.as_cfg()
     if policy_binding.mode == PolicyMode.VALUE:
         return cycle_candidates_value(
             ledger,
             frontier_ids,
             validate_mode=validate_mode,
             cfg=cfg,
-            safe_gather_policy_value=policy_binding.policy_value,
+            safe_gather_policy_value=require_value_policy(
+                policy_binding, context="cycle_candidates_bound"
+            ),
             guard_cfg=guard_cfg,
             intern_fn=intern_fn,
             intern_cfg=intern_cfg,
@@ -1232,7 +1291,9 @@ def cycle_candidates_bound(
         frontier_ids,
         validate_mode=validate_mode,
         cfg=cfg,
-        safe_gather_policy=policy_binding.policy,
+        safe_gather_policy=require_static_policy(
+            policy_binding, context="cycle_candidates_bound"
+        ),
         guard_cfg=guard_cfg,
         intern_fn=intern_fn,
         intern_cfg=intern_cfg,
