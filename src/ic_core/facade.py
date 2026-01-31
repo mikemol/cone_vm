@@ -401,8 +401,6 @@ def make_runtime_ops_from_cfg(cfg: ICRuntimeConfig) -> ICRuntimeOps:
     return make_runtime_ops(resolve_runtime_config(cfg))
 
 
-DEFAULT_RUNTIME_OPS = make_runtime_ops(DEFAULT_RUNTIME_RESOLVED)
-
 
 def ic_apply_active_pairs_resolved(
     state: ICState, *, cfg: ICEngineResolved = DEFAULT_ENGINE_RESOLVED
@@ -902,6 +900,7 @@ DEFAULT_RUNTIME_CONFIG = runtime_config_from_graph_rule(
     DEFAULT_GRAPH_CONFIG, DEFAULT_RULE_CONFIG
 )
 DEFAULT_RUNTIME_RESOLVED = resolve_runtime_config(DEFAULT_RUNTIME_CONFIG)
+DEFAULT_RUNTIME_OPS = make_runtime_ops(DEFAULT_RUNTIME_RESOLVED)
 
 
 def apply_active_pairs_jit_from_rules(
