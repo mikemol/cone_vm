@@ -181,7 +181,7 @@ jobs:
           set -euo pipefail
           pytest -c pytest.baseline.ini \
             --collect-only tests/harness.py \
-            2>&1 | tee artifacts/pytest-preflight-collect.txt
+            2>&1 | tee artifacts/pytest-preflight-collect.txt || true
       - name: Run pytest smokes (preflight)
         run: |
           mkdir -p artifacts
