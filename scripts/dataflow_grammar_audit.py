@@ -31,6 +31,18 @@ class ParamUse:
     non_forward: bool
 
 
+@dataclass(frozen=True)
+class CallArgs:
+    callee: str
+    pos_map: dict[str, str]
+    kw_map: dict[str, str]
+    const_pos: dict[str, str]
+    const_kw: dict[str, str]
+    non_const_pos: set[str]
+    non_const_kw: set[str]
+    is_test: bool
+
+
 class ParentAnnotator(ast.NodeVisitor):
     def __init__(self) -> None:
         self.parents: dict[ast.AST, ast.AST] = {}
@@ -118,25 +130,76 @@ def _param_annotations(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, 
     return annots
 
 
-def _analyze_function(fn, parents):
+def _const_repr(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Constant):
+        return repr(node.value)
+    if isinstance(node, ast.UnaryOp) and isinstance(
+        node.op, (ast.USub, ast.UAdd)
+    ) and isinstance(node.operand, ast.Constant):
+        try:
+            return ast.unparse(node)
+        except Exception:
+            return None
+    if isinstance(node, ast.Attribute):
+        try:
+            return ast.unparse(node)
+        except Exception:
+            return None
+    return None
+
+
+def _is_test_path(path: Path) -> bool:
+    if "tests" in path.parts:
+        return True
+    return path.name.startswith("test_")
+
+
+def _analyze_function(fn, parents, *, is_test: bool):
     params = _param_names(fn)
     use_map = {p: ParamUse(set(), False) for p in params}
-    call_args: list[tuple[str, dict[str, str], dict[str, str]]] = []
+    call_args: list[CallArgs] = []
 
     class UseVisitor(ast.NodeVisitor):
         def visit_Call(self, node: ast.Call) -> None:
             callee = _callee_name(node)
             pos_map = {}
             kw_map = {}
+            const_pos: dict[str, str] = {}
+            const_kw: dict[str, str] = {}
+            non_const_pos: set[str] = set()
+            non_const_kw: set[str] = set()
             for idx, arg in enumerate(node.args):
+                const = _const_repr(arg)
+                if const is not None:
+                    const_pos[str(idx)] = const
+                    continue
                 if isinstance(arg, ast.Name) and arg.id in use_map:
                     pos_map[str(idx)] = arg.id
+                else:
+                    non_const_pos.add(str(idx))
             for kw in node.keywords:
                 if kw.arg is None:
                     continue
+                const = _const_repr(kw.value)
+                if const is not None:
+                    const_kw[kw.arg] = const
+                    continue
                 if isinstance(kw.value, ast.Name) and kw.value.id in use_map:
                     kw_map[kw.arg] = kw.value.id
-            call_args.append((callee, pos_map, kw_map))
+                else:
+                    non_const_kw.add(kw.arg)
+            call_args.append(
+                CallArgs(
+                    callee=callee,
+                    pos_map=pos_map,
+                    kw_map=kw_map,
+                    const_pos=const_pos,
+                    const_kw=const_kw,
+                    non_const_pos=non_const_pos,
+                    non_const_kw=non_const_kw,
+                    is_test=is_test,
+                )
+            )
             self.generic_visit(node)
 
         def visit_Name(self, node: ast.Name) -> None:
@@ -204,24 +267,24 @@ def _union_groups(groups: list[set[str]]) -> list[set[str]]:
 def _propagate_groups(
     fn_name: str,
     fn_params: list[str],
-    call_args,
+    call_args: list[CallArgs],
     callee_groups: dict[str, list[set[str]]],
     callee_param_orders: dict[str, list[str]],
 ) -> list[set[str]]:
     groups: list[set[str]] = []
-    for callee, pos_map, kw_map in call_args:
-        if callee not in callee_groups:
+    for call in call_args:
+        if call.callee not in callee_groups:
             continue
-        callee_params = callee_param_orders[callee]
+        callee_params = callee_param_orders[call.callee]
         # Build mapping from callee param to caller param.
         callee_to_caller: dict[str, str] = {}
         for idx, pname in enumerate(callee_params):
             key = str(idx)
-            if key in pos_map:
-                callee_to_caller[pname] = pos_map[key]
-        for kw, caller_name in kw_map.items():
+            if key in call.pos_map:
+                callee_to_caller[pname] = call.pos_map[key]
+        for kw, caller_name in call.kw_map.items():
             callee_to_caller[kw] = caller_name
-        for group in callee_groups[callee]:
+        for group in callee_groups[call.callee]:
             mapped = {callee_to_caller.get(p) for p in group}
             mapped.discard(None)
             if len(mapped) > 1:
@@ -234,13 +297,14 @@ def analyze_file(path: Path, recursive: bool = True) -> dict[str, list[set[str]]
     parent = ParentAnnotator()
     parent.visit(tree)
     parents = parent.parents
+    is_test = _is_test_path(path)
 
     funcs = _collect_functions(tree)
     fn_param_orders = {f.name: _param_names(f) for f in funcs}
     fn_use = {}
     fn_calls = {}
     for f in funcs:
-        use_map, call_args = _analyze_function(f, parents)
+        use_map, call_args = _analyze_function(f, parents, is_test=is_test)
         fn_use[f.name] = use_map
         fn_calls[f.name] = call_args
 
@@ -289,7 +353,7 @@ class FunctionInfo:
     path: Path
     params: list[str]
     annots: dict[str, str | None]
-    calls: list[tuple[str, dict[str, str], dict[str, str]]]
+    calls: list[CallArgs]
 
 
 def _module_name(path: Path) -> str:
@@ -313,7 +377,9 @@ def _build_function_index(paths: list[Path]) -> tuple[dict[str, list[FunctionInf
         parent_map = parents.parents
         module = _module_name(path)
         for fn in funcs:
-            _, call_args = _analyze_function(fn, parent_map)
+            _, call_args = _analyze_function(
+                fn, parent_map, is_test=_is_test_path(path)
+            )
             info = FunctionInfo(
                 name=fn.name,
                 qual=f"{module}.{fn.name}",
@@ -397,12 +463,12 @@ def analyze_type_flow_repo(paths: list[Path]) -> tuple[list[str], list[str]]:
         for infos in by_name.values():
             for info in infos:
                 downstream: dict[str, set[str]] = defaultdict(set)
-                for callee_name, pos_map, kw_map in info.calls:
-                    callee = _resolve_callee(callee_name, info, by_name, by_qual)
+                for call in info.calls:
+                    callee = _resolve_callee(call.callee, info, by_name, by_qual)
                     if callee is None:
                         continue
                     callee_params = callee.params
-                    for pos_idx, param in pos_map.items():
+                    for pos_idx, param in call.pos_map.items():
                         try:
                             idx = int(pos_idx)
                         except ValueError:
@@ -413,7 +479,7 @@ def analyze_type_flow_repo(paths: list[Path]) -> tuple[list[str], list[str]]:
                         annot = _get_annot(callee, callee_param)
                         if annot:
                             downstream[param].add(annot)
-                    for kw_name, param in kw_map.items():
+                    for kw_name, param in call.kw_map.items():
                         annot = _get_annot(callee, kw_name)
                         if annot:
                             downstream[param].add(annot)
@@ -435,6 +501,90 @@ def analyze_type_flow_repo(paths: list[Path]) -> tuple[list[str], list[str]]:
                             f"{info.path.name}:{info.name}.{param} can tighten to {downstream_annot}"
                         )
     return sorted(suggestions), sorted(ambiguities)
+
+
+def analyze_constant_flow_repo(paths: list[Path]) -> list[str]:
+    """Detect parameters that only receive a single constant value (non-test)."""
+    by_name, by_qual = _build_function_index(paths)
+    const_values: dict[tuple[str, str], set[str]] = defaultdict(set)
+    non_const: dict[tuple[str, str], bool] = defaultdict(bool)
+    call_counts: dict[tuple[str, str], int] = defaultdict(int)
+
+    for infos in by_name.values():
+        for info in infos:
+            for call in info.calls:
+                if call.is_test:
+                    continue
+                callee = _resolve_callee(call.callee, info, by_name, by_qual)
+                if callee is None:
+                    continue
+                callee_params = callee.params
+
+                for idx_str, value in call.const_pos.items():
+                    try:
+                        idx = int(idx_str)
+                    except ValueError:
+                        continue
+                    if idx >= len(callee_params):
+                        continue
+                    key = (callee.qual, callee_params[idx])
+                    const_values[key].add(value)
+                    call_counts[key] += 1
+                for idx_str in call.pos_map:
+                    try:
+                        idx = int(idx_str)
+                    except ValueError:
+                        continue
+                    if idx >= len(callee_params):
+                        continue
+                    key = (callee.qual, callee_params[idx])
+                    non_const[key] = True
+                    call_counts[key] += 1
+                for idx_str in call.non_const_pos:
+                    try:
+                        idx = int(idx_str)
+                    except ValueError:
+                        continue
+                    if idx >= len(callee_params):
+                        continue
+                    key = (callee.qual, callee_params[idx])
+                    non_const[key] = True
+                    call_counts[key] += 1
+
+                for kw, value in call.const_kw.items():
+                    if kw not in callee_params:
+                        continue
+                    key = (callee.qual, kw)
+                    const_values[key].add(value)
+                    call_counts[key] += 1
+                for kw in call.kw_map:
+                    if kw not in callee_params:
+                        continue
+                    key = (callee.qual, kw)
+                    non_const[key] = True
+                    call_counts[key] += 1
+                for kw in call.non_const_kw:
+                    if kw not in callee_params:
+                        continue
+                    key = (callee.qual, kw)
+                    non_const[key] = True
+                    call_counts[key] += 1
+
+    smells: list[str] = []
+    for key, values in const_values.items():
+        if non_const.get(key):
+            continue
+        if not values:
+            continue
+        if len(values) == 1:
+            qual, param = key
+            info = by_qual.get(qual)
+            path_name = info.path.name if info is not None else qual
+            count = call_counts.get(key, 0)
+            smells.append(
+                f"{path_name}:{qual.split('.')[-1]}.{param} only observed constant {next(iter(values))} across {count} non-test call(s)"
+            )
+    return sorted(smells)
 
 
 def _iter_config_fields(path: Path) -> dict[str, set[str]]:
@@ -715,6 +865,7 @@ def _emit_report(
     *,
     type_suggestions: list[str] | None = None,
     type_ambiguities: list[str] | None = None,
+    constant_smells: list[str] | None = None,
 ) -> tuple[str, list[str]]:
     nodes, adj, bundle_map = _component_graph(groups_by_path)
     components = _connected_components(nodes, adj)
@@ -788,6 +939,11 @@ def _emit_report(
             lines.append("```")
             lines.extend(type_ambiguities)
             lines.append("```")
+    if constant_smells:
+        lines.append("Constant-propagation smells (non-test call sites):")
+        lines.append("```")
+        lines.extend(constant_smells)
+        lines.append("```")
     return "\n".join(lines), violations
 
 
@@ -895,11 +1051,13 @@ def main() -> None:
             type_suggestions = type_suggestions[: args.type_audit_max]
             type_ambiguities = type_ambiguities[: args.type_audit_max]
     if args.report is not None:
+        constant_smells = analyze_constant_flow_repo(paths)
         report, violations = _emit_report(
             groups_by_path,
             args.max_components,
             type_suggestions=type_suggestions if args.type_audit_report else None,
             type_ambiguities=type_ambiguities if args.type_audit_report else None,
+            constant_smells=constant_smells,
         )
         Path(args.report).write_text(report)
         if args.fail_on_violations and violations:

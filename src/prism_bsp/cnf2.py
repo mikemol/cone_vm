@@ -565,9 +565,8 @@ def _cycle_candidates_core_impl(
     # reads only from slot0 + pre-step.
     # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
     # M2 commit: slot1 is always enabled; no runtime gate.
-    slot1_gate = True
-    slot1_add = is_add_suc & slot1_gate
-    slot1_mul = is_mul_suc & slot1_gate
+    slot1_add = is_add_suc
+    slot1_mul = is_mul_suc
     slot1_enabled = slot1_add | slot1_mul
     slot1_ops = jnp.zeros_like(r_ops)
     slot1_a1 = jnp.zeros_like(r_a1)
