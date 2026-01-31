@@ -6,6 +6,7 @@ import jax.numpy as jnp
 
 from prism_core.compact import CompactResult
 from prism_core.protocols import SafeIndexFn
+from ic_core.bundles import TemplateApplyArgs
 
 if TYPE_CHECKING:
     from ic_core.graph import ICState
@@ -86,10 +87,7 @@ class ApplyCommuteFn(Protocol):
 class ApplyTemplateFn(Protocol):
     def __call__(
         self,
-        state: ICState,
-        node_a: jnp.ndarray,
-        node_b: jnp.ndarray,
-        template_id: jnp.ndarray,
+        args: TemplateApplyArgs,
     ) -> ICState:
         ...
 

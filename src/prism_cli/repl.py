@@ -1,5 +1,12 @@
 import re
 import time
+
+# dataflow-bundle: block_size, do_global, do_sort, l1_block_size, l2_block_size, use_morton
+# CLI sort/schedule bundle intentionally kept at the host interface.
+# dataflow-bundle: block_size, use_morton
+# Minimal CLI sort bundle for BSP entrypoints.
+# dataflow-bundle: a1, a2
+# Host-side pointer pair bundle in baseline/arena allocators.
 from typing import Dict, Tuple
 
 import jax

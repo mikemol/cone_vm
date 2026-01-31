@@ -7,6 +7,11 @@ erased by q. This module centralizes wrapper behavior to avoid accidental
 shadowing or monkeypatching drift.
 """
 
+# dataflow-bundle: cfg, guard, policy
+# dataflow-bundle: cfg, guard, policy, return_ok
+# dataflow-bundle: emit_candidates_fn, intern_fn
+# dataflow-bundle: guard_cfg, safe_gather_value_fn
+
 from typing import Optional
 from functools import partial
 from dataclasses import replace

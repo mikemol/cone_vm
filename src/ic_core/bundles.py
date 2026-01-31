@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import NamedTuple
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, NamedTuple
 
 import jax.numpy as jnp
 
@@ -30,7 +31,22 @@ class WireStarEndpoints(NamedTuple):
     leaf_ports: jnp.ndarray
 
 
+if TYPE_CHECKING:
+    from ic_core.graph import ICState
+
+
+@dataclass(frozen=True)
+class TemplateApplyArgs:
+    """Bundle of inputs for template application."""
+
+    state: "ICState"
+    node_a: jnp.ndarray
+    node_b: jnp.ndarray
+    template_id: jnp.ndarray
+
+
 __all__ = [
+    "TemplateApplyArgs",
     "WireEndpoints",
     "WirePtrPair",
     "WireStarEndpoints",

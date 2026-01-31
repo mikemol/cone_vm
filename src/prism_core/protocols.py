@@ -4,6 +4,8 @@ from typing import Protocol, TypeAlias, runtime_checkable
 
 import jax.numpy as jnp
 
+# dataflow-bundle: idx, label, policy_value, size
+
 PolicyValue: TypeAlias = jnp.ndarray
 
 

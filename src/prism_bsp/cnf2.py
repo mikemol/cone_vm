@@ -86,6 +86,10 @@ from prism_vm_core.protocols import (
 EMPTY_COMMIT_OPTIONAL: dict = {}
 
 
+# dataflow-bundle: _frontier, _ledger, _post_ids
+# root-assertion guard hook bundle (debug-only)
+# dataflow-bundle: next_frontier, post_ids
+# root-assertion bundle (debug-only)
 def _assert_roots_noop(_ledger, _frontier, _post_ids):
     return None
 

@@ -4,6 +4,9 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
+
+# dataflow-bundle: arg1, arg2
+
 from prism_core.guards import (
     GuardConfig,
     guard_gather_index_cfg as _guard_gather_index_cfg,

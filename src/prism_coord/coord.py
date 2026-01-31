@@ -11,6 +11,9 @@ from prism_vm_core.ontology import OP_COORD_ONE, OP_COORD_PAIR, OP_COORD_ZERO
 from prism_vm_core.structures import NodeBatch
 from prism_vm_core.protocols import InternFn, NodeBatchFn
 
+# dataflow-bundle: a1, a2, op
+# dataflow-bundle: left_id, right_id
+
 
 def _node_batch(op, a1, a2) -> NodeBatch:
     return NodeBatch(op=op, a1=a1, a2=a2)
@@ -79,6 +82,8 @@ def _coord_cache_init(ledger, *, host_int_value_fn=_host_int_value):
     return ops, a1s, a2s, count
 
 
+# dataflow-bundle: a1, a2, op
+#   Host-only coord cache payload (kept local to coord helpers).
 def _coord_cache_update(cache, idx, op, a1, a2):
     ops, a1s, a2s, count = cache
     if idx == count:

@@ -5,6 +5,8 @@ import numpy as np
 
 from prism_vm_core.domains import _host_int_value
 
+# dataflow-bundle: changed, rewrite_child, wrap_emit
+
 _damage_metrics_cycles = 0
 _damage_metrics_hot_nodes = 0
 _damage_metrics_edge_total = 0

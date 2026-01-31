@@ -1,5 +1,11 @@
 from dataclasses import dataclass
 
+# dataflow-bundle: a0, a1, a2, a3, b0, b1, b2, b3
+# dataflow-bundle: a4, b4
+# dataflow-bundle: coord_norm_probe_assert_fn, coord_norm_probe_reset_cb_fn
+# dataflow-bundle: new_ids, new_keys
+# dataflow-bundle: t_b0, t_b1, t_b2, t_b3
+
 import jax
 import jax.numpy as jnp
 from jax import lax

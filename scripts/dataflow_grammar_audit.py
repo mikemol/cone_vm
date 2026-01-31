@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import os
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,6 +92,8 @@ def _param_names(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
         names.append(fn.args.vararg.arg)
     if fn.args.kwarg:
         names.append(fn.args.kwarg.arg)
+    if names and names[0] in {"self", "cls"}:
+        names = names[1:]
     return names
 
 
@@ -418,10 +421,9 @@ def _render_mermaid_component(
     for path in component_paths:
         config_path = path.parent / "config.py"
         bundles = config_bundles_by_path.get(config_path)
-        if not bundles:
-            continue
-        for fields in bundles.values():
-            declared.add(tuple(sorted(fields)))
+        if bundles:
+            for fields in bundles.values():
+                declared.add(tuple(sorted(fields)))
         documented |= documented_bundles_by_path.get(path, set())
     observed_norm = {tuple(sorted(b)) for b in observed}
     observed_only = sorted(observed_norm - declared) if declared else sorted(observed_norm)
@@ -464,8 +466,11 @@ def _emit_report(
 ) -> tuple[str, list[str]]:
     nodes, adj, bundle_map = _component_graph(groups_by_path)
     components = _connected_components(nodes, adj)
-    roots = {p if p.is_dir() else p.parent for p in groups_by_path}
-    root = sorted(roots)[0] if roots else Path(".")
+    if groups_by_path:
+        common = os.path.commonpath([str(p) for p in groups_by_path])
+        root = Path(common)
+    else:
+        root = Path(".")
     config_bundles_by_path = {}
     documented_bundles_by_path = {}
     for path in sorted(root.rglob("config.py")):
@@ -509,8 +514,6 @@ def _emit_report(
                 violations.append(line.strip())
             if "(tier-1," in line or "(tier-2," in line:
                 if "undocumented" in line:
-                    violations.append(line.strip())
-                elif "documented" in line:
                     violations.append(line.strip())
     if violations:
         lines.append("Violations:")

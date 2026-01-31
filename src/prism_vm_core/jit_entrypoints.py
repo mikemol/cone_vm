@@ -2,6 +2,10 @@ from __future__ import annotations
 
 """JIT entrypoint factories with explicit DI and static args."""
 
+# dataflow-bundle: _arena, _root
+# dataflow-bundle: _arena, _tile_size
+# dataflow-bundle: _args, _kwargs
+
 from dataclasses import replace
 from functools import partial
 from typing import Optional

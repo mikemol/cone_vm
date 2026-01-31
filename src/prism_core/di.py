@@ -8,6 +8,11 @@ import jax
 
 from prism_core.errors import PrismPolicyBindingError
 
+# dataflow-bundle: args, kwargs
+# dataflow-bundle: args, kwargs, name, value
+# dataflow-bundle: arr, idx
+# dataflow-bundle: idx, size
+
 T = TypeVar("T")
 
 

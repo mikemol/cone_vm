@@ -6,6 +6,8 @@ from prism_vm_core.domains import _host_int_value, _host_raise_if_bad, _ledger_i
 from prism_vm_core.ontology import OP_NULL
 from prism_vm_core.structures import NodeBatch
 
+# dataflow-bundle: arg1, arg2, opcode
+
 
 def _node_batch(op, a1, a2):
     return NodeBatch(op=op, a1=a1, a2=a2)

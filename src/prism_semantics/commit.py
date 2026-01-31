@@ -25,6 +25,9 @@ from prism_core.guards import (
     resolve_safe_gather_ok_fn,
     resolve_safe_gather_ok_value_fn,
 )
+
+# dataflow-bundle: act_val, exp_val
+
 from prism_ledger.intern import intern_nodes
 from prism_vm_core.constants import _PREFIX_SCAN_CHUNK
 from prism_vm_core.domains import (

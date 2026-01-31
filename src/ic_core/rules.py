@@ -22,6 +22,7 @@ from ic_core.graph import (
     decode_port,
 )
 from ic_core.config import ICRuleConfig
+from ic_core.bundles import TemplateApplyArgs
 
 RULE_ALLOC_ANNIHILATE = jnp.uint32(0)
 RULE_ALLOC_ERASE = jnp.uint32(2)
@@ -381,16 +382,16 @@ def _ic_apply_commute_with_ids(
 
 
 def ic_apply_template(
-    state: ICState,
-    node_a: jnp.ndarray,
-    node_b: jnp.ndarray,
-    template_id: jnp.ndarray,
+    args: TemplateApplyArgs,
     *,
     apply_annihilate_fn=ic_apply_annihilate,
     apply_erase_fn=ic_apply_erase,
     apply_commute_fn=ic_apply_commute,
 ) -> ICState:
-    template_id = template_id.astype(jnp.int32)
+    state = args.state
+    node_a = args.node_a
+    node_b = args.node_b
+    template_id = args.template_id.astype(jnp.int32)
 
     def _noop(s):
         return s
@@ -428,17 +429,14 @@ def ic_apply_template_planned_cfg(
 
 
 def ic_apply_template_cfg(
-    state: ICState,
-    node_a: jnp.ndarray,
-    node_b: jnp.ndarray,
-    template_id: jnp.ndarray,
+    args: TemplateApplyArgs,
     *,
     cfg: ICRuleConfig | None = None,
 ) -> ICState:
     """Interface/Control wrapper for apply_template with DI bundle."""
     if cfg is None:
         cfg = DEFAULT_RULE_CONFIG
-    return cfg.apply_template_fn(state, node_a, node_b, template_id)
+    return cfg.apply_template_fn(args)
 
 
 def _alloc_plan(
