@@ -321,7 +321,7 @@ def _emit_dot(groups_by_path: dict[Path, dict[str, list[set[str]]]]) -> str:
                 lines.append(f"    {fn_id} -> {bundle_id};")
         lines.append("  }")
     lines.append("}")
-    return "\n".join(lines), violations
+    return "\n".join(lines)
 
 
 def _component_graph(groups_by_path: dict[Path, dict[str, list[set[str]]]]):
@@ -517,7 +517,7 @@ def _emit_report(
         lines.append("```")
         lines.extend(violations)
         lines.append("```")
-    return "\n".join(lines)
+    return "\n".join(lines), violations
 
 
 def main() -> None:
