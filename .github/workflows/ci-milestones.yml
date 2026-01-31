@@ -158,15 +158,11 @@ jobs:
         run: |
           scripts/check_agda.sh
 
-  tests:
-    needs: [changes, policy-check, audit, smoke-exports]
+  baseline-tests:
+    needs: [changes, policy-check, audit, smoke-exports, agda-check]
     if: needs.changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        milestone: [m1, m2, m3, m4, m5]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
@@ -176,24 +172,67 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pytest pytest-xdist jax jaxlib
-      - name: Record telemetry metadata
+      - name: Record telemetry metadata (baseline)
         run: |
           mkdir -p artifacts
           python scripts/record_telemetry_metadata.py \
-            --out artifacts/telemetry_metadata_${{ matrix.milestone }}.json \
-            --milestone ${{ matrix.milestone }} \
-            --label "pytest-${{ matrix.milestone }}" \
-            --extra job=tests
-      - name: Run pytest (milestone)
+            --out artifacts/telemetry_metadata_baseline.json \
+            --milestone baseline \
+            --label "pytest-baseline" \
+            --extra job=baseline-tests
+      - name: Run pytest (baseline)
         run: |
           mkdir -p artifacts
           set -euo pipefail
-          pytest -c pytest.${{ matrix.milestone }}.ini \
+          pytest -c pytest.baseline.ini \
             -n auto \
-            --junitxml artifacts/pytest-${{ matrix.milestone }}.xml \
-            2>&1 | tee artifacts/pytest-${{ matrix.milestone }}.txt
+            --junitxml artifacts/pytest-baseline.xml \
+            2>&1 | tee artifacts/pytest-baseline.txt
+      - name: Upload pytest artifact (baseline)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pytest-baseline
+          path: artifacts/
+          if-no-files-found: ignore
+
+  tests:
+    needs: [changes, policy-check, audit, smoke-exports, agda-check, baseline-tests]
+    if: needs.changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [m2, m3, m4, m5]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest pytest-xdist jax jaxlib
+      - name: Record telemetry metadata (suite)
+        run: |
+          mkdir -p artifacts
+          python scripts/record_telemetry_metadata.py \
+            --out artifacts/telemetry_metadata_${{ matrix.suite }}.json \
+            --milestone ${{ matrix.suite }} \
+            --label "pytest-${{ matrix.suite }}" \
+            --extra job=tests
+      - name: Run pytest (suite)
+        run: |
+          mkdir -p artifacts
+          set -euo pipefail
+          config="pytest.${{ matrix.suite }}.ini"
+          pytest -c "$config" \
+            -n auto \
+            --junitxml artifacts/pytest-${{ matrix.suite }}.xml \
+            2>&1 | tee artifacts/pytest-${{ matrix.suite }}.txt
       - name: Run damage metrics fixture (arena)
-        if: matrix.milestone == 'm4'
+        if: matrix.suite == 'm4'
         run: |
           mkdir -p artifacts
           set -euo pipefail
@@ -210,7 +249,7 @@ jobs:
             --inputs artifacts/damage_metrics.txt artifacts/damage_metrics_tile32.txt \
             --out artifacts/damage_metrics_delta.txt
       - name: Capture host performance baselines
-        if: matrix.milestone == 'm4'
+        if: matrix.suite == 'm4'
         run: |
           mkdir -p artifacts
           python scripts/audit_host_performance.py \
@@ -226,7 +265,7 @@ jobs:
             --engine cnf2 --iterations 5 --warmup 1 \
             --json-out artifacts/host_memory_cnf2.json
       - name: Capture CPU trace baselines
-        if: matrix.milestone == 'm4'
+        if: matrix.suite == 'm4'
         run: |
           mkdir -p artifacts
           python scripts/capture_trace.py \
@@ -235,7 +274,7 @@ jobs:
           python scripts/trace_analyze.py \
             --report-only --json-out artifacts/trace_cpu_report.json
       - name: Capture m5 servo trace baselines
-        if: matrix.milestone == 'm5'
+        if: matrix.suite == 'm5'
         run: |
           mkdir -p artifacts
           rm -rf /tmp/jax-trace
@@ -266,12 +305,76 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: pytest-${{ matrix.milestone }}
+          name: pytest-${{ matrix.suite }}
+          path: artifacts/
+          if-no-files-found: ignore
+
+  baseline-tests-gpu:
+    needs: [changes, policy-check, audit, smoke-exports, agda-check, baseline-tests]
+    if: needs.changes.outputs.code_changed == 'true' && github.actor == github.repository_owner && needs.policy-check.result == 'success' && needs.audit.result == 'success'
+    runs-on: [self-hosted, cassian, gpu, local]
+    timeout-minutes: 30
+    env:
+      XLA_FLAGS: "--xla_gpu_enable_command_buffer="
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - name: Ensure mise Python is installed (self-hosted)
+        run: |
+          if ! command -v mise >/dev/null 2>&1; then
+            echo "mise is required on the self-hosted runner" >&2
+            exit 1
+          fi
+          mise install
+      - name: Verify python version (self-hosted)
+        run: |
+          mise exec -- python - <<'PY'
+          import os
+          import sys
+          want = os.environ["PYTHON_VERSION"]
+          version = sys.version.split()[0]
+          if not version.startswith(want):
+              raise SystemExit(f"Expected Python {want}, found {version}")
+          print("Python version:", version)
+          PY
+      - name: Install test dependencies (GPU)
+        run: |
+          mise exec -- python -m pip install --upgrade pip
+          mise exec -- python -m pip install pytest nvidia-ml-py "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+      - name: Verify GPU backend
+        run: |
+          mise exec -- python - <<'PY'
+          import jax
+          gpus = jax.devices("gpu")
+          if not gpus:
+              raise SystemExit("GPU backend required but not available")
+          print("GPU devices:", gpus)
+          PY
+      - name: Record telemetry metadata (gpu baseline)
+        run: |
+          mkdir -p artifacts
+          mise exec -- python scripts/record_telemetry_metadata.py \
+            --out artifacts/telemetry_metadata_gpu_baseline.json \
+            --milestone baseline \
+            --backend gpu \
+            --label "pytest-gpu-baseline" \
+            --extra job=baseline-tests-gpu
+      - name: Run pytest (baseline, gpu)
+        run: |
+          mkdir -p artifacts
+          set -euo pipefail
+          mise exec -- python -m pytest -c pytest.baseline.ini \
+            --junitxml artifacts/pytest-gpu-baseline.xml \
+            2>&1 | tee artifacts/pytest-gpu-baseline.txt
+      - name: Upload pytest artifact (gpu baseline)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pytest-gpu-baseline
           path: artifacts/
           if-no-files-found: ignore
 
   tests-gpu:
-    needs: [changes, policy-check, audit, smoke-exports]
+    needs: [changes, policy-check, audit, smoke-exports, agda-check, baseline-tests, baseline-tests-gpu]
     if: needs.changes.outputs.code_changed == 'true' && github.actor == github.repository_owner && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     runs-on: [self-hosted, cassian, gpu, local]
     timeout-minutes: 30
@@ -356,7 +459,7 @@ jobs:
 
   collect-report:
     runs-on: ubuntu-latest
-    needs: [changes, policy-check, audit, smoke-exports, agda-check, tests, tests-gpu]
+    needs: [changes, policy-check, audit, smoke-exports, agda-check, baseline-tests, baseline-tests-gpu, tests, tests-gpu]
     if: always() && needs.policy-check.result == 'success' && needs.audit.result == 'success'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5

@@ -17,8 +17,8 @@ def _parse_milestone_value(value):
     return None
 
 
-def _read_pytest_milestone():
-    if not _TEST_GUARDS:
+def _read_pytest_milestone(allow_unprotected: bool = False):
+    if not _TEST_GUARDS and not allow_unprotected:
         return None
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     path = os.path.join(repo_root, ".pytest-milestone")
@@ -39,13 +39,22 @@ def _read_pytest_milestone():
     return None
 
 
+def _normalize_milestone(value):
+    milestone = _parse_milestone_value(value)
+    if milestone != 1:
+        return milestone
+    # m1-only mode is deprecated; treat m1 as baseline coverage when possible.
+    baseline = _read_pytest_milestone(allow_unprotected=True)
+    return baseline or 2
+
+
 def _cnf2_enabled():
     # CNF-2 pipeline is staged for m2+; guard uses env/milestone in tests.
     # See IMPLEMENTATION_PLAN.md (m2 CNF-2 enablement).
     value = os.environ.get("PRISM_ENABLE_CNF2", "").strip().lower()
     if value in ("1", "true", "yes", "on"):
         return True
-    milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
+    milestone = _normalize_milestone(os.environ.get("PRISM_MILESTONE", ""))
     if milestone is None:
         milestone = _read_pytest_milestone()
     return milestone is not None and milestone >= 2
@@ -58,7 +67,7 @@ def _cnf2_slot1_enabled():
     value = os.environ.get("PRISM_ENABLE_CNF2_SLOT1", "").strip().lower()
     if value in ("1", "true", "yes", "on"):
         return True
-    milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
+    milestone = _normalize_milestone(os.environ.get("PRISM_MILESTONE", ""))
     if milestone is None:
         milestone = _read_pytest_milestone()
     return milestone is not None and milestone >= 2
@@ -80,7 +89,7 @@ def _servo_enabled():
     value = os.environ.get("PRISM_ENABLE_SERVO", "").strip().lower()
     if value in ("1", "true", "yes", "on"):
         return True
-    milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
+    milestone = _normalize_milestone(os.environ.get("PRISM_MILESTONE", ""))
     if milestone is None:
         milestone = _read_pytest_milestone()
     return milestone is not None and milestone >= 5
@@ -103,6 +112,7 @@ def _gpu_metrics_device_index():
 __all__ = [
     "_parse_milestone_value",
     "_read_pytest_milestone",
+    "_normalize_milestone",
     "_cnf2_enabled",
     "_cnf2_slot1_enabled",
     "_default_bsp_mode",

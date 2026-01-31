@@ -112,7 +112,11 @@ def pytest_configure(config):
     selector = _parse_milestone_selector(config.getoption("--milestone-band"))
     if selector is not None:
         low, high = selector
-        milestone = high if high is not None else low
+        if low == 1:
+            # Treat m1-band runs as baseline coverage (avoid m1-only semantics).
+            milestone = _parse_milestone(config.getoption("--milestone"))
+        else:
+            milestone = high if high is not None else low
     else:
         milestone = _parse_milestone(config.getoption("--milestone"))
     if milestone is None:

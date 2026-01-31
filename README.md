@@ -190,6 +190,10 @@ hard-cap is enforced (overflow => corrupt), corrupt/oom are sticky stop-paths
 Changes to these commitments require a milestone bump and updates in
 `MILESTONES.md`.
 
+m1-only mode is deprecated. The baseline suite (see `pytest.baseline.ini`)
+still runs the m1 test set, but under the current baseline milestone (from
+`.pytest-milestone`, currently `m3`), not under an m1-restricted semantic mode.
+
 ## Repo layout
 - `prism_vm.py` - VM, kernels, and REPL
 - `tests/` - pytest suite and sample program fixtures
