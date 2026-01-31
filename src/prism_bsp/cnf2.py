@@ -1215,7 +1215,7 @@ def cycle_candidates_bound(
     emit_candidates_fn: EmitCandidatesFn = emit_candidates,
     candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
     scatter_drop_fn: ScatterDropFn = _scatter_drop,
-    commit_stratum_fn: CommitStratumFn = commit_stratum,
+    commit_stratum_fn: CommitStratumFn | None = None,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
     safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
@@ -1233,6 +1233,8 @@ def cycle_candidates_bound(
     if runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
         runtime_fns = cfg.cfg.runtime_fns
     if isinstance(cfg, Cnf2ValueBoundConfig):
+        if commit_stratum_fn is None:
+            commit_stratum_fn = commit_stratum_value
         cfg_resolved, policy_value = cfg.bind_cfg(
             safe_gather_ok_value_fn=safe_gather_ok_value_fn,
             guard_cfg=guard_cfg,
@@ -1269,6 +1271,8 @@ def cycle_candidates_bound(
             context="cycle_candidates_bound",
             policy_mode="ambiguous",
         )
+    if commit_stratum_fn is None:
+        commit_stratum_fn = commit_stratum_bound
     cfg_resolved, policy = cfg.bind_cfg(
         safe_gather_ok_fn=safe_gather_ok_fn,
         guard_cfg=guard_cfg,

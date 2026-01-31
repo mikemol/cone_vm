@@ -1,7 +1,9 @@
+from dataclasses import dataclass
+from functools import lru_cache, partial
+
 import jax
 import jax.numpy as jnp
 from jax import lax
-from functools import lru_cache, partial
 
 from prism_ledger.intern import _coord_norm_id_jax, intern_nodes
 from prism_ledger.config import InternConfig
