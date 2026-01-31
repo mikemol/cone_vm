@@ -1,8 +1,10 @@
+from dataclasses import dataclass, replace
+from functools import partial
+from typing import Callable
+
 import jax
 import jax.numpy as jnp
 from jax import lax
-from functools import partial
-from dataclasses import dataclass, replace
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.di import call_with_optional_kwargs
@@ -81,6 +83,8 @@ from prism_vm_core.protocols import (
     LedgerRootsHashFn,
     NodeBatchFn,
     ScatterDropFn,
+    SafeGatherOkFn,
+    SafeGatherOkValueFn,
 )
 
 EMPTY_COMMIT_OPTIONAL: dict = {}
@@ -324,7 +328,7 @@ def _intern_candidates_core(
     ledger,
     candidates,
     *,
-    compact_candidates_fn,
+    compact_candidates_fn: Callable[..., tuple],
     intern_fn: InternFn,
     node_batch_fn: NodeBatchFn,
 ):
@@ -341,7 +345,7 @@ def intern_candidates(
     ledger,
     candidates,
     *,
-    compact_candidates_fn=compact_candidates,
+    compact_candidates_fn: Callable[..., tuple] = compact_candidates,
     intern_fn: InternFn = intern_nodes,
     intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -371,7 +375,7 @@ def intern_candidates_cfg(
     candidates,
     *,
     cfg: Cnf2Config | None = None,
-    compact_candidates_fn=compact_candidates,
+    compact_candidates_fn: Callable[..., tuple] = compact_candidates,
     intern_fn: InternFn = intern_nodes,
     intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -416,8 +420,8 @@ def _cycle_candidates_core_impl(
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
     assert_roots_fn=_assert_roots_noop,
-    safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
-    safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
+    safe_gather_ok_fn: SafeGatherOkFn = _jax_safe.safe_gather_1d_ok,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = _jax_safe.safe_gather_1d_ok_value,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
@@ -682,7 +686,7 @@ def _cycle_candidates_core_static_bound(
     commit_stratum_fn: CommitStratumFn = commit_stratum_static,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
-    safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
+    safe_gather_ok_fn: SafeGatherOkFn = _jax_safe.safe_gather_1d_ok,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
@@ -790,7 +794,7 @@ def _cycle_candidates_core_value_bound(
     commit_stratum_fn: CommitStratumFn = commit_stratum_value,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
-    safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = _jax_safe.safe_gather_1d_ok_value,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
@@ -879,7 +883,7 @@ def _cycle_candidates_core_value_bound(
     )
 
 
-def _apply_q_optional_ok(apply_q_fn, q_map, ids):
+def _apply_q_optional_ok(apply_q_fn: ApplyQFn, q_map, ids):
     result = call_with_optional_kwargs(
         apply_q_fn, {"return_ok": True}, q_map, ids
     )
@@ -912,7 +916,7 @@ def cycle_candidates_static(
     commit_stratum_fn: CommitStratumFn = commit_stratum_static,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
-    safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
+    safe_gather_ok_fn: SafeGatherOkFn = _jax_safe.safe_gather_1d_ok,
     safe_gather_ok_bound_fn=None,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
@@ -1030,7 +1034,7 @@ def cycle_candidates_value(
     commit_stratum_fn: CommitStratumFn = commit_stratum_value,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
-    safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = _jax_safe.safe_gather_1d_ok_value,
     safe_gather_ok_bound_fn=None,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
@@ -1129,9 +1133,9 @@ def cycle_candidates(
     commit_stratum_fn: CommitStratumFn = commit_stratum,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
-    safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
+    safe_gather_ok_fn: SafeGatherOkFn = _jax_safe.safe_gather_1d_ok,
     safe_gather_ok_bound_fn=None,
-    safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = _jax_safe.safe_gather_1d_ok_value,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
@@ -1218,8 +1222,8 @@ def cycle_candidates_bound(
     commit_stratum_fn: CommitStratumFn | None = None,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
-    safe_gather_ok_fn=_jax_safe.safe_gather_1d_ok,
-    safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
+    safe_gather_ok_fn: SafeGatherOkFn = _jax_safe.safe_gather_1d_ok,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = _jax_safe.safe_gather_1d_ok_value,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,

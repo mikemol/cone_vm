@@ -487,7 +487,7 @@ def run_program_lines_bsp(
     l2_block_size=None,
     l1_block_size=None,
     do_global=False,
-    bsp_mode=BspMode.AUTO,
+    bsp_mode: BspMode | str | None = BspMode.AUTO,
     validate_mode: ValidateMode = ValidateMode.NONE,
 ):
     sort_bundle = CliSortBundle(
@@ -541,7 +541,7 @@ def repl(
     mode="baseline",
     use_morton=False,
     block_size=None,
-    bsp_mode=BspMode.AUTO,
+    bsp_mode: BspMode | str | None = BspMode.AUTO,
     validate_mode: ValidateMode = ValidateMode.NONE,
 ):
     cli_bundle = CliSortMiniBundle(block_size=block_size, use_morton=use_morton)

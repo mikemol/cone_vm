@@ -108,7 +108,7 @@ def make_safe_gather_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
     policy=None,
-    safe_gather_fn=None,
+    safe_gather_fn: Callable[..., object] | None = None,
 ):
     """Return a SafeGatherFn wired to the provided GuardConfig."""
     if safe_gather_fn is None:
@@ -132,7 +132,7 @@ def make_safe_gather_ok_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
     policy=None,
-    safe_gather_ok_fn=None,
+    safe_gather_ok_fn: Callable[..., object] | None = None,
 ):
     """Return a SafeGatherOkFn wired to the provided GuardConfig."""
     if safe_gather_ok_fn is None:
@@ -156,7 +156,7 @@ def make_safe_index_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
     policy=None,
-    safe_index_fn=None,
+    safe_index_fn: Callable[..., object] | None = None,
 ):
     """Return a SafeIndexFn wired to the provided GuardConfig."""
     if safe_index_fn is None:
@@ -248,7 +248,7 @@ def make_safe_index_value_fn(
 
 def resolve_safe_gather_fn(
     *,
-    safe_gather_fn=None,
+    safe_gather_fn: Callable[..., object] | None = None,
     policy=None,
     guard_cfg: GuardConfig | None = None,
 ):
@@ -283,7 +283,7 @@ def resolve_safe_gather_fn(
 
 def resolve_safe_gather_ok_fn(
     *,
-    safe_gather_ok_fn=None,
+    safe_gather_ok_fn: Callable[..., object] | None = None,
     policy=None,
     guard_cfg: GuardConfig | None = None,
 ):
@@ -318,7 +318,7 @@ def resolve_safe_gather_ok_fn(
 
 def resolve_safe_index_fn(
     *,
-    safe_index_fn=None,
+    safe_index_fn: Callable[..., object] | None = None,
     policy=None,
     guard_cfg: GuardConfig | None = None,
 ):

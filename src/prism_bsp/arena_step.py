@@ -1,4 +1,5 @@
 from dataclasses import replace
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -20,6 +21,7 @@ from prism_vm_core.gating import _servo_enabled
 from prism_vm_core.guards import _guard_max
 from prism_vm_core.hashes import _arena_root_hash_host
 from prism_vm_core.ontology import OP_ADD, OP_SUC, OP_ZERO
+from prism_vm_core.structures import Arena
 
 from prism_bsp.space import (
     RANK_HOT,
@@ -507,7 +509,7 @@ def cycle_core_value(
     arena_root_hash_fn=_arena_root_hash_host,
     damage_tile_size_fn=_damage_tile_size,
     damage_metrics_update_fn=_damage_metrics_update,
-    op_interact_value_fn=op_interact_value,
+    op_interact_value_fn: Callable[..., Arena] = op_interact_value,
 ):
     """Run one BSP cycle with policy_value as data (JAX value)."""
     do_sort = sort_cfg.do_sort
@@ -650,7 +652,7 @@ def cycle_value(
     arena_root_hash_fn=_arena_root_hash_host,
     damage_tile_size_fn=_damage_tile_size,
     damage_metrics_update_fn=_damage_metrics_update,
-    op_interact_value_fn=op_interact_value,
+    op_interact_value_fn: Callable[..., Arena] = op_interact_value,
 ):
     return cycle_core_value(
         arena,

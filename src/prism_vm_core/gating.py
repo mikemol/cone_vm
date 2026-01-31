@@ -54,7 +54,7 @@ def _default_bsp_mode() -> BspMode:
     return BspMode.CNF2
 
 
-def _normalize_bsp_mode(bsp_mode):
+def _normalize_bsp_mode(bsp_mode: BspMode | str | None):
     return coerce_bsp_mode(
         bsp_mode, default_fn=_default_bsp_mode, context="bsp_mode"
     )

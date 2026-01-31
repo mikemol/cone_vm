@@ -15,6 +15,7 @@ from prism_core.errors import PrismPolicyBindingError
 # dataflow-bundle: idx, size
 
 T = TypeVar("T")
+TCallable = TypeVar("TCallable", bound=Callable[..., object])
 
 
 @dataclass(frozen=True)
@@ -47,7 +48,7 @@ def resolve(value: T | None, default: T) -> T:
     return default if value is None else value
 
 
-def wrap_policy(safe_gather_fn, policy):
+def wrap_policy(safe_gather_fn: TCallable, policy) -> TCallable:
     """Wrap a safe_gather_fn with a fixed SafetyPolicy (if provided)."""
     if policy is None:
         return safe_gather_fn
@@ -76,7 +77,7 @@ def wrap_policy(safe_gather_fn, policy):
     return _safe_gather
 
 
-def wrap_index_policy(safe_index_fn, policy):
+def wrap_index_policy(safe_index_fn: TCallable, policy) -> TCallable:
     """Wrap a safe_index_fn with a fixed SafetyPolicy (if provided)."""
     if policy is None:
         return safe_index_fn

@@ -18,6 +18,7 @@ from ic_core.engine import (
     DEFAULT_ENGINE_RESOLVED,
 )
 from ic_core.engine import ic_apply_active_pairs, ic_reduce
+from ic_core.types import ICState, WireEndpoints, WirePtrPair, WireStarEndpoints
 from ic_core.graph import (
     ic_compact_active_pairs,
     ic_compact_active_pairs_result,
@@ -35,7 +36,7 @@ from ic_core.graph import (
 def _apply_active_pairs_jit(cfg: ICEngineConfig):
     resolved = resolve_engine_config(cfg)
 
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_apply_active_pairs(state, cfg=resolved)
 
     return _impl
@@ -55,7 +56,7 @@ def apply_active_pairs_jit_cfg(cfg: ICEngineConfig | None = None):
 
 @cached_jit
 def _apply_active_pairs_resolved_jit(cfg: ICEngineResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_apply_active_pairs(state, cfg=cfg)
 
     return _impl
@@ -70,7 +71,7 @@ def apply_active_pairs_jit_resolved(
 
 @cached_jit
 def _apply_active_pairs_exec_jit(cfg: ICExecutionResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_apply_active_pairs(state, cfg=cfg.engine)
 
     return _impl
@@ -83,7 +84,7 @@ def apply_active_pairs_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _apply_active_pairs_runtime_jit(cfg: ICRuntimeResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_apply_active_pairs(state, cfg=cfg.engine)
 
     return _impl
@@ -98,7 +99,7 @@ def apply_active_pairs_jit_runtime(cfg: ICRuntimeResolved):
 def _reduce_jit(cfg: ICEngineConfig):
     resolved = resolve_engine_config(cfg)
 
-    def _impl(state, max_steps):
+    def _impl(state: ICState, max_steps):
         return ic_reduce(state, max_steps, cfg=resolved)
 
     return _impl
@@ -118,7 +119,7 @@ def reduce_jit_cfg(cfg: ICEngineConfig | None = None):
 
 @cached_jit
 def _reduce_resolved_jit(cfg: ICEngineResolved):
-    def _impl(state, max_steps):
+    def _impl(state: ICState, max_steps):
         return ic_reduce(state, max_steps, cfg=cfg)
 
     return _impl
@@ -131,7 +132,7 @@ def reduce_jit_resolved(cfg: ICEngineResolved = DEFAULT_ENGINE_RESOLVED):
 
 @cached_jit
 def _reduce_jit_exec(cfg: ICExecutionResolved):
-    def _impl(state, max_steps):
+    def _impl(state: ICState, max_steps):
         return ic_reduce(state, max_steps, cfg=cfg.engine)
 
     return _impl
@@ -144,7 +145,7 @@ def reduce_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _reduce_jit_runtime(cfg: ICRuntimeResolved):
-    def _impl(state, max_steps):
+    def _impl(state: ICState, max_steps):
         return ic_reduce(state, max_steps, cfg=cfg.engine)
 
     return _impl
@@ -159,7 +160,7 @@ def reduce_jit_runtime(cfg: ICRuntimeResolved):
 def _find_active_pairs_jit(cfg: ICGraphConfig):
     scan_cfg = resolve_graph_config(cfg).scan
 
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_find_active_pairs(state, cfg=scan_cfg)
 
     return _impl
@@ -179,7 +180,7 @@ def find_active_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _find_active_pairs_resolved_jit(cfg: ICGraphResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_find_active_pairs(state, cfg=cfg.scan)
 
     return _impl
@@ -194,7 +195,7 @@ def find_active_pairs_jit_resolved(
 
 @cached_jit
 def _find_active_pairs_exec_jit(cfg: ICExecutionResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_find_active_pairs(state, cfg=cfg.graph.scan)
 
     return _impl
@@ -207,7 +208,7 @@ def find_active_pairs_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _find_active_pairs_runtime_jit(cfg: ICRuntimeResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_find_active_pairs(state, cfg=cfg.graph.scan)
 
     return _impl
@@ -222,7 +223,7 @@ def find_active_pairs_jit_runtime(cfg: ICRuntimeResolved):
 def _compact_active_pairs_jit(cfg: ICGraphConfig):
     scan_cfg = resolve_graph_config(cfg).scan
 
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_compact_active_pairs(state, cfg=scan_cfg)
 
     return _impl
@@ -242,7 +243,7 @@ def compact_active_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _compact_active_pairs_resolved_jit(cfg: ICGraphResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_compact_active_pairs(state, cfg=cfg.scan)
 
     return _impl
@@ -257,7 +258,7 @@ def compact_active_pairs_jit_resolved(
 
 @cached_jit
 def _compact_active_pairs_exec_jit(cfg: ICExecutionResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_compact_active_pairs(state, cfg=cfg.graph.scan)
 
     return _impl
@@ -270,7 +271,7 @@ def compact_active_pairs_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _compact_active_pairs_runtime_jit(cfg: ICRuntimeResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_compact_active_pairs(state, cfg=cfg.graph.scan)
 
     return _impl
@@ -285,7 +286,7 @@ def compact_active_pairs_jit_runtime(cfg: ICRuntimeResolved):
 def _compact_active_pairs_result_jit(cfg: ICGraphConfig):
     scan_cfg = resolve_graph_config(cfg).scan
 
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_compact_active_pairs_result(state, cfg=scan_cfg)
 
     return _impl
@@ -305,7 +306,7 @@ def compact_active_pairs_result_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _compact_active_pairs_result_resolved_jit(cfg: ICGraphResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_compact_active_pairs_result(state, cfg=cfg.scan)
 
     return _impl
@@ -320,7 +321,7 @@ def compact_active_pairs_result_jit_resolved(
 
 @cached_jit
 def _compact_active_pairs_result_exec_jit(cfg: ICExecutionResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_compact_active_pairs_result(state, cfg=cfg.graph.scan)
 
     return _impl
@@ -333,7 +334,7 @@ def compact_active_pairs_result_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _compact_active_pairs_result_runtime_jit(cfg: ICRuntimeResolved):
-    def _impl(state):
+    def _impl(state: ICState):
         return ic_compact_active_pairs_result(state, cfg=cfg.graph.scan)
 
     return _impl
@@ -348,7 +349,7 @@ def compact_active_pairs_result_jit_runtime(cfg: ICRuntimeResolved):
 def _wire_jax_jit(cfg: ICGraphConfig):
     wire_cfg = resolve_graph_config(cfg).wire
 
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_jax(
             state,
             endpoints,
@@ -372,7 +373,7 @@ def wire_jax_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_jax_resolved_jit(cfg: ICGraphResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_jax(state, endpoints, cfg=cfg.wire)
 
     return _impl
@@ -385,7 +386,7 @@ def wire_jax_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
 
 @cached_jit
 def _wire_jax_exec_jit(cfg: ICExecutionResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_jax(state, endpoints, cfg=cfg.graph.wire)
 
     return _impl
@@ -398,7 +399,7 @@ def wire_jax_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _wire_jax_runtime_jit(cfg: ICRuntimeResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_jax(state, endpoints, cfg=cfg.graph.wire)
 
     return _impl
@@ -413,7 +414,7 @@ def wire_jax_jit_runtime(cfg: ICRuntimeResolved):
 def _wire_jax_safe_jit(cfg: ICGraphConfig):
     wire_cfg = resolve_graph_config(cfg).wire
 
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_jax_safe(
             state,
             endpoints,
@@ -437,7 +438,7 @@ def wire_jax_safe_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_jax_safe_resolved_jit(cfg: ICGraphResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_jax_safe(state, endpoints, cfg=cfg.wire)
 
     return _impl
@@ -450,7 +451,7 @@ def wire_jax_safe_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
 
 @cached_jit
 def _wire_jax_safe_exec_jit(cfg: ICExecutionResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_jax_safe(state, endpoints, cfg=cfg.graph.wire)
 
     return _impl
@@ -463,7 +464,7 @@ def wire_jax_safe_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _wire_jax_safe_runtime_jit(cfg: ICRuntimeResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_jax_safe(state, endpoints, cfg=cfg.graph.wire)
 
     return _impl
@@ -478,7 +479,7 @@ def wire_jax_safe_jit_runtime(cfg: ICRuntimeResolved):
 def _wire_ptrs_jit(cfg: ICGraphConfig):
     wire_cfg = resolve_graph_config(cfg).wire
 
-    def _impl(state, ptrs):
+    def _impl(state: ICState, ptrs: WirePtrPair):
         return ic_wire_ptrs_jax(
             state,
             ptrs,
@@ -502,7 +503,7 @@ def wire_ptrs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_ptrs_resolved_jit(cfg: ICGraphResolved):
-    def _impl(state, ptrs):
+    def _impl(state: ICState, ptrs: WirePtrPair):
         return ic_wire_ptrs_jax(state, ptrs, cfg=cfg.wire)
 
     return _impl
@@ -515,7 +516,7 @@ def wire_ptrs_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
 
 @cached_jit
 def _wire_ptrs_exec_jit(cfg: ICExecutionResolved):
-    def _impl(state, ptrs):
+    def _impl(state: ICState, ptrs: WirePtrPair):
         return ic_wire_ptrs_jax(state, ptrs, cfg=cfg.graph.wire)
 
     return _impl
@@ -528,7 +529,7 @@ def wire_ptrs_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _wire_ptrs_runtime_jit(cfg: ICRuntimeResolved):
-    def _impl(state, ptrs):
+    def _impl(state: ICState, ptrs: WirePtrPair):
         return ic_wire_ptrs_jax(state, ptrs, cfg=cfg.graph.wire)
 
     return _impl
@@ -543,7 +544,7 @@ def wire_ptrs_jit_runtime(cfg: ICRuntimeResolved):
 def _wire_pairs_jit(cfg: ICGraphConfig):
     wire_cfg = resolve_graph_config(cfg).wire
 
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_pairs_jax(
             state,
             endpoints,
@@ -567,7 +568,7 @@ def wire_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_pairs_resolved_jit(cfg: ICGraphResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_pairs_jax(state, endpoints, cfg=cfg.wire)
 
     return _impl
@@ -580,7 +581,7 @@ def wire_pairs_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
 
 @cached_jit
 def _wire_pairs_exec_jit(cfg: ICExecutionResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_pairs_jax(state, endpoints, cfg=cfg.graph.wire)
 
     return _impl
@@ -593,7 +594,7 @@ def wire_pairs_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _wire_pairs_runtime_jit(cfg: ICRuntimeResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireEndpoints):
         return ic_wire_pairs_jax(state, endpoints, cfg=cfg.graph.wire)
 
     return _impl
@@ -608,7 +609,7 @@ def wire_pairs_jit_runtime(cfg: ICRuntimeResolved):
 def _wire_ptr_pairs_jit(cfg: ICGraphConfig):
     wire_cfg = resolve_graph_config(cfg).wire
 
-    def _impl(state, ptrs):
+    def _impl(state: ICState, ptrs: WirePtrPair):
         return ic_wire_ptr_pairs_jax(
             state,
             ptrs,
@@ -632,7 +633,7 @@ def wire_ptr_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_ptr_pairs_resolved_jit(cfg: ICGraphResolved):
-    def _impl(state, ptrs):
+    def _impl(state: ICState, ptrs: WirePtrPair):
         return ic_wire_ptr_pairs_jax(state, ptrs, cfg=cfg.wire)
 
     return _impl
@@ -645,7 +646,7 @@ def wire_ptr_pairs_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
 
 @cached_jit
 def _wire_ptr_pairs_exec_jit(cfg: ICExecutionResolved):
-    def _impl(state, ptrs):
+    def _impl(state: ICState, ptrs: WirePtrPair):
         return ic_wire_ptr_pairs_jax(state, ptrs, cfg=cfg.graph.wire)
 
     return _impl
@@ -658,7 +659,7 @@ def wire_ptr_pairs_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _wire_ptr_pairs_runtime_jit(cfg: ICRuntimeResolved):
-    def _impl(state, ptrs):
+    def _impl(state: ICState, ptrs: WirePtrPair):
         return ic_wire_ptr_pairs_jax(state, ptrs, cfg=cfg.graph.wire)
 
     return _impl
@@ -673,7 +674,7 @@ def wire_ptr_pairs_jit_runtime(cfg: ICRuntimeResolved):
 def _wire_star_jit(cfg: ICGraphConfig):
     wire_cfg = resolve_graph_config(cfg).wire
 
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireStarEndpoints):
         return ic_wire_star_jax(
             state,
             endpoints,
@@ -697,7 +698,7 @@ def wire_star_jit_cfg(cfg: ICGraphConfig | None = None):
 
 @cached_jit
 def _wire_star_resolved_jit(cfg: ICGraphResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireStarEndpoints):
         return ic_wire_star_jax(state, endpoints, cfg=cfg.wire)
 
     return _impl
@@ -710,7 +711,7 @@ def wire_star_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
 
 @cached_jit
 def _wire_star_exec_jit(cfg: ICExecutionResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireStarEndpoints):
         return ic_wire_star_jax(state, endpoints, cfg=cfg.graph.wire)
 
     return _impl
@@ -723,7 +724,7 @@ def wire_star_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _wire_star_runtime_jit(cfg: ICRuntimeResolved):
-    def _impl(state, endpoints):
+    def _impl(state: ICState, endpoints: WireStarEndpoints):
         return ic_wire_star_jax(state, endpoints, cfg=cfg.graph.wire)
 
     return _impl

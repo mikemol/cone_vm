@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -44,6 +45,7 @@ from prism_vm_core.domains import (
     _host_raise_if_bad,
     _provisional_ids,
 )
+from prism_vm_core.ontology import ProvisionalIds
 from prism_vm_core.guards import _guards_enabled
 from prism_vm_core.structures import NodeBatch, Stratum
 from prism_core.protocols import SafeGatherOkBoundFn, SafeGatherOkFn, SafeGatherOkValueFn
@@ -390,7 +392,7 @@ def _commit_stratum_core(
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -478,7 +480,7 @@ def _commit_stratum_common_static(
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -538,7 +540,7 @@ def _commit_stratum_common_value(
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -592,7 +594,7 @@ def _commit_stratum_common_bound(
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -652,7 +654,7 @@ def commit_stratum_static(
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -717,7 +719,7 @@ def commit_stratum_bound(
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -770,7 +772,7 @@ def commit_stratum_value(
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -825,7 +827,7 @@ def commit_stratum(
     intern_fn: InternFn = intern_nodes,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,

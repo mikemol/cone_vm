@@ -203,7 +203,7 @@ def arena_interact_config_with_policy(
 
 
 def arena_interact_config_with_policy_value(
-    policy_value,
+    policy_value: PolicyValue | None,
     *,
     cfg: ArenaInteractConfig = DEFAULT_ARENA_INTERACT_CONFIG,
 ) -> ArenaInteractConfig:
@@ -262,7 +262,7 @@ def arena_cycle_config_with_policy(
 
 
 def arena_cycle_config_with_policy_value(
-    policy_value,
+    policy_value: PolicyValue | None,
     *,
     cfg: ArenaCycleConfig = DEFAULT_ARENA_CYCLE_CONFIG,
     include_interact: bool = True,
@@ -609,7 +609,7 @@ def cnf2_config_bound(
 
 
 def cnf2_config_with_policy_value(
-    policy_value,
+    policy_value: PolicyValue | None,
     *,
     cfg: Cnf2Config = DEFAULT_CNF2_CONFIG,
 ) -> Cnf2Config:
