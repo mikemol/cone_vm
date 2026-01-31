@@ -34,6 +34,8 @@ from prism_core.safety import (
     oob_mask,
     oob_mask_value,
     resolve_policy_binding,
+    require_static_policy,
+    require_value_policy,
 )
 from prism_core.modes import (
     ValidateMode,
@@ -46,12 +48,16 @@ from prism_core.modes import (
 from prism_core.errors import (
     PrismPolicyModeError,
     PrismPolicyBindingError,
+    PrismCnf2ModeError,
     PrismCnf2ModeConflictError,
 )
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
 from prism_bsp.config import (
     Cnf2Config,
+    Cnf2BoundConfig,
+    Cnf2StaticBoundConfig,
+    Cnf2ValueBoundConfig,
     Cnf2Flags,
     DEFAULT_CNF2_CONFIG,
     DEFAULT_CNF2_FLAGS,
@@ -312,25 +318,30 @@ def op_sort_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_with_perm with guard cfg."""
-    binding = resolve_policy_binding(
-        policy=safe_gather_policy,
-        policy_value=safe_gather_policy_value,
-        context="op_sort_with_perm_cfg",
-        default_policy=_default_policy_for_safe_gather(
-            safe_gather_fn, safe_gather_policy, safe_gather_policy_value
-        ),
-    )
-    if binding.mode == PolicyMode.VALUE:
+    if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_with_perm_value,
             {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
             arena,
-            binding.policy_value,
+            safe_gather_policy_value,
         )
+    policy_bound = _safe_gather_is_bound(safe_gather_fn)
+    if safe_gather_policy is None and policy_bound:
+        return call_with_optional_kwargs(
+            op_sort_and_swizzle_with_perm,
+            {
+                "safe_gather_policy": None,
+                "guard_cfg": guard_cfg,
+            },
+            arena,
+            safe_gather_fn=safe_gather_fn,
+        )
+    if safe_gather_policy is None:
+        safe_gather_policy = DEFAULT_SAFETY_POLICY
     return call_with_optional_kwargs(
         op_sort_and_swizzle_with_perm,
         {
-            "safe_gather_policy": binding.policy,
+            "safe_gather_policy": safe_gather_policy,
             "guard_cfg": guard_cfg,
         },
         arena,
@@ -350,27 +361,34 @@ def op_sort_blocked_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_blocked_with_perm with guard cfg."""
-    binding = resolve_policy_binding(
-        policy=safe_gather_policy,
-        policy_value=safe_gather_policy_value,
-        context="op_sort_blocked_with_perm_cfg",
-        default_policy=_default_policy_for_safe_gather(
-            safe_gather_fn, safe_gather_policy, safe_gather_policy_value
-        ),
-    )
-    if binding.mode == PolicyMode.VALUE:
+    if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_blocked_with_perm_value,
             {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
             arena,
             block_size,
-            binding.policy_value,
+            safe_gather_policy_value,
             morton=morton,
         )
+    policy_bound = _safe_gather_is_bound(safe_gather_fn)
+    if safe_gather_policy is None and policy_bound:
+        return call_with_optional_kwargs(
+            op_sort_and_swizzle_blocked_with_perm,
+            {
+                "safe_gather_policy": None,
+                "guard_cfg": guard_cfg,
+            },
+            arena,
+            block_size,
+            morton=morton,
+            safe_gather_fn=safe_gather_fn,
+        )
+    if safe_gather_policy is None:
+        safe_gather_policy = DEFAULT_SAFETY_POLICY
     return call_with_optional_kwargs(
         op_sort_and_swizzle_blocked_with_perm,
         {
-            "safe_gather_policy": binding.policy,
+            "safe_gather_policy": safe_gather_policy,
             "guard_cfg": guard_cfg,
         },
         arena,
@@ -394,29 +412,38 @@ def op_sort_hierarchical_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_hierarchical_with_perm with guard cfg."""
-    binding = resolve_policy_binding(
-        policy=safe_gather_policy,
-        policy_value=safe_gather_policy_value,
-        context="op_sort_hierarchical_with_perm_cfg",
-        default_policy=_default_policy_for_safe_gather(
-            safe_gather_fn, safe_gather_policy, safe_gather_policy_value
-        ),
-    )
-    if binding.mode == PolicyMode.VALUE:
+    if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_hierarchical_with_perm_value,
             {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
             arena,
             l2_block_size,
             l1_block_size,
-            binding.policy_value,
+            safe_gather_policy_value,
             morton=morton,
             do_global=do_global,
         )
+    policy_bound = _safe_gather_is_bound(safe_gather_fn)
+    if safe_gather_policy is None and policy_bound:
+        return call_with_optional_kwargs(
+            op_sort_and_swizzle_hierarchical_with_perm,
+            {
+                "safe_gather_policy": None,
+                "guard_cfg": guard_cfg,
+            },
+            arena,
+            l2_block_size,
+            l1_block_size,
+            morton=morton,
+            do_global=do_global,
+            safe_gather_fn=safe_gather_fn,
+        )
+    if safe_gather_policy is None:
+        safe_gather_policy = DEFAULT_SAFETY_POLICY
     return call_with_optional_kwargs(
         op_sort_and_swizzle_hierarchical_with_perm,
         {
-            "safe_gather_policy": binding.policy,
+            "safe_gather_policy": safe_gather_policy,
             "guard_cfg": guard_cfg,
         },
         arena,
@@ -439,26 +466,32 @@ def op_sort_morton_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_morton_with_perm with guard cfg."""
-    binding = resolve_policy_binding(
-        policy=safe_gather_policy,
-        policy_value=safe_gather_policy_value,
-        context="op_sort_morton_with_perm_cfg",
-        default_policy=_default_policy_for_safe_gather(
-            safe_gather_fn, safe_gather_policy, safe_gather_policy_value
-        ),
-    )
-    if binding.mode == PolicyMode.VALUE:
+    if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_morton_with_perm_value,
             {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
             arena,
             morton,
-            binding.policy_value,
+            safe_gather_policy_value,
         )
+    policy_bound = _safe_gather_is_bound(safe_gather_fn)
+    if safe_gather_policy is None and policy_bound:
+        return call_with_optional_kwargs(
+            op_sort_and_swizzle_morton_with_perm,
+            {
+                "safe_gather_policy": None,
+                "guard_cfg": guard_cfg,
+            },
+            arena,
+            morton,
+            safe_gather_fn=safe_gather_fn,
+        )
+    if safe_gather_policy is None:
+        safe_gather_policy = DEFAULT_SAFETY_POLICY
     return call_with_optional_kwargs(
         op_sort_and_swizzle_morton_with_perm,
         {
-            "safe_gather_policy": binding.policy,
+            "safe_gather_policy": safe_gather_policy,
             "guard_cfg": guard_cfg,
         },
         arena,
@@ -479,27 +512,34 @@ def op_sort_servo_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_servo_with_perm with guard cfg."""
-    binding = resolve_policy_binding(
-        policy=safe_gather_policy,
-        policy_value=safe_gather_policy_value,
-        context="op_sort_servo_with_perm_cfg",
-        default_policy=_default_policy_for_safe_gather(
-            safe_gather_fn, safe_gather_policy, safe_gather_policy_value
-        ),
-    )
-    if binding.mode == PolicyMode.VALUE:
+    if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_servo_with_perm_value,
             {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
             arena,
             morton,
             servo_mask,
-            binding.policy_value,
+            safe_gather_policy_value,
         )
+    policy_bound = _safe_gather_is_bound(safe_gather_fn)
+    if safe_gather_policy is None and policy_bound:
+        return call_with_optional_kwargs(
+            op_sort_and_swizzle_servo_with_perm,
+            {
+                "safe_gather_policy": None,
+                "guard_cfg": guard_cfg,
+            },
+            arena,
+            morton,
+            servo_mask,
+            safe_gather_fn=safe_gather_fn,
+        )
+    if safe_gather_policy is None:
+        safe_gather_policy = DEFAULT_SAFETY_POLICY
     return call_with_optional_kwargs(
         op_sort_and_swizzle_servo_with_perm,
         {
-            "safe_gather_policy": binding.policy,
+            "safe_gather_policy": safe_gather_policy,
             "guard_cfg": guard_cfg,
         },
         arena,
@@ -526,6 +566,17 @@ def cnf2_config_with_policy(
         safe_gather_policy=None,
         safe_gather_policy_value=None,
     )
+
+
+def cnf2_config_bound(
+    policy_binding: PolicyBinding,
+    *,
+    cfg: Cnf2Config = DEFAULT_CNF2_CONFIG,
+) -> Cnf2BoundConfig:
+    """Return a Cnf2BoundConfig with required policy binding."""
+    if policy_binding.mode == PolicyMode.VALUE:
+        return Cnf2ValueBoundConfig.bind(cfg, policy_binding)
+    return Cnf2StaticBoundConfig.bind(cfg, policy_binding)
 
 
 def cnf2_config_with_policy_value(
@@ -685,17 +736,10 @@ guard_zero_row_cfg = guard_zero_row_cfg
 guard_zero_args_cfg = guard_zero_args_cfg
 guard_swizzle_args_cfg = guard_swizzle_args_cfg
 
-def _default_policy_for_safe_gather(
-    safe_gather_fn,
-    safe_gather_policy: SafetyPolicy | None,
-    safe_gather_policy_value: PolicyValue | None,
-) -> bool:
-    """Return True if resolve_policy_binding should inject the default policy."""
-    if safe_gather_policy is not None or safe_gather_policy_value is not None:
-        return True
+def _safe_gather_is_bound(safe_gather_fn) -> bool:
     if safe_gather_fn is None:
-        return True
-    return not getattr(safe_gather_fn, "_prism_policy_bound", False)
+        return False
+    return bool(getattr(safe_gather_fn, "_prism_policy_bound", False))
 
 def safe_gather_1d(
     arr,
@@ -1165,7 +1209,7 @@ def _cycle_candidates_common(
     frontier_ids,
     validate_mode: ValidateMode,
     *,
-    policy_mode: PolicyMode | str,
+    policy_mode: PolicyMode,
     intern_fn: InternFn | None,
     intern_cfg: InternConfig | None,
     emit_candidates_fn: EmitCandidatesFn | None,
@@ -1175,12 +1219,15 @@ def _cycle_candidates_common(
     guard_cfg: GuardConfig | None,
     cnf2_cfg: Cnf2Config | None,
     cnf2_flags: Cnf2Flags | None,
-    cnf2_mode: Cnf2Mode | str | None,
+    cnf2_mode: Cnf2Mode | None,
     cnf2_enabled_fn,
     cnf2_slot1_enabled_fn,
 ):
     """Shared wrapper for CNF-2 entrypoints with explicit policy mode."""
-    policy_mode = coerce_policy_mode(policy_mode, context="cycle_candidates")
+    if not isinstance(policy_mode, PolicyMode):
+        raise PrismPolicyModeError(mode=policy_mode, context="cycle_candidates")
+    if cnf2_mode is not None and not isinstance(cnf2_mode, Cnf2Mode):
+        raise PrismCnf2ModeError(mode=cnf2_mode)
     if intern_fn is None:
         intern_fn = intern_nodes
     if cnf2_cfg is not None and cnf2_flags is not None:
@@ -1221,7 +1268,9 @@ def _cycle_candidates_common(
                         policy_mode=PolicyMode.STATIC,
                     )
                 if safe_gather_policy is None:
-                    safe_gather_policy = cnf2_cfg.policy_binding.policy
+                    safe_gather_policy = require_static_policy(
+                        cnf2_cfg.policy_binding, context="cycle_candidates_static"
+                    )
             if cnf2_cfg.safe_gather_policy_value is not None:
                 raise PrismPolicyBindingError(
                     "cycle_candidates_static received cfg.safe_gather_policy_value; "
@@ -1241,7 +1290,9 @@ def _cycle_candidates_common(
                         policy_mode=PolicyMode.VALUE,
                     )
                 if safe_gather_policy_value is None:
-                    safe_gather_policy_value = cnf2_cfg.policy_binding.policy_value
+                    safe_gather_policy_value = require_value_policy(
+                        cnf2_cfg.policy_binding, context="cycle_candidates_value"
+                    )
             if cnf2_cfg.safe_gather_policy is not None:
                 raise PrismPolicyBindingError(
                     "cycle_candidates_value received cfg.safe_gather_policy; "
@@ -1367,7 +1418,7 @@ def cycle_candidates_static(
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | str | None = None,
+    cnf2_mode: Cnf2Mode | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
@@ -1405,7 +1456,7 @@ def cycle_candidates_value(
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | str | None = None,
+    cnf2_mode: Cnf2Mode | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
@@ -1444,7 +1495,7 @@ def cycle_candidates(
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | str | None = None,
+    cnf2_mode: Cnf2Mode | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
@@ -1467,14 +1518,16 @@ def cycle_candidates(
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
             host_raise_if_bad_fn=host_raise_if_bad_fn,
-        safe_gather_policy_value=binding.policy_value,
-        guard_cfg=guard_cfg,
-        cnf2_cfg=cnf2_cfg,
-        cnf2_flags=cnf2_flags,
-        cnf2_mode=cnf2_mode,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-    )
+        safe_gather_policy_value=require_value_policy(
+            binding, context="cycle_candidates"
+        ),
+            guard_cfg=guard_cfg,
+            cnf2_cfg=cnf2_cfg,
+            cnf2_flags=cnf2_flags,
+            cnf2_mode=cnf2_mode,
+            cnf2_enabled_fn=cnf2_enabled_fn,
+            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        )
     return cycle_candidates_static(
         ledger,
         frontier_ids,
@@ -1483,7 +1536,9 @@ def cycle_candidates(
         intern_cfg=intern_cfg,
         emit_candidates_fn=emit_candidates_fn,
         host_raise_if_bad_fn=host_raise_if_bad_fn,
-        safe_gather_policy=binding.policy,
+        safe_gather_policy=require_static_policy(
+            binding, context="cycle_candidates"
+        ),
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,
@@ -1496,30 +1551,22 @@ def cycle_candidates(
 def cycle_candidates_bound(
     ledger,
     frontier_ids,
-    policy_binding: PolicyBinding,
-    validate_mode: ValidateMode = ValidateMode.NONE,
+    cfg: Cnf2BoundConfig,
     *,
+    validate_mode: ValidateMode = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
     emit_candidates_fn: EmitCandidatesFn | None = None,
     host_raise_if_bad_fn: HostRaiseFn | None = None,
     guard_cfg: GuardConfig | None = None,
-    cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | str | None = None,
+    cnf2_mode: Cnf2Mode | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
     """Interface/Control wrapper for CNF-2 evaluation with required PolicyBinding."""
-    if cnf2_cfg is None:
-        cnf2_cfg = Cnf2Config(policy_binding=policy_binding)
-    else:
-        cnf2_cfg = replace(
-            cnf2_cfg,
-            policy_binding=policy_binding,
-            safe_gather_policy=None,
-            safe_gather_policy_value=None,
-        )
+    policy_binding = cfg.policy_binding
+    cnf2_cfg = cfg.as_cfg()
     return _cycle_candidates_common(
         ledger,
         frontier_ids,
@@ -1529,8 +1576,12 @@ def cycle_candidates_bound(
         intern_cfg=intern_cfg,
         emit_candidates_fn=emit_candidates_fn,
         host_raise_if_bad_fn=host_raise_if_bad_fn,
-        safe_gather_policy=policy_binding.policy,
-        safe_gather_policy_value=policy_binding.policy_value,
+        safe_gather_policy=require_static_policy(
+            policy_binding, context="cycle_candidates_bound"
+        ) if policy_binding.mode == PolicyMode.STATIC else None,
+        safe_gather_policy_value=require_value_policy(
+            policy_binding, context="cycle_candidates_bound"
+        ) if policy_binding.mode == PolicyMode.VALUE else None,
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,

@@ -49,6 +49,57 @@ def make_cycle_candidates_value_jit(**kwargs):
     return pv.cycle_candidates_value_jit(**kwargs)
 
 
+def make_cnf2_bound_static_cfg(
+    *,
+    safety_policy=None,
+    guard_cfg=None,
+    cfg=None,
+):
+    if cfg is None:
+        cfg = pv.DEFAULT_CNF2_CONFIG
+    if guard_cfg is not None:
+        cfg = pv.cnf2_config_with_guard(guard_cfg, cfg=cfg)
+    if safety_policy is None:
+        safety_policy = pv.DEFAULT_SAFETY_POLICY
+    binding = pv.resolve_policy_binding(
+        policy=safety_policy,
+        policy_value=None,
+        context="tests.min_prism.harness.make_cnf2_bound_static_cfg",
+    )
+    bound = pv.cnf2_config_bound(binding, cfg=cfg)
+    return bound.bind_cfg()
+
+
+_DEFAULT_CNF2_BOUND_CFG, _DEFAULT_CNF2_BOUND_POLICY = make_cnf2_bound_static_cfg()
+
+
+def cycle_candidates_static_bound(
+    ledger,
+    frontier_ids,
+    *,
+    cfg=None,
+    safety_policy=None,
+    guard_cfg=None,
+    **kwargs,
+):
+    if cfg is None and safety_policy is None and guard_cfg is None:
+        cfg = _DEFAULT_CNF2_BOUND_CFG
+        safety_policy = _DEFAULT_CNF2_BOUND_POLICY
+    elif cfg is None or safety_policy is None:
+        cfg, safety_policy = make_cnf2_bound_static_cfg(
+            safety_policy=safety_policy,
+            guard_cfg=guard_cfg,
+            cfg=cfg,
+        )
+    return pv.cycle_candidates_static(
+        ledger,
+        frontier_ids,
+        cnf2_cfg=cfg,
+        safe_gather_policy=safety_policy,
+        **kwargs,
+    )
+
+
 def make_cycle_jit(**kwargs):
     """Build a jitted BSP arena cycle entrypoint with fixed DI."""
     return pv.cycle_jit(**kwargs)
@@ -136,7 +187,7 @@ def fixed_point_steps_cnf2(
     """Run CNF-2 cycles until novelty stabilizes or max_steps reached."""
     frontier = pv._committed_ids(jnp.array([int(root_id)], dtype=jnp.int32))
     if cycle_candidates_fn is None:
-        cycle_candidates_fn = pv.cycle_candidates
+        cycle_candidates_fn = cycle_candidates_static_bound
         cycle_candidates_kwargs = {}
     if cycle_candidates_kwargs is None:
         cycle_candidates_kwargs = {}

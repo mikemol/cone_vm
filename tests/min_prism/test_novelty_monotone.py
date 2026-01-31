@@ -41,7 +41,9 @@ def test_novelty_monotone_cnf2():
     novelty = []
     for _ in range(3):
         novelty.append(mph.novelty_set(ledger))
-        ledger, frontier_prov, _, q_map = pv.cycle_candidates(ledger, frontier)
+        ledger, frontier_prov, _, q_map = mph.cycle_candidates_static_bound(
+            ledger, frontier
+        )
         frontier = pv.apply_q(q_map, frontier_prov)
     novelty.append(mph.novelty_set(ledger))
     _assert_monotone(novelty)
@@ -53,7 +55,9 @@ def test_novelty_fixed_point_cnf2_simple():
     prev = mph.novelty_set(ledger)
     stable = False
     for _ in range(6):
-        ledger, frontier_prov, _, q_map = pv.cycle_candidates(ledger, frontier)
+        ledger, frontier_prov, _, q_map = mph.cycle_candidates_static_bound(
+            ledger, frontier
+        )
         frontier = pv.apply_q(q_map, frontier_prov)
         curr = mph.novelty_set(ledger)
         if curr == prev:

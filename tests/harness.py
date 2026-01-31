@@ -66,6 +66,110 @@ def make_cycle_candidates_value_jit(**kwargs):
     return pv.cycle_candidates_value_jit(**kwargs)
 
 
+def make_cnf2_bound_static_cfg(
+    *,
+    safety_policy=None,
+    guard_cfg=None,
+    cfg=None,
+):
+    """Return (cfg, policy) with a static policy bound at the edge."""
+    if cfg is None:
+        cfg = pv.DEFAULT_CNF2_CONFIG
+    if guard_cfg is not None:
+        cfg = pv.cnf2_config_with_guard(guard_cfg, cfg=cfg)
+    if safety_policy is None:
+        safety_policy = pv.DEFAULT_SAFETY_POLICY
+    binding = pv.resolve_policy_binding(
+        policy=safety_policy,
+        policy_value=None,
+        context="tests.harness.make_cnf2_bound_static_cfg",
+    )
+    bound = pv.cnf2_config_bound(binding, cfg=cfg)
+    return bound.bind_cfg()
+
+
+_DEFAULT_CNF2_BOUND_CFG, _DEFAULT_CNF2_BOUND_POLICY = make_cnf2_bound_static_cfg()
+
+
+def make_cnf2_bound_value_cfg(
+    *,
+    policy_value=None,
+    guard_cfg=None,
+    cfg=None,
+):
+    """Return (cfg, policy_value) with a value policy bound at the edge."""
+    if cfg is None:
+        cfg = pv.DEFAULT_CNF2_CONFIG
+    if guard_cfg is not None:
+        cfg = pv.cnf2_config_with_guard(guard_cfg, cfg=cfg)
+    if policy_value is None:
+        policy_value = pv.POLICY_VALUE_DEFAULT
+    binding = pv.resolve_policy_binding(
+        policy=None,
+        policy_value=policy_value,
+        context="tests.harness.make_cnf2_bound_value_cfg",
+    )
+    bound = pv.cnf2_config_bound(binding, cfg=cfg)
+    return bound.bind_cfg()
+
+
+def cycle_candidates_static_bound(
+    ledger,
+    frontier_ids,
+    validate_mode=pv.ValidateMode.NONE,
+    *,
+    cfg=None,
+    safety_policy=None,
+    guard_cfg=None,
+    **kwargs,
+):
+    """Run CNF-2 candidates with static policy bound at the edge."""
+    if cfg is None and safety_policy is None and guard_cfg is None:
+        cfg = _DEFAULT_CNF2_BOUND_CFG
+        safety_policy = _DEFAULT_CNF2_BOUND_POLICY
+    elif cfg is None or safety_policy is None:
+        cfg, safety_policy = make_cnf2_bound_static_cfg(
+            safety_policy=safety_policy,
+            guard_cfg=guard_cfg,
+            cfg=cfg,
+        )
+    return pv.cycle_candidates_static(
+        ledger,
+        frontier_ids,
+        validate_mode=validate_mode,
+        cnf2_cfg=cfg,
+        safe_gather_policy=safety_policy,
+        **kwargs,
+    )
+
+
+def cycle_candidates_value_bound(
+    ledger,
+    frontier_ids,
+    validate_mode=pv.ValidateMode.NONE,
+    *,
+    cfg=None,
+    policy_value=None,
+    guard_cfg=None,
+    **kwargs,
+):
+    """Run CNF-2 candidates with value policy bound at the edge."""
+    if cfg is None or policy_value is None:
+        cfg, policy_value = make_cnf2_bound_value_cfg(
+            policy_value=policy_value,
+            guard_cfg=guard_cfg,
+            cfg=cfg,
+        )
+    return pv.cycle_candidates_value(
+        ledger,
+        frontier_ids,
+        validate_mode=validate_mode,
+        cnf2_cfg=cfg,
+        safe_gather_policy_value=policy_value,
+        **kwargs,
+    )
+
+
 def make_emit_candidates_jit_cfg(**kwargs):
     """Build a jitted emit_candidates entrypoint from a config."""
     return pv.emit_candidates_jit_cfg(**kwargs)
@@ -358,7 +462,7 @@ def normalize_bsp_candidates(
         jnp.array([int(root_ptr)], dtype=jnp.int32)
     )
     if cycle_candidates_fn is None:
-        cycle_candidates_fn = pv.cycle_candidates
+        cycle_candidates_fn = cycle_candidates_static_bound
         cycle_candidates_kwargs = {"validate_mode": validate_mode}
     if cycle_candidates_kwargs is None:
         cycle_candidates_kwargs = {}

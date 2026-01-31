@@ -10,7 +10,11 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.errors import PrismPolicyBindingError, PrismCnf2ModeConflictError
+from prism_core.errors import (
+    PrismPolicyBindingError,
+    PrismCnf2ModeError,
+    PrismCnf2ModeConflictError,
+)
 from prism_core.di import bind_optional_kwargs, cached_jit, resolve
 from prism_core.guards import (
     GuardConfig,
@@ -24,6 +28,8 @@ from prism_core.safety import (
     DEFAULT_SAFETY_POLICY,
     POLICY_VALUE_DEFAULT,
     resolve_policy_binding,
+    require_static_policy,
+    require_value_policy,
 )
 from prism_core.modes import ValidateMode, Cnf2Mode, coerce_cnf2_mode
 from prism_ledger import intern as _ledger_intern
@@ -41,17 +47,10 @@ from prism_bsp.config import (
 from prism_vm_core.protocols import EmitCandidatesFn, HostRaiseFn, InternFn
 
 
-def _default_policy_for_safe_gather(
-    safe_gather_fn,
-    safe_gather_policy,
-    safe_gather_policy_value,
-) -> bool:
-    """Return True if resolve_policy_binding should inject the default policy."""
-    if safe_gather_policy is not None or safe_gather_policy_value is not None:
-        return True
+def _safe_gather_is_bound(safe_gather_fn) -> bool:
     if safe_gather_fn is None:
-        return True
-    return not getattr(safe_gather_fn, "_prism_policy_bound", False)
+        return False
+    return bool(getattr(safe_gather_fn, "_prism_policy_bound", False))
 from prism_vm_core.structures import NodeBatch
 from prism_vm_core.candidates import _candidate_indices, candidate_indices_cfg
 from prism_bsp.cnf2 import (
@@ -202,17 +201,15 @@ def op_interact_jit_cfg(
                 context="op_interact_jit_cfg",
                 policy_mode="ambiguous",
             )
-        safe_gather_policy = cfg.policy_binding.policy
-        safe_gather_policy_value = cfg.policy_binding.policy_value
-    binding = resolve_policy_binding(
-        policy=safe_gather_policy,
-        policy_value=safe_gather_policy_value,
-        context="op_interact_jit_cfg",
-        default_policy=_default_policy_for_safe_gather(
-            cfg.safe_gather_fn, safe_gather_policy, safe_gather_policy_value
-        ),
-    )
-    if binding.mode == PolicyMode.VALUE:
+        if cfg.policy_binding.mode == PolicyMode.VALUE:
+            safe_gather_policy_value = require_value_policy(
+                cfg.policy_binding, context="op_interact_jit_cfg"
+            )
+        else:
+            safe_gather_policy = require_static_policy(
+                cfg.policy_binding, context="op_interact_jit_cfg"
+            )
+    if safe_gather_policy_value is not None:
         return op_interact_value_jit(
             safe_gather_value_fn=resolve(
                 cfg.safe_gather_value_fn, _jax_safe.safe_gather_1d_value
@@ -221,11 +218,22 @@ def op_interact_jit_cfg(
             guard_max_fn=cfg.guard_max_fn,
             guard_cfg=cfg.guard_cfg,
         )
+    policy_bound = _safe_gather_is_bound(cfg.safe_gather_fn)
+    if safe_gather_policy is None and policy_bound:
+        return op_interact_jit(
+            safe_gather_fn=resolve(cfg.safe_gather_fn, _jax_safe.safe_gather_1d),
+            scatter_drop_fn=resolve(cfg.scatter_drop_fn, _jax_safe.scatter_drop),
+            guard_max_fn=cfg.guard_max_fn,
+            safe_gather_policy=None,
+            guard_cfg=cfg.guard_cfg,
+        )
+    if safe_gather_policy is None:
+        safe_gather_policy = DEFAULT_SAFETY_POLICY
     return op_interact_jit(
         safe_gather_fn=resolve(cfg.safe_gather_fn, _jax_safe.safe_gather_1d),
         scatter_drop_fn=resolve(cfg.scatter_drop_fn, _jax_safe.scatter_drop),
         guard_max_fn=cfg.guard_max_fn,
-        safe_gather_policy=binding.policy,
+        safe_gather_policy=safe_gather_policy,
         guard_cfg=cfg.guard_cfg,
     )
 
@@ -420,11 +428,13 @@ def cycle_candidates_static_jit(
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | str | None = None,
+    cnf2_mode: Cnf2Mode | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
     """Return a jitted cycle_candidates entrypoint (static policy)."""
+    if cnf2_mode is not None and not isinstance(cnf2_mode, Cnf2Mode):
+        raise PrismCnf2ModeError(mode=cnf2_mode)
     def _resolve_gate(flag_value, fn_value, default_fn):
         if flag_value is not None:
             return bool(flag_value)
@@ -464,7 +474,9 @@ def cycle_candidates_static_jit(
                     policy_mode="static",
                 )
             if safe_gather_policy is None:
-                safe_gather_policy = cnf2_cfg.policy_binding.policy
+                safe_gather_policy = require_static_policy(
+                    cnf2_cfg.policy_binding, context="cycle_candidates_static_jit"
+                )
         if safe_gather_policy is None and cnf2_cfg.safe_gather_policy is not None:
             safe_gather_policy = cnf2_cfg.safe_gather_policy
         if (
@@ -560,11 +572,13 @@ def cycle_candidates_value_jit(
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | str | None = None,
+    cnf2_mode: Cnf2Mode | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
     """Return a jitted cycle_candidates entrypoint (policy as JAX value)."""
+    if cnf2_mode is not None and not isinstance(cnf2_mode, Cnf2Mode):
+        raise PrismCnf2ModeError(mode=cnf2_mode)
     def _resolve_gate(flag_value, fn_value, default_fn):
         if flag_value is not None:
             return bool(flag_value)
@@ -604,7 +618,9 @@ def cycle_candidates_value_jit(
                     policy_mode="value",
                 )
             if safe_gather_policy_value is None:
-                safe_gather_policy_value = cnf2_cfg.policy_binding.policy_value
+                safe_gather_policy_value = require_value_policy(
+                    cnf2_cfg.policy_binding, context="cycle_candidates_value_jit"
+                )
         if cnf2_cfg.safe_gather_policy is not None:
             raise PrismPolicyBindingError(
                 "cycle_candidates_value_jit received cfg.safe_gather_policy; "
@@ -702,11 +718,13 @@ def cycle_candidates_jit(
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | str | None = None,
+    cnf2_mode: Cnf2Mode | None = None,
     cnf2_enabled_fn=None,
     cnf2_slot1_enabled_fn=None,
 ):
     """Return a jitted cycle_candidates entrypoint for fixed DI."""
+    if cnf2_mode is not None and not isinstance(cnf2_mode, Cnf2Mode):
+        raise PrismCnf2ModeError(mode=cnf2_mode)
     binding = resolve_policy_binding(
         policy=safe_gather_policy,
         policy_value=safe_gather_policy_value,
@@ -719,7 +737,9 @@ def cycle_candidates_jit(
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
             host_raise_if_bad_fn=host_raise_if_bad_fn,
-            safe_gather_policy_value=binding.policy_value,
+            safe_gather_policy_value=require_value_policy(
+                binding, context="cycle_candidates_jit"
+            ),
             guard_cfg=guard_cfg,
             cnf2_cfg=cnf2_cfg,
             cnf2_flags=cnf2_flags,
@@ -733,7 +753,9 @@ def cycle_candidates_jit(
         intern_cfg=intern_cfg,
         emit_candidates_fn=emit_candidates_fn,
         host_raise_if_bad_fn=host_raise_if_bad_fn,
-        safe_gather_policy=binding.policy,
+        safe_gather_policy=require_static_policy(
+            binding, context="cycle_candidates_jit"
+        ),
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,
@@ -967,17 +989,15 @@ def cycle_jit_cfg(
                 context="cycle_jit_cfg",
                 policy_mode="ambiguous",
             )
-        safe_gather_policy = cfg.policy_binding.policy
-        safe_gather_policy_value = cfg.policy_binding.policy_value
-    binding = resolve_policy_binding(
-        policy=safe_gather_policy,
-        policy_value=safe_gather_policy_value,
-        context="cycle_jit_cfg",
-        default_policy=_default_policy_for_safe_gather(
-            cfg.safe_gather_fn, safe_gather_policy, safe_gather_policy_value
-        ),
-    )
-    if binding.mode == PolicyMode.VALUE:
+        if cfg.policy_binding.mode == PolicyMode.VALUE:
+            safe_gather_policy_value = require_value_policy(
+                cfg.policy_binding, context="cycle_jit_cfg"
+            )
+        else:
+            safe_gather_policy = require_static_policy(
+                cfg.policy_binding, context="cycle_jit_cfg"
+            )
+    if safe_gather_policy_value is not None:
         return cycle_value_jit(
             do_sort=do_sort,
             use_morton=use_morton,
@@ -1009,6 +1029,9 @@ def cycle_jit_cfg(
             ),
             guard_cfg=cfg.guard_cfg,
         )
+    policy_bound = _safe_gather_is_bound(cfg.safe_gather_fn)
+    if safe_gather_policy is None and not policy_bound:
+        safe_gather_policy = DEFAULT_SAFETY_POLICY
     op_rank_fn = cfg.op_rank_fn or op_rank
     servo_enabled_fn = cfg.servo_enabled_fn or _servo_enabled
     servo_update_fn = cfg.servo_update_fn or _servo_update
@@ -1037,10 +1060,10 @@ def cycle_jit_cfg(
     if op_interact_fn is None and cfg.interact_cfg is not None:
         op_interact_fn = op_interact_jit_cfg(cfg.interact_cfg)
     if op_interact_fn is None:
-        if binding.policy is not None or cfg.guard_cfg is not None:
+        if policy_bound or safe_gather_policy is not None or cfg.guard_cfg is not None:
             op_interact_fn = op_interact_jit(
                 safe_gather_fn=safe_gather_fn,
-                safe_gather_policy=binding.policy,
+                safe_gather_policy=safe_gather_policy,
                 guard_cfg=cfg.guard_cfg,
             )
         else:
@@ -1064,7 +1087,7 @@ def cycle_jit_cfg(
         safe_gather_fn=safe_gather_fn,
         op_interact_fn=op_interact_fn,
         test_guards=test_guards,
-        safe_gather_policy=binding.policy,
+        safe_gather_policy=safe_gather_policy,
         guard_cfg=cfg.guard_cfg,
     )
 

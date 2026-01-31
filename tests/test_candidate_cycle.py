@@ -10,6 +10,7 @@ i32v = harness.i32v
 intern_nodes = harness.intern_nodes
 intern1 = harness.intern1
 committed_ids = harness.committed_ids
+cycle_candidates = harness.cycle_candidates_static_bound
 
 
 pytestmark = [
@@ -78,7 +79,7 @@ def test_cycle_candidates_rejects_when_cnf2_disabled(monkeypatch):
     ledger = pv.init_ledger()
     frontier = committed_ids(pv.ZERO_PTR)
     with pytest.raises(RuntimeError, match="cycle_candidates disabled until m2"):
-        pv.cycle_candidates(ledger, frontier, cnf2_mode=pv.Cnf2Mode.OFF)
+        cycle_candidates(ledger, frontier, cnf2_enabled_fn=lambda: False)
 
 
 def test_cycle_candidates_empty_frontier_no_mutation():
@@ -86,7 +87,7 @@ def test_cycle_candidates_empty_frontier_no_mutation():
     ledger = pv.init_ledger()
     snapshot = _ledger_snapshot(ledger)
     frontier = committed_ids([])
-    out_ledger, frontier_prov, strata, q_map = pv.cycle_candidates(
+    out_ledger, frontier_prov, strata, q_map = cycle_candidates(
         ledger, frontier
     )
     mapped = pv.apply_q(q_map, frontier_prov).a
@@ -108,7 +109,7 @@ def test_cycle_candidates_add_zero():
     add_id, ledger = intern1(ledger, pv.OP_ADD, 1, y_id)
     frontier = committed_ids(add_id)
     start_count = int(ledger.count)
-    ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
+    ledger, next_frontier_prov, strata, q_map = cycle_candidates(
         ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
@@ -130,7 +131,7 @@ def test_cycle_candidates_add_zero_right():
     y_id, ledger = intern1(ledger, pv.OP_SUC, 1, 0)
     add_id, ledger = intern1(ledger, pv.OP_ADD, y_id, 1)
     frontier = committed_ids(add_id)
-    ledger, next_frontier_prov, _, q_map = pv.cycle_candidates(
+    ledger, next_frontier_prov, _, q_map = cycle_candidates(
         ledger, frontier
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
@@ -144,7 +145,7 @@ def test_cycle_candidates_mul_zero():
     mul_id, ledger = intern1(ledger, pv.OP_MUL, 1, 1)
     frontier = committed_ids(mul_id)
     start_count = int(ledger.count)
-    ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
+    ledger, next_frontier_prov, strata, q_map = cycle_candidates(
         ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
@@ -168,7 +169,7 @@ def test_cycle_candidates_add_suc():
     add_id, ledger = intern1(ledger, pv.OP_ADD, suc_x_id, y_id)
     frontier = committed_ids(add_id)
     start_count = int(ledger.count)
-    ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
+    ledger, next_frontier_prov, strata, q_map = cycle_candidates(
         ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
@@ -195,7 +196,7 @@ def test_cycle_candidates_slot1_visibility_boundaries():
     y_id = suc_ids[1]
     add_id, ledger = intern1(ledger, pv.OP_ADD, suc_x_id, y_id)
     frontier = committed_ids(add_id)
-    ledger, _, strata, _ = pv.cycle_candidates(
+    ledger, _, strata, _ = cycle_candidates(
         ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     stratum0, stratum1, _ = strata
@@ -223,7 +224,7 @@ def test_cycle_candidates_slot1_visibility_across_cycles():
     frontier = committed_ids([add_id, mul_id])
     saw_slot1 = False
     for _ in range(3):
-        ledger, frontier_prov, strata, q_map = pv.cycle_candidates(
+        ledger, frontier_prov, strata, q_map = cycle_candidates(
             ledger, frontier, validate_mode=pv.ValidateMode.STRICT
         )
         stratum0, stratum1, _ = strata
@@ -257,7 +258,7 @@ def test_cycle_candidates_add_suc_right():
     add_id, ledger = intern1(ledger, pv.OP_ADD, base_id, suc_id)
     frontier = committed_ids(add_id)
     start_count = int(ledger.count)
-    ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
+    ledger, next_frontier_prov, strata, q_map = cycle_candidates(
         ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
@@ -284,7 +285,7 @@ def test_cycle_candidates_mul_suc():
     mul_id, ledger = intern1(ledger, pv.OP_MUL, suc_x_id, y_id)
     frontier = committed_ids(mul_id)
     start_count = int(ledger.count)
-    ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
+    ledger, next_frontier_prov, strata, q_map = cycle_candidates(
         ledger, frontier
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
@@ -314,7 +315,7 @@ def test_cycle_candidates_mul_suc_right():
     mul_id, ledger = intern1(ledger, pv.OP_MUL, base_id, suc_id)
     frontier = committed_ids(mul_id)
     start_count = int(ledger.count)
-    ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
+    ledger, next_frontier_prov, strata, q_map = cycle_candidates(
         ledger, frontier
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
@@ -341,7 +342,7 @@ def test_cycle_candidates_noop_on_suc():
     suc_id, ledger = intern1(ledger, pv.OP_SUC, 1, 0)
     frontier = committed_ids(suc_id)
     start_count = int(ledger.count)
-    ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
+    ledger, next_frontier_prov, strata, q_map = cycle_candidates(
         ledger, frontier
     )
     next_frontier = _commit_frontier(next_frontier_prov, q_map)
@@ -372,7 +373,7 @@ def test_cycle_candidates_validate_stratum_random_frontier():
         key, subkey = jax.random.split(key)
         idx = jax.random.randint(subkey, (5,), 0, pool.shape[0])
         frontier = committed_ids(pool[idx])
-        ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
+        ledger, next_frontier_prov, strata, q_map = cycle_candidates(
             ledger, frontier, validate_mode=pv.ValidateMode.STRICT
         )
         next_frontier = _commit_frontier(next_frontier_prov, q_map)
@@ -402,7 +403,7 @@ def test_cycle_candidates_validate_stratum_trips_on_within_refs(monkeypatch):
         return ids, new_ledger
 
     with pytest.raises(ValueError, match="Stratum contains within-tier references"):
-        pv.cycle_candidates(
+        cycle_candidates(
             ledger, frontier, validate_mode=pv.ValidateMode.STRICT, intern_fn=bad_intern
         )
 
@@ -416,7 +417,7 @@ def test_cycle_candidates_wrap_microstrata_validate():
     for _ in range(2):
         root, ledger = intern1(ledger, pv.OP_SUC, root, 0)
     frontier = committed_ids(root)
-    ledger2, _, strata, _ = pv.cycle_candidates(
+    ledger2, _, strata, _ = cycle_candidates(
         ledger, frontier, validate_mode=pv.ValidateMode.STRICT
     )
     stratum2 = strata[2]
@@ -433,12 +434,12 @@ def test_cycle_candidates_frontier_permutation_invariant():
     inv_perm = jnp.argsort(perm)
     frontier_perm = frontier_b[perm]
 
-    ledger_a, next_frontier_prov_a, _, q_map_a = pv.cycle_candidates(
+    ledger_a, next_frontier_prov_a, _, q_map_a = cycle_candidates(
         ledger_a, committed_ids(frontier_a)
     )
     next_frontier_a = pv.apply_q(q_map_a, next_frontier_prov_a).a
 
-    ledger_b, next_frontier_prov_b, _, q_map_b = pv.cycle_candidates(
+    ledger_b, next_frontier_prov_b, _, q_map_b = cycle_candidates(
         ledger_b, committed_ids(frontier_perm)
     )
     next_frontier_b = pv.apply_q(q_map_b, next_frontier_prov_b).a
@@ -456,7 +457,7 @@ def test_cycle_candidates_emits_from_pre_step_ledger(monkeypatch):
         assert int(pv._host_int_value(ledger_in.count)) == pre_count
         return real_emit(ledger_in, frontier_ids)
 
-    pv.cycle_candidates(ledger, frontier, emit_candidates_fn=_emit_checked)
+    cycle_candidates(ledger, frontier, emit_candidates_fn=_emit_checked)
 
 
 def test_cycle_candidates_stop_path_on_corrupt():
@@ -467,7 +468,7 @@ def test_cycle_candidates_stop_path_on_corrupt():
     snapshot = _ledger_snapshot(ledger)
     ledger = ledger._replace(corrupt=jnp.array(True, dtype=jnp.bool_))
 
-    out_ledger, frontier_prov, strata, q_map = pv.cycle_candidates(
+    out_ledger, frontier_prov, strata, q_map = cycle_candidates(
         ledger, frontier
     )
     mapped = pv.apply_q(q_map, frontier_prov).a
@@ -490,7 +491,7 @@ def test_cycle_candidates_stop_path_on_oom():
     ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
 
     with pytest.raises(RuntimeError, match="Ledger capacity exceeded"):
-        pv.cycle_candidates(ledger, frontier)
+        cycle_candidates(ledger, frontier)
     _assert_ledger_snapshot(ledger, snapshot)
 
 
@@ -501,7 +502,7 @@ def test_cycle_candidates_stop_path_on_oom_is_non_mutating(monkeypatch):
     frontier = committed_ids(suc_id)
     snapshot = _ledger_snapshot(ledger)
     ledger = ledger._replace(oom=jnp.array(True, dtype=jnp.bool_))
-    out_ledger, frontier_prov, strata, q_map = pv.cycle_candidates(
+    out_ledger, frontier_prov, strata, q_map = cycle_candidates(
         ledger, frontier, host_raise_if_bad_fn=lambda *args, **kwargs: None
     )
     mapped = pv.apply_q(q_map, frontier_prov).a
@@ -518,7 +519,7 @@ def test_cycle_candidates_stop_path_on_oom_is_non_mutating(monkeypatch):
 def test_cycle_candidates_q_map_composes_across_strata():
     _require_cycle_candidates()
     ledger, frontier = _build_suc_add_suc_frontier()
-    ledger, next_frontier_prov, strata, q_map = pv.cycle_candidates(
+    ledger, next_frontier_prov, strata, q_map = cycle_candidates(
         ledger, frontier
     )
     stratum0, stratum1, stratum2 = strata
@@ -544,7 +545,7 @@ def test_cycle_candidates_q_map_composes_across_strata():
 def test_cycle_candidates_q_map_idempotent_on_frontier():
     _require_cycle_candidates()
     ledger, frontier = _build_suc_add_suc_frontier()
-    ledger, next_frontier_prov, _, q_map = pv.cycle_candidates(ledger, frontier)
+    ledger, next_frontier_prov, _, q_map = cycle_candidates(ledger, frontier)
     mapped = pv.apply_q(q_map, next_frontier_prov).a
     remapped = pv.apply_q(q_map, pv._provisional_ids(mapped)).a
     assert bool(jnp.array_equal(mapped, remapped))
@@ -559,7 +560,7 @@ def test_cycle_candidates_does_not_mutate_preexisting_rows():
     pre_a1 = jax.device_get(ledger.arg1[:start_count])
     pre_a2 = jax.device_get(ledger.arg2[:start_count])
 
-    ledger, _, _, _ = pv.cycle_candidates(ledger, frontier)
+    ledger, _, _, _ = cycle_candidates(ledger, frontier)
 
     post_ops = jax.device_get(ledger.opcode[:start_count])
     post_a1 = jax.device_get(ledger.arg1[:start_count])

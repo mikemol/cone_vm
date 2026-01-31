@@ -135,7 +135,7 @@ def test_projection_commutes_cycle_intrinsic_two_steps():
 def test_projection_commutes_cycle_candidates():
     ledger, frontier, max_id = _build_ledger_with_tail()
     frontier = pv._committed_ids(frontier)
-    full_ledger, full_frontier_prov, _, q_map = pv.cycle_candidates(
+    full_ledger, full_frontier_prov, _, q_map = mph.cycle_candidates_static_bound(
         ledger, frontier
     )
     full_frontier = pv.apply_q(q_map, full_frontier_prov).a
@@ -145,7 +145,7 @@ def test_projection_commutes_cycle_candidates():
 
     proj_ledger, mapping = mph.project_ledger(ledger, max_id)
     proj_frontier = pv._committed_ids(mph.map_ids(frontier.a, mapping))
-    proj_ledger, proj_frontier_prov, _, proj_q = pv.cycle_candidates(
+    proj_ledger, proj_frontier_prov, _, proj_q = mph.cycle_candidates_static_bound(
         proj_ledger, proj_frontier
     )
     proj_frontier = pv.apply_q(proj_q, proj_frontier_prov).a
@@ -166,12 +166,12 @@ def test_projection_commutes_cycle_candidates():
 def test_projection_commutes_cycle_candidates_two_steps():
     ledger, frontier, max_id = _build_ledger_with_tail()
     frontier_ids = pv._committed_ids(frontier)
-    full_ledger, full_frontier_prov, _, q_map = pv.cycle_candidates(
+    full_ledger, full_frontier_prov, _, q_map = mph.cycle_candidates_static_bound(
         ledger, frontier_ids
     )
     full_frontier = pv.apply_q(q_map, full_frontier_prov).a
     full_frontier = pv._committed_ids(full_frontier)
-    full_ledger, full_frontier_prov, _, q_map = pv.cycle_candidates(
+    full_ledger, full_frontier_prov, _, q_map = mph.cycle_candidates_static_bound(
         full_ledger, full_frontier
     )
     full_frontier = pv.apply_q(q_map, full_frontier_prov).a
@@ -181,11 +181,11 @@ def test_projection_commutes_cycle_candidates_two_steps():
 
     proj_ledger, mapping = mph.project_ledger(ledger, max_id)
     proj_frontier = pv._committed_ids(mph.map_ids(frontier, mapping))
-    proj_ledger, proj_frontier_prov, _, proj_q = pv.cycle_candidates(
+    proj_ledger, proj_frontier_prov, _, proj_q = mph.cycle_candidates_static_bound(
         proj_ledger, proj_frontier
     )
     proj_frontier = pv._committed_ids(pv.apply_q(proj_q, proj_frontier_prov).a)
-    proj_ledger, proj_frontier_prov, _, proj_q = pv.cycle_candidates(
+    proj_ledger, proj_frontier_prov, _, proj_q = mph.cycle_candidates_static_bound(
         proj_ledger, proj_frontier
     )
     proj_frontier = pv.apply_q(proj_q, proj_frontier_prov).a
@@ -211,7 +211,7 @@ def test_projection_commutes_cycle_candidates_frontier_permutation():
         if permute:
             frontier = frontier[::-1]
         frontier_ids = pv._committed_ids(frontier)
-        full_ledger, full_frontier_prov, _, q_map = pv.cycle_candidates(
+        full_ledger, full_frontier_prov, _, q_map = mph.cycle_candidates_static_bound(
             ledger, frontier_ids
         )
         full_frontier = pv.apply_q(q_map, full_frontier_prov).a
@@ -228,7 +228,7 @@ def test_projection_commutes_cycle_candidates_frontier_permutation():
 
         proj_ledger, mapping = mph.project_ledger(ledger, max_id)
         proj_frontier = pv._committed_ids(mph.map_ids(frontier, mapping))
-        proj_ledger, proj_frontier_prov, _, proj_q = pv.cycle_candidates(
+        proj_ledger, proj_frontier_prov, _, proj_q = mph.cycle_candidates_static_bound(
             proj_ledger, proj_frontier
         )
         proj_frontier = pv.apply_q(proj_q, proj_frontier_prov).a
