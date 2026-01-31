@@ -69,6 +69,8 @@ __all__ = [
     "SwizzleWithPermFnsBound",
     "ArenaCycleConfig",
     "DEFAULT_ARENA_CYCLE_CONFIG",
+    "ArenaSortConfig",
+    "DEFAULT_ARENA_SORT_CONFIG",
     "arena_interact_config_with_policy",
     "arena_interact_config_with_policy_value",
     "arena_interact_config_with_guard",

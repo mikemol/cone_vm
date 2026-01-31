@@ -8,6 +8,7 @@ pytestmark = pytest.mark.m3
 
 def test_cycle_root_remap():
     assert hasattr(pv, "cycle"), "cycle missing"
+    assert hasattr(pv, "ArenaSortConfig"), "ArenaSortConfig missing"
     arena = pv.init_arena()
     arena = arena._replace(
         opcode=arena.opcode.at[2].set(pv.OP_ADD).at[3].set(pv.OP_SUC),
@@ -28,6 +29,7 @@ def test_cycle_root_remap():
 
 def test_cycle_without_sort_keeps_root():
     assert hasattr(pv, "cycle"), "cycle missing"
+    assert hasattr(pv, "ArenaSortConfig"), "ArenaSortConfig missing"
     arena = pv.init_arena()
     arena = arena._replace(
         opcode=arena.opcode.at[3].set(pv.OP_SUC),
@@ -35,7 +37,8 @@ def test_cycle_without_sort_keeps_root():
         arg2=arena.arg2.at[3].set(0),
         count=jnp.array(4, dtype=jnp.int32),
     )
-    updated, new_root = pv.cycle(arena, 3, do_sort=False)
+    sort_cfg = pv.ArenaSortConfig(do_sort=False)
+    updated, new_root = pv.cycle(arena, 3, sort_cfg=sort_cfg)
     assert new_root.shape == ()
     assert new_root.dtype == jnp.int32
     assert int(new_root) == 3

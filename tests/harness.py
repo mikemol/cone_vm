@@ -220,6 +220,11 @@ def make_ic_apply_active_pairs_jit_cfg(**kwargs):
     return ic.apply_active_pairs_jit_cfg(**kwargs)
 
 
+def make_ic_apply_active_pairs_jit_runtime(**kwargs):
+    """Build a jitted IC apply_active_pairs entrypoint from a runtime bundle."""
+    return ic.apply_active_pairs_jit_runtime(**kwargs)
+
+
 def make_ic_reduce_jit(**kwargs):
     """Build a jitted IC reduce entrypoint with fixed DI."""
     return ic.reduce_jit(**kwargs)
@@ -228,6 +233,11 @@ def make_ic_reduce_jit(**kwargs):
 def make_ic_reduce_jit_cfg(**kwargs):
     """Build a jitted IC reduce entrypoint from a config."""
     return ic.reduce_jit_cfg(**kwargs)
+
+
+def make_ic_reduce_jit_runtime(**kwargs):
+    """Build a jitted IC reduce entrypoint from a runtime bundle."""
+    return ic.reduce_jit_runtime(**kwargs)
 
 
 def make_ic_find_active_pairs_jit(**kwargs):
@@ -240,6 +250,11 @@ def make_ic_find_active_pairs_jit_cfg(**kwargs):
     return ic.find_active_pairs_jit_cfg(**kwargs)
 
 
+def make_ic_find_active_pairs_jit_runtime(**kwargs):
+    """Build a jitted IC active-pair finder entrypoint from a runtime bundle."""
+    return ic.find_active_pairs_jit_runtime(**kwargs)
+
+
 def make_ic_compact_active_pairs_jit(**kwargs):
     """Build a jitted IC compact active-pairs entrypoint with fixed DI."""
     return ic.compact_active_pairs_jit(**kwargs)
@@ -248,6 +263,11 @@ def make_ic_compact_active_pairs_jit(**kwargs):
 def make_ic_compact_active_pairs_jit_cfg(**kwargs):
     """Build a jitted IC compact active-pairs entrypoint from a config."""
     return ic.compact_active_pairs_jit_cfg(**kwargs)
+
+
+def make_ic_compact_active_pairs_jit_runtime(**kwargs):
+    """Build a jitted IC compact active-pairs entrypoint from a runtime bundle."""
+    return ic.compact_active_pairs_jit_runtime(**kwargs)
 
 
 def make_ic_compact_active_pairs_result_jit(**kwargs):
@@ -260,6 +280,11 @@ def make_ic_compact_active_pairs_result_jit_cfg(**kwargs):
     return ic.compact_active_pairs_result_jit_cfg(**kwargs)
 
 
+def make_ic_compact_active_pairs_result_jit_runtime(**kwargs):
+    """Build a jitted IC compact-result active-pairs entrypoint from a runtime bundle."""
+    return ic.compact_active_pairs_result_jit_runtime(**kwargs)
+
+
 def make_ic_wire_jax_jit(**kwargs):
     """Build a jitted IC wire entrypoint with fixed DI."""
     return ic.wire_jax_jit(**kwargs)
@@ -268,6 +293,11 @@ def make_ic_wire_jax_jit(**kwargs):
 def make_ic_wire_jax_jit_cfg(**kwargs):
     """Build a jitted IC wire entrypoint from a config."""
     return ic.wire_jax_jit_cfg(**kwargs)
+
+
+def make_ic_wire_jax_jit_runtime(**kwargs):
+    """Build a jitted IC wire entrypoint from a runtime bundle."""
+    return ic.wire_jax_jit_runtime(**kwargs)
 
 
 def make_ic_wire_jax_safe_jit(**kwargs):
@@ -280,6 +310,11 @@ def make_ic_wire_jax_safe_jit_cfg(**kwargs):
     return ic.wire_jax_safe_jit_cfg(**kwargs)
 
 
+def make_ic_wire_jax_safe_jit_runtime(**kwargs):
+    """Build a jitted IC NULL-safe wire entrypoint from a runtime bundle."""
+    return ic.wire_jax_safe_jit_runtime(**kwargs)
+
+
 def make_ic_wire_ptrs_jit(**kwargs):
     """Build a jitted IC ptr wire entrypoint with fixed DI."""
     return ic.wire_ptrs_jit(**kwargs)
@@ -288,6 +323,11 @@ def make_ic_wire_ptrs_jit(**kwargs):
 def make_ic_wire_ptrs_jit_cfg(**kwargs):
     """Build a jitted IC ptr wire entrypoint from a config."""
     return ic.wire_ptrs_jit_cfg(**kwargs)
+
+
+def make_ic_wire_ptrs_jit_runtime(**kwargs):
+    """Build a jitted IC ptr wire entrypoint from a runtime bundle."""
+    return ic.wire_ptrs_jit_runtime(**kwargs)
 
 
 def make_ic_wire_pairs_jit(**kwargs):
@@ -300,6 +340,11 @@ def make_ic_wire_pairs_jit_cfg(**kwargs):
     return ic.wire_pairs_jit_cfg(**kwargs)
 
 
+def make_ic_wire_pairs_jit_runtime(**kwargs):
+    """Build a jitted IC wire-pairs entrypoint from a runtime bundle."""
+    return ic.wire_pairs_jit_runtime(**kwargs)
+
+
 def make_ic_wire_ptr_pairs_jit(**kwargs):
     """Build a jitted IC ptr wire-pairs entrypoint with fixed DI."""
     return ic.wire_ptr_pairs_jit(**kwargs)
@@ -310,6 +355,11 @@ def make_ic_wire_ptr_pairs_jit_cfg(**kwargs):
     return ic.wire_ptr_pairs_jit_cfg(**kwargs)
 
 
+def make_ic_wire_ptr_pairs_jit_runtime(**kwargs):
+    """Build a jitted IC ptr wire-pairs entrypoint from a runtime bundle."""
+    return ic.wire_ptr_pairs_jit_runtime(**kwargs)
+
+
 def make_ic_wire_star_jit(**kwargs):
     """Build a jitted IC wire-star entrypoint with fixed DI."""
     return ic.wire_star_jit(**kwargs)
@@ -318,6 +368,11 @@ def make_ic_wire_star_jit(**kwargs):
 def make_ic_wire_star_jit_cfg(**kwargs):
     """Build a jitted IC wire-star entrypoint from a config."""
     return ic.wire_star_jit_cfg(**kwargs)
+
+
+def make_ic_wire_star_jit_runtime(**kwargs):
+    """Build a jitted IC wire-star entrypoint from a runtime bundle."""
+    return ic.wire_star_jit_runtime(**kwargs)
 
 
 def tokenize(expr):
@@ -563,13 +618,8 @@ def assert_baseline_equals_bsp_candidates(expr, max_steps=64, validate_mode=pv.V
 def run_arena(
     expr,
     steps=4,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
     *,
+    sort_cfg: "pv.ArenaSortConfig" | None = None,
     cycle_fn=None,
     cycle_kwargs=None,
 ):
@@ -578,13 +628,10 @@ def run_arena(
     arena = vm.arena
     if cycle_fn is None:
         cycle_fn = pv.cycle
+        if sort_cfg is None:
+            sort_cfg = pv.ArenaSortConfig()
         cycle_kwargs = {
-            "do_sort": do_sort,
-            "use_morton": use_morton,
-            "block_size": block_size,
-            "l2_block_size": l2_block_size,
-            "l1_block_size": l1_block_size,
-            "do_global": do_global,
+            "sort_cfg": sort_cfg,
         }
     if cycle_kwargs is None:
         cycle_kwargs = {}
@@ -598,33 +645,29 @@ def run_arena(
 def denote_pretty_arena(
     expr,
     steps=4,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
     *,
+    sort_cfg: "pv.ArenaSortConfig" | None = None,
     cycle_fn=None,
     cycle_kwargs=None,
 ):
     return run_arena(
         expr,
         steps=steps,
-        do_sort=do_sort,
-        use_morton=use_morton,
-        block_size=block_size,
-        l2_block_size=l2_block_size,
-        l1_block_size=l1_block_size,
-        do_global=do_global,
+        sort_cfg=sort_cfg,
         cycle_fn=cycle_fn,
         cycle_kwargs=cycle_kwargs,
     )
 
 
 def assert_arena_schedule_invariance(expr, steps=4):
-    no_sort = denote_pretty_arena(expr, steps=steps, do_sort=False, use_morton=False)
-    rank_sort = denote_pretty_arena(expr, steps=steps, do_sort=True, use_morton=False)
-    morton_sort = denote_pretty_arena(expr, steps=steps, do_sort=True, use_morton=True)
+    no_sort = denote_pretty_arena(
+        expr, steps=steps, sort_cfg=pv.ArenaSortConfig(do_sort=False)
+    )
+    rank_sort = denote_pretty_arena(
+        expr, steps=steps, sort_cfg=pv.ArenaSortConfig(do_sort=True, use_morton=False)
+    )
+    morton_sort = denote_pretty_arena(
+        expr, steps=steps, sort_cfg=pv.ArenaSortConfig(do_sort=True, use_morton=True)
+    )
     assert no_sort == rank_sort
     assert no_sort == morton_sort

@@ -1,22 +1,21 @@
 from __future__ import annotations
 
-from functools import partial
-
 from prism_core.di import cached_jit
-from prism_core.errors import PrismPolicyBindingError
-from prism_core.guards import resolve_safe_index_fn
-from prism_core.safety import (
-    DEFAULT_SAFETY_POLICY,
-    PolicyMode,
-    resolve_policy_binding,
-    require_static_policy,
-)
-from ic_core.config import ICGraphConfig, ICEngineConfig, DEFAULT_GRAPH_CONFIG
-from ic_core.engine import (
+from ic_core.config import (
+    ICGraphConfig,
+    ICGraphResolved,
+    ICEngineConfig,
+    ICEngineResolved,
+    ICExecutionResolved,
+    ICRuntimeResolved,
+    DEFAULT_GRAPH_CONFIG,
+    DEFAULT_GRAPH_RESOLVED,
     DEFAULT_ENGINE_CONFIG,
-    ic_apply_active_pairs,
-    ic_reduce,
+    DEFAULT_ENGINE_RESOLVED,
+    resolve_engine_config,
+    resolve_graph_config,
 )
+from ic_core.engine import ic_apply_active_pairs, ic_reduce
 from ic_core.graph import (
     ic_compact_active_pairs,
     ic_compact_active_pairs_result,
@@ -29,58 +28,13 @@ from ic_core.graph import (
     ic_wire_star_jax,
 )
 
-def _resolve_safe_index_fn(cfg: ICGraphConfig):
-    safe_index_fn = cfg.safe_index_fn
-    safety_policy = cfg.safety_policy
-    if cfg.policy_binding is not None:
-        if safety_policy is not None:
-            raise PrismPolicyBindingError(
-                "graph config received both policy_binding and safety_policy",
-                context="ic_graph_config",
-                policy_mode="ambiguous",
-            )
-        if cfg.policy_binding.mode == PolicyMode.VALUE:
-            raise PrismPolicyBindingError(
-                "ic graph config does not support value-mode policy_binding",
-                context="ic_graph_config",
-                policy_mode=PolicyMode.VALUE,
-            )
-        safety_policy = require_static_policy(
-            cfg.policy_binding, context="ic_graph_config"
-        )
-    policy = safety_policy
-    if policy is None:
-        if safe_index_fn is None or not getattr(safe_index_fn, "_prism_policy_bound", False):
-            policy = DEFAULT_SAFETY_POLICY
-        else:
-            policy = None
-    if policy is not None:
-        binding = resolve_policy_binding(
-            policy=policy,
-            policy_value=None,
-            context="ic_graph_config",
-        )
-        policy = binding.policy
-    return resolve_safe_index_fn(
-        safe_index_fn=safe_index_fn,
-        policy=policy,
-        guard_cfg=cfg.guard_cfg,
-    )
-
 
 @cached_jit
 def _apply_active_pairs_jit(cfg: ICEngineConfig):
+    resolved = resolve_engine_config(cfg)
+
     def _impl(state):
-        return ic_apply_active_pairs(
-            state,
-            compact_pairs_fn=cfg.compact_pairs_fn,
-            compact_pairs_result_fn=cfg.compact_pairs_result_fn,
-            decode_port_fn=cfg.decode_port_fn,
-            alloc_plan_fn=cfg.alloc_plan_fn,
-            apply_template_planned_fn=cfg.apply_template_planned_fn,
-            halted_fn=cfg.halted_fn,
-            scan_corrupt_fn=cfg.scan_corrupt_fn,
-        )
+        return ic_apply_active_pairs(state, cfg=resolved)
 
     return _impl
 
@@ -98,25 +52,52 @@ def apply_active_pairs_jit_cfg(cfg: ICEngineConfig | None = None):
 
 
 @cached_jit
+def _apply_active_pairs_resolved_jit(cfg: ICEngineResolved):
+    def _impl(state):
+        return ic_apply_active_pairs(state, cfg=cfg)
+
+    return _impl
+
+
+def apply_active_pairs_jit_resolved(
+    cfg: ICEngineResolved = DEFAULT_ENGINE_RESOLVED,
+):
+    """Return a jitted apply_active_pairs entrypoint for resolved DI."""
+    return _apply_active_pairs_resolved_jit(cfg)
+
+
+@cached_jit
+def _apply_active_pairs_exec_jit(cfg: ICExecutionResolved):
+    def _impl(state):
+        return ic_apply_active_pairs(state, cfg=cfg.engine)
+
+    return _impl
+
+
+def apply_active_pairs_jit_exec(cfg: ICExecutionResolved):
+    """Return a jitted apply_active_pairs entrypoint for execution bundle."""
+    return _apply_active_pairs_exec_jit(cfg)
+
+
+@cached_jit
+def _apply_active_pairs_runtime_jit(cfg: ICRuntimeResolved):
+    def _impl(state):
+        return ic_apply_active_pairs(state, cfg=cfg.engine)
+
+    return _impl
+
+
+def apply_active_pairs_jit_runtime(cfg: ICRuntimeResolved):
+    """Return a jitted apply_active_pairs entrypoint for runtime bundle."""
+    return _apply_active_pairs_runtime_jit(cfg)
+
+
+@cached_jit
 def _reduce_jit(cfg: ICEngineConfig):
-    apply_fn = partial(
-        ic_apply_active_pairs,
-        compact_pairs_fn=cfg.compact_pairs_fn,
-        compact_pairs_result_fn=cfg.compact_pairs_result_fn,
-        decode_port_fn=cfg.decode_port_fn,
-        alloc_plan_fn=cfg.alloc_plan_fn,
-        apply_template_planned_fn=cfg.apply_template_planned_fn,
-        halted_fn=cfg.halted_fn,
-        scan_corrupt_fn=cfg.scan_corrupt_fn,
-    )
+    resolved = resolve_engine_config(cfg)
 
     def _impl(state, max_steps):
-        return ic_reduce(
-            state,
-            max_steps,
-            apply_active_pairs_fn=apply_fn,
-            scan_corrupt_fn=cfg.scan_corrupt_fn,
-        )
+        return ic_reduce(state, max_steps, cfg=resolved)
 
     return _impl
 
@@ -134,16 +115,50 @@ def reduce_jit_cfg(cfg: ICEngineConfig | None = None):
 
 
 @cached_jit
+def _reduce_resolved_jit(cfg: ICEngineResolved):
+    def _impl(state, max_steps):
+        return ic_reduce(state, max_steps, cfg=cfg)
+
+    return _impl
+
+
+def reduce_jit_resolved(cfg: ICEngineResolved = DEFAULT_ENGINE_RESOLVED):
+    """Return a jitted reduce entrypoint for resolved DI."""
+    return _reduce_resolved_jit(cfg)
+
+
+@cached_jit
+def _reduce_jit_exec(cfg: ICExecutionResolved):
+    def _impl(state, max_steps):
+        return ic_reduce(state, max_steps, cfg=cfg.engine)
+
+    return _impl
+
+
+def reduce_jit_exec(cfg: ICExecutionResolved):
+    """Return a jitted reduce entrypoint for execution bundle."""
+    return _reduce_jit_exec(cfg)
+
+
+@cached_jit
+def _reduce_jit_runtime(cfg: ICRuntimeResolved):
+    def _impl(state, max_steps):
+        return ic_reduce(state, max_steps, cfg=cfg.engine)
+
+    return _impl
+
+
+def reduce_jit_runtime(cfg: ICRuntimeResolved):
+    """Return a jitted reduce entrypoint for runtime bundle."""
+    return _reduce_jit_runtime(cfg)
+
+
+@cached_jit
 def _find_active_pairs_jit(cfg: ICGraphConfig):
-    safe_index_fn = _resolve_safe_index_fn(cfg)
+    scan_cfg = resolve_graph_config(cfg).scan
 
     def _impl(state):
-        return ic_find_active_pairs(
-            state,
-            safety_policy=cfg.safety_policy,
-            safe_index_fn=safe_index_fn,
-            compact_cfg=cfg.compact_cfg,
-        )
+        return ic_find_active_pairs(state, cfg=scan_cfg)
 
     return _impl
 
@@ -161,16 +176,52 @@ def find_active_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 
 @cached_jit
+def _find_active_pairs_resolved_jit(cfg: ICGraphResolved):
+    def _impl(state):
+        return ic_find_active_pairs(state, cfg=cfg.scan)
+
+    return _impl
+
+
+def find_active_pairs_jit_resolved(
+    cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED,
+):
+    """Return a jitted find_active_pairs entrypoint for resolved DI."""
+    return _find_active_pairs_resolved_jit(cfg)
+
+
+@cached_jit
+def _find_active_pairs_exec_jit(cfg: ICExecutionResolved):
+    def _impl(state):
+        return ic_find_active_pairs(state, cfg=cfg.graph.scan)
+
+    return _impl
+
+
+def find_active_pairs_jit_exec(cfg: ICExecutionResolved):
+    """Return a jitted find_active_pairs entrypoint for execution bundle."""
+    return _find_active_pairs_exec_jit(cfg)
+
+
+@cached_jit
+def _find_active_pairs_runtime_jit(cfg: ICRuntimeResolved):
+    def _impl(state):
+        return ic_find_active_pairs(state, cfg=cfg.graph.scan)
+
+    return _impl
+
+
+def find_active_pairs_jit_runtime(cfg: ICRuntimeResolved):
+    """Return a jitted find_active_pairs entrypoint for runtime bundle."""
+    return _find_active_pairs_runtime_jit(cfg)
+
+
+@cached_jit
 def _compact_active_pairs_jit(cfg: ICGraphConfig):
-    safe_index_fn = _resolve_safe_index_fn(cfg)
+    scan_cfg = resolve_graph_config(cfg).scan
 
     def _impl(state):
-        return ic_compact_active_pairs(
-            state,
-            safety_policy=cfg.safety_policy,
-            safe_index_fn=safe_index_fn,
-            compact_cfg=cfg.compact_cfg,
-        )
+        return ic_compact_active_pairs(state, cfg=scan_cfg)
 
     return _impl
 
@@ -188,16 +239,52 @@ def compact_active_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 
 @cached_jit
+def _compact_active_pairs_resolved_jit(cfg: ICGraphResolved):
+    def _impl(state):
+        return ic_compact_active_pairs(state, cfg=cfg.scan)
+
+    return _impl
+
+
+def compact_active_pairs_jit_resolved(
+    cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED,
+):
+    """Return a jitted compact_active_pairs entrypoint for resolved DI."""
+    return _compact_active_pairs_resolved_jit(cfg)
+
+
+@cached_jit
+def _compact_active_pairs_exec_jit(cfg: ICExecutionResolved):
+    def _impl(state):
+        return ic_compact_active_pairs(state, cfg=cfg.graph.scan)
+
+    return _impl
+
+
+def compact_active_pairs_jit_exec(cfg: ICExecutionResolved):
+    """Return a jitted compact_active_pairs entrypoint for execution bundle."""
+    return _compact_active_pairs_exec_jit(cfg)
+
+
+@cached_jit
+def _compact_active_pairs_runtime_jit(cfg: ICRuntimeResolved):
+    def _impl(state):
+        return ic_compact_active_pairs(state, cfg=cfg.graph.scan)
+
+    return _impl
+
+
+def compact_active_pairs_jit_runtime(cfg: ICRuntimeResolved):
+    """Return a jitted compact_active_pairs entrypoint for runtime bundle."""
+    return _compact_active_pairs_runtime_jit(cfg)
+
+
+@cached_jit
 def _compact_active_pairs_result_jit(cfg: ICGraphConfig):
-    safe_index_fn = _resolve_safe_index_fn(cfg)
+    scan_cfg = resolve_graph_config(cfg).scan
 
     def _impl(state):
-        return ic_compact_active_pairs_result(
-            state,
-            safety_policy=cfg.safety_policy,
-            safe_index_fn=safe_index_fn,
-            compact_cfg=cfg.compact_cfg,
-        )
+        return ic_compact_active_pairs_result(state, cfg=scan_cfg)
 
     return _impl
 
@@ -215,15 +302,55 @@ def compact_active_pairs_result_jit_cfg(cfg: ICGraphConfig | None = None):
 
 
 @cached_jit
+def _compact_active_pairs_result_resolved_jit(cfg: ICGraphResolved):
+    def _impl(state):
+        return ic_compact_active_pairs_result(state, cfg=cfg.scan)
+
+    return _impl
+
+
+def compact_active_pairs_result_jit_resolved(
+    cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED,
+):
+    """Return a jitted compact_active_pairs_result entrypoint for resolved DI."""
+    return _compact_active_pairs_result_resolved_jit(cfg)
+
+
+@cached_jit
+def _compact_active_pairs_result_exec_jit(cfg: ICExecutionResolved):
+    def _impl(state):
+        return ic_compact_active_pairs_result(state, cfg=cfg.graph.scan)
+
+    return _impl
+
+
+def compact_active_pairs_result_jit_exec(cfg: ICExecutionResolved):
+    """Return a jitted compact_active_pairs_result entrypoint for execution bundle."""
+    return _compact_active_pairs_result_exec_jit(cfg)
+
+
+@cached_jit
+def _compact_active_pairs_result_runtime_jit(cfg: ICRuntimeResolved):
+    def _impl(state):
+        return ic_compact_active_pairs_result(state, cfg=cfg.graph.scan)
+
+    return _impl
+
+
+def compact_active_pairs_result_jit_runtime(cfg: ICRuntimeResolved):
+    """Return a jitted compact_active_pairs_result entrypoint for runtime bundle."""
+    return _compact_active_pairs_result_runtime_jit(cfg)
+
+
+@cached_jit
 def _wire_jax_jit(cfg: ICGraphConfig):
-    safe_index_fn = _resolve_safe_index_fn(cfg)
+    wire_cfg = resolve_graph_config(cfg).wire
 
     def _impl(state, endpoints):
         return ic_wire_jax(
             state,
             endpoints,
-            safety_policy=cfg.safety_policy,
-            safe_index_fn=safe_index_fn,
+            cfg=wire_cfg,
         )
 
     return _impl
@@ -242,15 +369,53 @@ def wire_jax_jit_cfg(cfg: ICGraphConfig | None = None):
 
 
 @cached_jit
+def _wire_jax_resolved_jit(cfg: ICGraphResolved):
+    def _impl(state, endpoints):
+        return ic_wire_jax(state, endpoints, cfg=cfg.wire)
+
+    return _impl
+
+
+def wire_jax_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
+    """Return a jitted ic_wire_jax entrypoint for resolved DI."""
+    return _wire_jax_resolved_jit(cfg)
+
+
+@cached_jit
+def _wire_jax_exec_jit(cfg: ICExecutionResolved):
+    def _impl(state, endpoints):
+        return ic_wire_jax(state, endpoints, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_jax_jit_exec(cfg: ICExecutionResolved):
+    """Return a jitted ic_wire_jax entrypoint for execution bundle."""
+    return _wire_jax_exec_jit(cfg)
+
+
+@cached_jit
+def _wire_jax_runtime_jit(cfg: ICRuntimeResolved):
+    def _impl(state, endpoints):
+        return ic_wire_jax(state, endpoints, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_jax_jit_runtime(cfg: ICRuntimeResolved):
+    """Return a jitted ic_wire_jax entrypoint for runtime bundle."""
+    return _wire_jax_runtime_jit(cfg)
+
+
+@cached_jit
 def _wire_jax_safe_jit(cfg: ICGraphConfig):
-    safe_index_fn = _resolve_safe_index_fn(cfg)
+    wire_cfg = resolve_graph_config(cfg).wire
 
     def _impl(state, endpoints):
         return ic_wire_jax_safe(
             state,
             endpoints,
-            safety_policy=cfg.safety_policy,
-            safe_index_fn=safe_index_fn,
+            cfg=wire_cfg,
         )
 
     return _impl
@@ -269,15 +434,53 @@ def wire_jax_safe_jit_cfg(cfg: ICGraphConfig | None = None):
 
 
 @cached_jit
+def _wire_jax_safe_resolved_jit(cfg: ICGraphResolved):
+    def _impl(state, endpoints):
+        return ic_wire_jax_safe(state, endpoints, cfg=cfg.wire)
+
+    return _impl
+
+
+def wire_jax_safe_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
+    """Return a jitted ic_wire_jax_safe entrypoint for resolved DI."""
+    return _wire_jax_safe_resolved_jit(cfg)
+
+
+@cached_jit
+def _wire_jax_safe_exec_jit(cfg: ICExecutionResolved):
+    def _impl(state, endpoints):
+        return ic_wire_jax_safe(state, endpoints, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_jax_safe_jit_exec(cfg: ICExecutionResolved):
+    """Return a jitted ic_wire_jax_safe entrypoint for execution bundle."""
+    return _wire_jax_safe_exec_jit(cfg)
+
+
+@cached_jit
+def _wire_jax_safe_runtime_jit(cfg: ICRuntimeResolved):
+    def _impl(state, endpoints):
+        return ic_wire_jax_safe(state, endpoints, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_jax_safe_jit_runtime(cfg: ICRuntimeResolved):
+    """Return a jitted ic_wire_jax_safe entrypoint for runtime bundle."""
+    return _wire_jax_safe_runtime_jit(cfg)
+
+
+@cached_jit
 def _wire_ptrs_jit(cfg: ICGraphConfig):
-    safe_index_fn = _resolve_safe_index_fn(cfg)
+    wire_cfg = resolve_graph_config(cfg).wire
 
     def _impl(state, ptrs):
         return ic_wire_ptrs_jax(
             state,
             ptrs,
-            safety_policy=cfg.safety_policy,
-            safe_index_fn=safe_index_fn,
+            cfg=wire_cfg,
         )
 
     return _impl
@@ -296,15 +499,53 @@ def wire_ptrs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 
 @cached_jit
+def _wire_ptrs_resolved_jit(cfg: ICGraphResolved):
+    def _impl(state, ptrs):
+        return ic_wire_ptrs_jax(state, ptrs, cfg=cfg.wire)
+
+    return _impl
+
+
+def wire_ptrs_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
+    """Return a jitted ic_wire_ptrs_jax entrypoint for resolved DI."""
+    return _wire_ptrs_resolved_jit(cfg)
+
+
+@cached_jit
+def _wire_ptrs_exec_jit(cfg: ICExecutionResolved):
+    def _impl(state, ptrs):
+        return ic_wire_ptrs_jax(state, ptrs, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_ptrs_jit_exec(cfg: ICExecutionResolved):
+    """Return a jitted ic_wire_ptrs_jax entrypoint for execution bundle."""
+    return _wire_ptrs_exec_jit(cfg)
+
+
+@cached_jit
+def _wire_ptrs_runtime_jit(cfg: ICRuntimeResolved):
+    def _impl(state, ptrs):
+        return ic_wire_ptrs_jax(state, ptrs, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_ptrs_jit_runtime(cfg: ICRuntimeResolved):
+    """Return a jitted ic_wire_ptrs_jax entrypoint for runtime bundle."""
+    return _wire_ptrs_runtime_jit(cfg)
+
+
+@cached_jit
 def _wire_pairs_jit(cfg: ICGraphConfig):
-    safe_index_fn = _resolve_safe_index_fn(cfg)
+    wire_cfg = resolve_graph_config(cfg).wire
 
     def _impl(state, endpoints):
         return ic_wire_pairs_jax(
             state,
             endpoints,
-            safety_policy=cfg.safety_policy,
-            safe_index_fn=safe_index_fn,
+            cfg=wire_cfg,
         )
 
     return _impl
@@ -323,15 +564,53 @@ def wire_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 
 @cached_jit
+def _wire_pairs_resolved_jit(cfg: ICGraphResolved):
+    def _impl(state, endpoints):
+        return ic_wire_pairs_jax(state, endpoints, cfg=cfg.wire)
+
+    return _impl
+
+
+def wire_pairs_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
+    """Return a jitted ic_wire_pairs_jax entrypoint for resolved DI."""
+    return _wire_pairs_resolved_jit(cfg)
+
+
+@cached_jit
+def _wire_pairs_exec_jit(cfg: ICExecutionResolved):
+    def _impl(state, endpoints):
+        return ic_wire_pairs_jax(state, endpoints, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_pairs_jit_exec(cfg: ICExecutionResolved):
+    """Return a jitted ic_wire_pairs_jax entrypoint for execution bundle."""
+    return _wire_pairs_exec_jit(cfg)
+
+
+@cached_jit
+def _wire_pairs_runtime_jit(cfg: ICRuntimeResolved):
+    def _impl(state, endpoints):
+        return ic_wire_pairs_jax(state, endpoints, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_pairs_jit_runtime(cfg: ICRuntimeResolved):
+    """Return a jitted ic_wire_pairs_jax entrypoint for runtime bundle."""
+    return _wire_pairs_runtime_jit(cfg)
+
+
+@cached_jit
 def _wire_ptr_pairs_jit(cfg: ICGraphConfig):
-    safe_index_fn = _resolve_safe_index_fn(cfg)
+    wire_cfg = resolve_graph_config(cfg).wire
 
     def _impl(state, ptrs):
         return ic_wire_ptr_pairs_jax(
             state,
             ptrs,
-            safety_policy=cfg.safety_policy,
-            safe_index_fn=safe_index_fn,
+            cfg=wire_cfg,
         )
 
     return _impl
@@ -350,15 +629,53 @@ def wire_ptr_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 
 
 @cached_jit
+def _wire_ptr_pairs_resolved_jit(cfg: ICGraphResolved):
+    def _impl(state, ptrs):
+        return ic_wire_ptr_pairs_jax(state, ptrs, cfg=cfg.wire)
+
+    return _impl
+
+
+def wire_ptr_pairs_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
+    """Return a jitted ic_wire_ptr_pairs_jax entrypoint for resolved DI."""
+    return _wire_ptr_pairs_resolved_jit(cfg)
+
+
+@cached_jit
+def _wire_ptr_pairs_exec_jit(cfg: ICExecutionResolved):
+    def _impl(state, ptrs):
+        return ic_wire_ptr_pairs_jax(state, ptrs, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_ptr_pairs_jit_exec(cfg: ICExecutionResolved):
+    """Return a jitted ic_wire_ptr_pairs_jax entrypoint for execution bundle."""
+    return _wire_ptr_pairs_exec_jit(cfg)
+
+
+@cached_jit
+def _wire_ptr_pairs_runtime_jit(cfg: ICRuntimeResolved):
+    def _impl(state, ptrs):
+        return ic_wire_ptr_pairs_jax(state, ptrs, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_ptr_pairs_jit_runtime(cfg: ICRuntimeResolved):
+    """Return a jitted ic_wire_ptr_pairs_jax entrypoint for runtime bundle."""
+    return _wire_ptr_pairs_runtime_jit(cfg)
+
+
+@cached_jit
 def _wire_star_jit(cfg: ICGraphConfig):
-    safe_index_fn = _resolve_safe_index_fn(cfg)
+    wire_cfg = resolve_graph_config(cfg).wire
 
     def _impl(state, endpoints):
         return ic_wire_star_jax(
             state,
             endpoints,
-            safety_policy=cfg.safety_policy,
-            safe_index_fn=safe_index_fn,
+            cfg=wire_cfg,
         )
 
     return _impl
@@ -376,27 +693,99 @@ def wire_star_jit_cfg(cfg: ICGraphConfig | None = None):
     return wire_star_jit(cfg)
 
 
+@cached_jit
+def _wire_star_resolved_jit(cfg: ICGraphResolved):
+    def _impl(state, endpoints):
+        return ic_wire_star_jax(state, endpoints, cfg=cfg.wire)
+
+    return _impl
+
+
+def wire_star_jit_resolved(cfg: ICGraphResolved = DEFAULT_GRAPH_RESOLVED):
+    """Return a jitted ic_wire_star_jax entrypoint for resolved DI."""
+    return _wire_star_resolved_jit(cfg)
+
+
+@cached_jit
+def _wire_star_exec_jit(cfg: ICExecutionResolved):
+    def _impl(state, endpoints):
+        return ic_wire_star_jax(state, endpoints, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_star_jit_exec(cfg: ICExecutionResolved):
+    """Return a jitted ic_wire_star_jax entrypoint for execution bundle."""
+    return _wire_star_exec_jit(cfg)
+
+
+@cached_jit
+def _wire_star_runtime_jit(cfg: ICRuntimeResolved):
+    def _impl(state, endpoints):
+        return ic_wire_star_jax(state, endpoints, cfg=cfg.graph.wire)
+
+    return _impl
+
+
+def wire_star_jit_runtime(cfg: ICRuntimeResolved):
+    """Return a jitted ic_wire_star_jax entrypoint for runtime bundle."""
+    return _wire_star_runtime_jit(cfg)
+
+
 __all__ = [
     "apply_active_pairs_jit",
     "apply_active_pairs_jit_cfg",
+    "apply_active_pairs_jit_resolved",
+    "apply_active_pairs_jit_exec",
+    "apply_active_pairs_jit_runtime",
     "reduce_jit",
     "reduce_jit_cfg",
+    "reduce_jit_resolved",
+    "reduce_jit_exec",
+    "reduce_jit_runtime",
     "find_active_pairs_jit",
     "find_active_pairs_jit_cfg",
+    "find_active_pairs_jit_resolved",
+    "find_active_pairs_jit_exec",
+    "find_active_pairs_jit_runtime",
     "compact_active_pairs_jit",
     "compact_active_pairs_jit_cfg",
+    "compact_active_pairs_jit_resolved",
+    "compact_active_pairs_jit_exec",
+    "compact_active_pairs_jit_runtime",
     "compact_active_pairs_result_jit",
     "compact_active_pairs_result_jit_cfg",
+    "compact_active_pairs_result_jit_resolved",
+    "compact_active_pairs_result_jit_exec",
+    "compact_active_pairs_result_jit_runtime",
     "wire_jax_jit",
     "wire_jax_jit_cfg",
+    "wire_jax_jit_resolved",
+    "wire_jax_jit_exec",
+    "wire_jax_jit_runtime",
     "wire_jax_safe_jit",
     "wire_jax_safe_jit_cfg",
+    "wire_jax_safe_jit_resolved",
+    "wire_jax_safe_jit_exec",
+    "wire_jax_safe_jit_runtime",
     "wire_ptrs_jit",
     "wire_ptrs_jit_cfg",
+    "wire_ptrs_jit_resolved",
+    "wire_ptrs_jit_exec",
+    "wire_ptrs_jit_runtime",
     "wire_pairs_jit",
     "wire_pairs_jit_cfg",
+    "wire_pairs_jit_resolved",
+    "wire_pairs_jit_exec",
+    "wire_pairs_jit_runtime",
     "wire_ptr_pairs_jit",
     "wire_ptr_pairs_jit_cfg",
+    "wire_ptr_pairs_jit_resolved",
+    "wire_ptr_pairs_jit_exec",
+    "wire_ptr_pairs_jit_runtime",
     "wire_star_jit",
     "wire_star_jit_cfg",
+    "wire_star_jit_resolved",
+    "wire_star_jit_exec",
+    "wire_star_jit_runtime",
 ]

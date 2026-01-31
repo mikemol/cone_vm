@@ -10,14 +10,6 @@ from prism_core.protocols import SafeIndexFn
 
 
 @runtime_checkable
-class CompactPairsFn(Protocol):
-    def __call__(
-        self, state: ICState
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-        ...
-
-
-@runtime_checkable
 class CompactPairsResultFn(Protocol):
     def __call__(self, state: ICState) -> Tuple[CompactResult, jnp.ndarray]:
         ...
@@ -101,7 +93,6 @@ class ApplyTemplateFn(Protocol):
 
 
 __all__ = [
-    "CompactPairsFn",
     "CompactPairsResultFn",
     "DecodePortFn",
     "AllocPlanFn",

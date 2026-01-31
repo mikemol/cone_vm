@@ -10,6 +10,7 @@ from prism_core.modes import ValidateMode, coerce_validate_mode
 from prism_core.safety import oob_mask
 from prism_baseline.kernels import dispatch_kernel, kernel_add, kernel_mul, optimize_ptr
 from prism_bsp.arena_step import cycle
+from prism_bsp.config import ArenaSortConfig, DEFAULT_ARENA_SORT_CONFIG
 from prism_bsp.intrinsic import cycle_intrinsic
 from prism_metrics.gpu import _gpu_watchdog_create
 from prism_metrics.metrics import (
@@ -376,16 +377,14 @@ def run_program_lines_arena(
     lines,
     vm=None,
     cycles=1,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
+    *,
+    sort_cfg: ArenaSortConfig = DEFAULT_ARENA_SORT_CONFIG,
 ):
     if vm is None:
         vm = PrismVM_BSP_Legacy()
-    tile_size = _damage_tile_size(block_size, l2_block_size, l1_block_size)
+    tile_size = _damage_tile_size(
+        sort_cfg.block_size, sort_cfg.l2_block_size, sort_cfg.l1_block_size
+    )
     watchdog = _gpu_watchdog_create()
     try:
         for inp in lines:
@@ -400,12 +399,7 @@ def run_program_lines_arena(
                 vm.arena, root_ptr = cycle(
                     vm.arena,
                     root_ptr,
-                    do_sort=do_sort,
-                    use_morton=use_morton,
-                    block_size=block_size,
-                    l2_block_size=l2_block_size,
-                    l1_block_size=l1_block_size,
-                    do_global=do_global,
+                    sort_cfg=sort_cfg,
                 )
                 root_ptr = _arena_ptr(_host_int_value(root_ptr))
                 if _host_bool_value(vm.arena.oom):
@@ -542,11 +536,18 @@ def repl(
                     validate_mode=validate_mode,
                 )
             elif mode == "arena":
+                sort_cfg = ArenaSortConfig(
+                    do_sort=do_sort,
+                    use_morton=use_morton,
+                    block_size=block_size,
+                    l2_block_size=l2_block_size,
+                    l1_block_size=l1_block_size,
+                    do_global=do_global,
+                )
                 run_program_lines_arena(
                     [inp],
                     vm,
-                    use_morton=use_morton,
-                    block_size=block_size,
+                    sort_cfg=sort_cfg,
                 )
             else:
                 run_program_lines([inp], vm)
@@ -650,12 +651,18 @@ def main():
                 validate_mode=validate_mode,
             )
         elif mode == "arena":
-            run_program_lines_arena(
-                lines,
-                cycles=cycles,
+            sort_cfg = ArenaSortConfig(
                 do_sort=do_sort,
                 use_morton=use_morton,
                 block_size=block_size,
+                l2_block_size=l2_block_size,
+                l1_block_size=l1_block_size,
+                do_global=do_global,
+            )
+            run_program_lines_arena(
+                lines,
+                cycles=cycles,
+                sort_cfg=sort_cfg,
             )
         else:
             run_program_lines(lines)

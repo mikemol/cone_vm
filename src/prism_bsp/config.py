@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Callable, TypeAlias
+from typing import Callable, TypeAlias, Any
 
 from prism_coord.config import CoordConfig
 from prism_core.compact import CompactConfig
@@ -701,6 +701,26 @@ DEFAULT_ARENA_CYCLE_CONFIG = ArenaCycleConfig()
 
 
 @dataclass(frozen=True, slots=True)
+class ArenaSortConfig:
+    """Arena sort/schedule parameters bundled as data.
+
+    morton is an optional precomputed array; type left as Any to avoid
+    importing jax into config modules.
+    """
+
+    do_sort: bool = True
+    use_morton: bool = False
+    block_size: int | None = None
+    morton: Any | None = None
+    l2_block_size: int | None = None
+    l1_block_size: int | None = None
+    do_global: bool = False
+
+
+DEFAULT_ARENA_SORT_CONFIG = ArenaSortConfig()
+
+
+@dataclass(frozen=True, slots=True)
 class IntrinsicConfig:
     """Intrinsic cycle DI bundle."""
 
@@ -726,6 +746,8 @@ __all__ = [
     "SwizzleWithPermFnsBound",
     "ArenaCycleConfig",
     "DEFAULT_ARENA_CYCLE_CONFIG",
+    "ArenaSortConfig",
+    "DEFAULT_ARENA_SORT_CONFIG",
     "IntrinsicConfig",
     "DEFAULT_INTRINSIC_CONFIG",
     "Cnf2ResolvedInputs",

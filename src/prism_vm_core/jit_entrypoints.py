@@ -39,9 +39,11 @@ from prism_bsp.config import (
     Cnf2Flags,
     ArenaInteractConfig,
     ArenaCycleConfig,
+    ArenaSortConfig,
     IntrinsicConfig,
     DEFAULT_ARENA_INTERACT_CONFIG,
     DEFAULT_ARENA_CYCLE_CONFIG,
+    DEFAULT_ARENA_SORT_CONFIG,
     DEFAULT_INTRINSIC_CONFIG,
     SwizzleWithPermFnsBound,
 )
@@ -52,6 +54,7 @@ def _safe_gather_is_bound(safe_gather_fn) -> bool:
     if safe_gather_fn is None:
         return False
     return bool(getattr(safe_gather_fn, "_prism_policy_bound", False))
+
 from prism_vm_core.structures import NodeBatch
 from prism_vm_core.candidates import _candidate_indices, candidate_indices_cfg
 from prism_bsp.cnf2 import (
@@ -86,6 +89,21 @@ from prism_bsp.space import (
     op_sort_and_swizzle_servo_with_perm_value,
     op_sort_and_swizzle_with_perm,
     op_sort_and_swizzle_with_perm_value,
+)
+DEFAULT_SWIZZLE_WITH_PERM_FNS_BOUND = SwizzleWithPermFnsBound(
+    with_perm=op_sort_and_swizzle_with_perm,
+    morton_with_perm=op_sort_and_swizzle_morton_with_perm,
+    blocked_with_perm=op_sort_and_swizzle_blocked_with_perm,
+    hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm,
+    servo_with_perm=op_sort_and_swizzle_servo_with_perm,
+)
+
+DEFAULT_SWIZZLE_WITH_PERM_VALUE_FNS_BOUND = SwizzleWithPermFnsBound(
+    with_perm=op_sort_and_swizzle_with_perm_value,
+    morton_with_perm=op_sort_and_swizzle_morton_with_perm_value,
+    blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_value,
+    hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_value,
+    servo_with_perm=op_sort_and_swizzle_servo_with_perm_value,
 )
 from prism_vm_core.domains import _host_raise_if_bad
 from prism_vm_core.gating import (
@@ -766,45 +784,23 @@ def cycle_candidates_jit(
     )
 @cached_jit
 def _cycle_jit(
-    do_sort,
-    use_morton,
-    block_size,
-    l2_block_size,
-    l1_block_size,
-    do_global,
+    sort_cfg: ArenaSortConfig,
     op_rank_fn,
     servo_enabled_value,
     servo_update_fn,
     op_morton_fn,
-    op_sort_and_swizzle_with_perm_fn,
-    op_sort_and_swizzle_morton_with_perm_fn,
-    op_sort_and_swizzle_blocked_with_perm_fn,
-    op_sort_and_swizzle_hierarchical_with_perm_fn,
-    op_sort_and_swizzle_servo_with_perm_fn,
+    swizzle_with_perm_fns: SwizzleWithPermFnsBound,
     safe_gather_fn,
     guard_cfg,
     op_interact_fn,
 ):
     cycle_core_fn = bind_optional_kwargs(_cycle_core, guard_cfg=guard_cfg)
-    swizzle_with_perm_fns = SwizzleWithPermFnsBound(
-        with_perm=op_sort_and_swizzle_with_perm_fn,
-        morton_with_perm=op_sort_and_swizzle_morton_with_perm_fn,
-        blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_fn,
-        hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_fn,
-        servo_with_perm=op_sort_and_swizzle_servo_with_perm_fn,
-    )
 
     def _impl(arena, root_ptr):
         return cycle_core_fn(
             arena,
             root_ptr,
-            do_sort=do_sort,
-            use_morton=use_morton,
-            block_size=block_size,
-            morton=None,
-            l2_block_size=l2_block_size,
-            l1_block_size=l1_block_size,
-            do_global=do_global,
+            sort_cfg=sort_cfg,
             op_rank_fn=op_rank_fn,
             servo_enabled_fn=lambda: servo_enabled_value,
             servo_update_fn=servo_update_fn,
@@ -822,21 +818,12 @@ def _cycle_jit(
 
 def cycle_jit(
     *,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
+    sort_cfg: ArenaSortConfig = DEFAULT_ARENA_SORT_CONFIG,
     op_rank_fn=op_rank,
     servo_enabled_fn=_servo_enabled,
     servo_update_fn=_servo_update,
     op_morton_fn=op_morton,
-    op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm,
-    op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm,
-    op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm,
-    op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm,
-    op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm,
+    swizzle_with_perm_fns: SwizzleWithPermFnsBound = DEFAULT_SWIZZLE_WITH_PERM_FNS_BOUND,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     op_interact_fn=_op_interact,
     test_guards: bool = False,
@@ -851,23 +838,16 @@ def cycle_jit(
         policy=safe_gather_policy,
         guard_cfg=guard_cfg,
     )
+    if sort_cfg.morton is not None:
+        raise ValueError("cycle_jit requires sort_cfg.morton is None")
     servo_enabled_value = bool(servo_enabled_fn())
     return _cycle_jit(
-        do_sort,
-        use_morton,
-        block_size,
-        l2_block_size,
-        l1_block_size,
-        do_global,
+        sort_cfg,
         op_rank_fn,
         servo_enabled_value,
         servo_update_fn,
         op_morton_fn,
-        op_sort_and_swizzle_with_perm_fn,
-        op_sort_and_swizzle_morton_with_perm_fn,
-        op_sort_and_swizzle_blocked_with_perm_fn,
-        op_sort_and_swizzle_hierarchical_with_perm_fn,
-        op_sort_and_swizzle_servo_with_perm_fn,
+        swizzle_with_perm_fns,
         safe_gather_fn,
         guard_cfg,
         op_interact_fn,
@@ -876,21 +856,12 @@ def cycle_jit(
 
 @cached_jit
 def _cycle_value_jit(
-    do_sort,
-    use_morton,
-    block_size,
-    l2_block_size,
-    l1_block_size,
-    do_global,
+    sort_cfg: ArenaSortConfig,
     op_rank_fn,
     servo_enabled_value,
     servo_update_fn,
     op_morton_fn,
-    op_sort_and_swizzle_with_perm_fn,
-    op_sort_and_swizzle_morton_with_perm_fn,
-    op_sort_and_swizzle_blocked_with_perm_fn,
-    op_sort_and_swizzle_hierarchical_with_perm_fn,
-    op_sort_and_swizzle_servo_with_perm_fn,
+    swizzle_with_perm_fns: SwizzleWithPermFnsBound,
     safe_gather_value_fn,
     guard_cfg,
 ):
@@ -901,22 +872,12 @@ def _cycle_value_jit(
             arena,
             root_ptr,
             policy_value,
-            do_sort=do_sort,
-            use_morton=use_morton,
-            block_size=block_size,
-            morton=None,
-            l2_block_size=l2_block_size,
-            l1_block_size=l1_block_size,
-            do_global=do_global,
+            sort_cfg=sort_cfg,
             op_rank_fn=op_rank_fn,
             servo_enabled_fn=lambda: servo_enabled_value,
             servo_update_fn=servo_update_fn,
             op_morton_fn=op_morton_fn,
-            op_sort_and_swizzle_with_perm_value_fn=op_sort_and_swizzle_with_perm_fn,
-            op_sort_and_swizzle_morton_with_perm_value_fn=op_sort_and_swizzle_morton_with_perm_fn,
-            op_sort_and_swizzle_blocked_with_perm_value_fn=op_sort_and_swizzle_blocked_with_perm_fn,
-            op_sort_and_swizzle_hierarchical_with_perm_value_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
-            op_sort_and_swizzle_servo_with_perm_value_fn=op_sort_and_swizzle_servo_with_perm_fn,
+            swizzle_with_perm_fns=swizzle_with_perm_fns,
             safe_gather_value_fn=safe_gather_value_fn,
             arena_root_hash_fn=_noop_root_hash,
             damage_tile_size_fn=_noop_tile_size,
@@ -928,42 +889,26 @@ def _cycle_value_jit(
 
 def cycle_value_jit(
     *,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
+    sort_cfg: ArenaSortConfig = DEFAULT_ARENA_SORT_CONFIG,
     op_rank_fn=op_rank,
     servo_enabled_fn=_servo_enabled,
     servo_update_fn=_servo_update,
     op_morton_fn=op_morton,
-    op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_value,
-    op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_value,
-    op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_value,
-    op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_value,
-    op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_value,
+    swizzle_with_perm_fns: SwizzleWithPermFnsBound = DEFAULT_SWIZZLE_WITH_PERM_VALUE_FNS_BOUND,
     safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
     guard_cfg: GuardConfig | None = None,
 ):
     """Return a jitted cycle entrypoint that accepts policy_value."""
+    if sort_cfg.morton is not None:
+        raise ValueError("cycle_value_jit requires sort_cfg.morton is None")
     servo_enabled_value = bool(servo_enabled_fn())
     return _cycle_value_jit(
-        do_sort,
-        use_morton,
-        block_size,
-        l2_block_size,
-        l1_block_size,
-        do_global,
+        sort_cfg,
         op_rank_fn,
         servo_enabled_value,
         servo_update_fn,
         op_morton_fn,
-        op_sort_and_swizzle_with_perm_fn,
-        op_sort_and_swizzle_morton_with_perm_fn,
-        op_sort_and_swizzle_blocked_with_perm_fn,
-        op_sort_and_swizzle_hierarchical_with_perm_fn,
-        op_sort_and_swizzle_servo_with_perm_fn,
+        swizzle_with_perm_fns,
         safe_gather_value_fn,
         guard_cfg,
     )
@@ -971,12 +916,7 @@ def cycle_value_jit(
 
 def cycle_jit_cfg(
     *,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
+    sort_cfg: ArenaSortConfig = DEFAULT_ARENA_SORT_CONFIG,
     cfg: ArenaCycleConfig | None = None,
     test_guards: bool = False,
 ):
@@ -1002,32 +942,20 @@ def cycle_jit_cfg(
                 cfg.policy_binding, context="cycle_jit_cfg"
             )
     if safe_gather_policy_value is not None:
+        swizzle_with_perm_fns = SwizzleWithPermFnsBound(
+            with_perm=op_sort_and_swizzle_with_perm_fn,
+            morton_with_perm=op_sort_and_swizzle_morton_with_perm_fn,
+            blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_fn,
+            hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_fn,
+            servo_with_perm=op_sort_and_swizzle_servo_with_perm_fn,
+        )
         return cycle_value_jit(
-            do_sort=do_sort,
-            use_morton=use_morton,
-            block_size=block_size,
-            l2_block_size=l2_block_size,
-            l1_block_size=l1_block_size,
-            do_global=do_global,
+            sort_cfg=sort_cfg,
             op_rank_fn=cfg.op_rank_fn or op_rank,
             servo_enabled_fn=cfg.servo_enabled_fn or _servo_enabled,
             servo_update_fn=cfg.servo_update_fn or _servo_update,
             op_morton_fn=cfg.op_morton_fn or op_morton,
-            op_sort_and_swizzle_with_perm_fn=(
-                cfg.op_sort_and_swizzle_with_perm_fn or op_sort_and_swizzle_with_perm
-            ),
-            op_sort_and_swizzle_morton_with_perm_fn=(
-                cfg.op_sort_and_swizzle_morton_with_perm_fn or op_sort_and_swizzle_morton_with_perm
-            ),
-            op_sort_and_swizzle_blocked_with_perm_fn=(
-                cfg.op_sort_and_swizzle_blocked_with_perm_fn or op_sort_and_swizzle_blocked_with_perm
-            ),
-            op_sort_and_swizzle_hierarchical_with_perm_fn=(
-                cfg.op_sort_and_swizzle_hierarchical_with_perm_fn or op_sort_and_swizzle_hierarchical_with_perm
-            ),
-            op_sort_and_swizzle_servo_with_perm_fn=(
-                cfg.op_sort_and_swizzle_servo_with_perm_fn or op_sort_and_swizzle_servo_with_perm
-            ),
+            swizzle_with_perm_fns=swizzle_with_perm_fns,
             safe_gather_value_fn=resolve(
                 cfg.safe_gather_value_fn, _jax_safe.safe_gather_1d_value
             ),
@@ -1059,6 +987,13 @@ def cycle_jit_cfg(
         cfg.op_sort_and_swizzle_servo_with_perm_fn
         or op_sort_and_swizzle_servo_with_perm
     )
+    swizzle_with_perm_fns = SwizzleWithPermFnsBound(
+        with_perm=op_sort_and_swizzle_with_perm_fn,
+        morton_with_perm=op_sort_and_swizzle_morton_with_perm_fn,
+        blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_fn,
+        hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_fn,
+        servo_with_perm=op_sort_and_swizzle_servo_with_perm_fn,
+    )
     safe_gather_fn = cfg.safe_gather_fn or _jax_safe.safe_gather_1d
     op_interact_fn = cfg.op_interact_fn
     if op_interact_fn is None and cfg.interact_cfg is not None:
@@ -1073,21 +1008,12 @@ def cycle_jit_cfg(
         else:
             op_interact_fn = _op_interact
     return cycle_jit(
-        do_sort=do_sort,
-        use_morton=use_morton,
-        block_size=block_size,
-        l2_block_size=l2_block_size,
-        l1_block_size=l1_block_size,
-        do_global=do_global,
+        sort_cfg=sort_cfg,
         op_rank_fn=op_rank_fn,
         servo_enabled_fn=servo_enabled_fn,
         servo_update_fn=servo_update_fn,
         op_morton_fn=op_morton_fn,
-        op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_fn,
-        op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_fn,
-        op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_fn,
-        op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
-        op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
+        swizzle_with_perm_fns=swizzle_with_perm_fns,
         safe_gather_fn=safe_gather_fn,
         op_interact_fn=op_interact_fn,
         test_guards=test_guards,
@@ -1099,12 +1025,7 @@ def cycle_jit_cfg(
 def cycle_jit_bound_cfg(
     policy_binding: PolicyBinding,
     *,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
+    sort_cfg: ArenaSortConfig = DEFAULT_ARENA_SORT_CONFIG,
     cfg: ArenaCycleConfig | None = None,
     test_guards: bool = False,
 ):
@@ -1128,12 +1049,7 @@ def cycle_jit_bound_cfg(
             interact_cfg=interact_cfg,
         )
     return cycle_jit_cfg(
-        do_sort=do_sort,
-        use_morton=use_morton,
-        block_size=block_size,
-        l2_block_size=l2_block_size,
-        l1_block_size=l1_block_size,
-        do_global=do_global,
+        sort_cfg=sort_cfg,
         cfg=cfg,
         test_guards=test_guards,
     )

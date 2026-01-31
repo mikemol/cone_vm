@@ -20,7 +20,7 @@ def test_manifest_q_projection_matches_baseline():
 def test_arena_q_projection_invariant_across_schedule():
     expr = "(add (suc zero) (suc zero))"
 
-    def _project(do_sort, use_morton):
+    def _project(sort_cfg):
         vm = pv.PrismVM_BSP_Legacy()
         root_ptr = vm.parse(harness.tokenize(expr))
         arena = vm.arena
@@ -28,8 +28,7 @@ def test_arena_q_projection_invariant_across_schedule():
             arena, root_ptr = pv.cycle(
                 arena,
                 root_ptr,
-                do_sort=do_sort,
-                use_morton=use_morton,
+                sort_cfg=sort_cfg,
             )
             root_ptr = pv._arena_ptr(pv._host_int_value(root_ptr))
         ledger, root_id = pv.project_arena_to_ledger(arena, root_ptr)
@@ -37,6 +36,6 @@ def test_arena_q_projection_invariant_across_schedule():
         vm_bsp.ledger = ledger
         return vm_bsp.decode(root_id)
 
-    no_sort = _project(do_sort=False, use_morton=False)
-    morton = _project(do_sort=True, use_morton=True)
+    no_sort = _project(pv.ArenaSortConfig(do_sort=False, use_morton=False))
+    morton = _project(pv.ArenaSortConfig(do_sort=True, use_morton=True))
     assert no_sort == morton

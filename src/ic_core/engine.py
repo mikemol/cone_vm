@@ -6,14 +6,12 @@ from ic_core.graph import (
     ICState,
     PORT_PRINCIPAL,
     decode_port,
-    ic_compact_active_pairs,
     ic_compact_active_pairs_result,
     _halted,
     _scan_corrupt_ports,
 )
 from ic_core.rules import TEMPLATE_NONE, _alloc_plan, _apply_template_planned
-from ic_core.config import ICEngineConfig
-from functools import partial
+from ic_core.config import ICEngineConfig, ICEngineResolved, resolve_engine_config
 
 
 class ICRewriteStats(NamedTuple):
@@ -24,7 +22,6 @@ class ICRewriteStats(NamedTuple):
 
 
 DEFAULT_ENGINE_CONFIG = ICEngineConfig(
-    compact_pairs_fn=ic_compact_active_pairs,
     compact_pairs_result_fn=ic_compact_active_pairs_result,
     decode_port_fn=decode_port,
     alloc_plan_fn=_alloc_plan,
@@ -33,30 +30,16 @@ DEFAULT_ENGINE_CONFIG = ICEngineConfig(
     scan_corrupt_fn=_scan_corrupt_ports,
 )
 
+DEFAULT_ENGINE_RESOLVED = resolve_engine_config(DEFAULT_ENGINE_CONFIG)
 
-@jax.jit(
-    static_argnames=(
-        "compact_pairs_fn",
-        "compact_pairs_result_fn",
-        "decode_port_fn",
-        "alloc_plan_fn",
-        "apply_template_planned_fn",
-        "halted_fn",
-        "scan_corrupt_fn",
-    )
-)
+
+@jax.jit(static_argnames=("cfg",))
 def ic_apply_active_pairs(
     state: ICState,
     *,
-    compact_pairs_fn=ic_compact_active_pairs,
-    compact_pairs_result_fn=None,
-    decode_port_fn=decode_port,
-    alloc_plan_fn=_alloc_plan,
-    apply_template_planned_fn=_apply_template_planned,
-    halted_fn=_halted,
-    scan_corrupt_fn=_scan_corrupt_ports,
+    cfg: ICEngineResolved = DEFAULT_ENGINE_RESOLVED,
 ) -> Tuple[ICState, ICRewriteStats]:
-    state = scan_corrupt_fn(state)
+    state = cfg.scan_corrupt_fn(state)
     zero_stats = ICRewriteStats(
         active_pairs=jnp.uint32(0),
         alloc_nodes=jnp.uint32(0),
@@ -68,20 +51,17 @@ def ic_apply_active_pairs(
         return s, zero_stats
 
     def _run(s):
-        if compact_pairs_result_fn is not None:
-            result, _ = compact_pairs_result_fn(s)
-            pairs = jnp.where(result.valid, result.idx, jnp.uint32(0))
-            count = result.count
-        else:
-            pairs, count, _ = compact_pairs_fn(s)
+        result, _ = cfg.compact_pairs_result_fn(s)
+        pairs = jnp.where(result.valid, result.idx, jnp.uint32(0))
+        count = result.count
         count_i = count.astype(jnp.int32)
 
         def body(i, carry):
             s_in, alloc, freed, tmpl_counts, tmpl_ids, alloc_counts, alloc_ids = carry
             node_a = pairs[i]
-            node_b = decode_port_fn(s_in.ports[node_a, PORT_PRINCIPAL])[0]
+            node_b = cfg.decode_port_fn(s_in.ports[node_a, PORT_PRINCIPAL])[0]
             tmpl = tmpl_ids[i]
-            s2 = apply_template_planned_fn(
+            s2 = cfg.apply_template_planned_fn(
                 s_in, node_a, node_b, tmpl, alloc_ids[i]
             )
             ok = (~s_in.oom) & (~s_in.corrupt) & (~s2.oom) & (~s2.corrupt)
@@ -102,7 +82,7 @@ def ic_apply_active_pairs(
             )
 
         def _apply(s_in):
-            s2, tmpl_ids, alloc_counts, alloc_ids, _ = alloc_plan_fn(
+            s2, tmpl_ids, alloc_counts, alloc_ids, _ = cfg.alloc_plan_fn(
                 s_in, pairs, count
             )
 
@@ -138,18 +118,17 @@ def ic_apply_active_pairs(
             count_i == 0, lambda s_in: (s_in, zero_stats), _apply, s
         )
 
-    return jax.lax.cond(halted_fn(state), _halt, _run, state)
+    return jax.lax.cond(cfg.halted_fn(state), _halt, _run, state)
 
 
-@jax.jit(static_argnames=("apply_active_pairs_fn", "scan_corrupt_fn"))
+@jax.jit(static_argnames=("cfg",))
 def ic_reduce(
     state: ICState,
     max_steps: int,
     *,
-    apply_active_pairs_fn=ic_apply_active_pairs,
-    scan_corrupt_fn=_scan_corrupt_ports,
+    cfg: ICEngineResolved = DEFAULT_ENGINE_RESOLVED,
 ) -> Tuple[ICState, ICRewriteStats, jnp.ndarray]:
-    state = scan_corrupt_fn(state)
+    state = cfg.scan_corrupt_fn(state)
     max_steps_i = jnp.int32(max_steps)
     zero_stats = ICRewriteStats(
         active_pairs=jnp.uint32(0),
@@ -169,7 +148,7 @@ def ic_reduce(
 
     def body(carry):
         s, stats, steps, _ = carry
-        s2, batch = apply_active_pairs_fn(s)
+        s2, batch = ic_apply_active_pairs(s, cfg=cfg)
         stats = ICRewriteStats(
             active_pairs=stats.active_pairs + batch.active_pairs,
             alloc_nodes=stats.alloc_nodes + batch.alloc_nodes,
@@ -187,41 +166,22 @@ def ic_apply_active_pairs_cfg(
     state: ICState, *, cfg: ICEngineConfig = DEFAULT_ENGINE_CONFIG
 ) -> Tuple[ICState, ICRewriteStats]:
     """Interface/Control wrapper for IC apply_active_pairs with DI bundle."""
-    return ic_apply_active_pairs(
-        state,
-        compact_pairs_fn=cfg.compact_pairs_fn,
-        decode_port_fn=cfg.decode_port_fn,
-        alloc_plan_fn=cfg.alloc_plan_fn,
-        apply_template_planned_fn=cfg.apply_template_planned_fn,
-        halted_fn=cfg.halted_fn,
-        scan_corrupt_fn=cfg.scan_corrupt_fn,
-    )
+    resolved = resolve_engine_config(cfg)
+    return ic_apply_active_pairs(state, cfg=resolved)
 
 
 def ic_reduce_cfg(
     state: ICState, max_steps: int, *, cfg: ICEngineConfig = DEFAULT_ENGINE_CONFIG
 ) -> Tuple[ICState, ICRewriteStats, jnp.ndarray]:
     """Interface/Control wrapper for IC reduce with DI bundle."""
-    apply_fn = partial(
-        ic_apply_active_pairs,
-        compact_pairs_fn=cfg.compact_pairs_fn,
-        decode_port_fn=cfg.decode_port_fn,
-        alloc_plan_fn=cfg.alloc_plan_fn,
-        apply_template_planned_fn=cfg.apply_template_planned_fn,
-        halted_fn=cfg.halted_fn,
-        scan_corrupt_fn=cfg.scan_corrupt_fn,
-    )
-    return ic_reduce(
-        state,
-        max_steps,
-        apply_active_pairs_fn=apply_fn,
-        scan_corrupt_fn=cfg.scan_corrupt_fn,
-    )
+    resolved = resolve_engine_config(cfg)
+    return ic_reduce(state, max_steps, cfg=resolved)
 
 
 __all__ = [
     "ICRewriteStats",
     "DEFAULT_ENGINE_CONFIG",
+    "DEFAULT_ENGINE_RESOLVED",
     "ic_apply_active_pairs",
     "ic_reduce",
     "ic_apply_active_pairs_cfg",

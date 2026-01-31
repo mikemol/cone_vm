@@ -31,13 +31,32 @@ from ic_core.graph import (
     PORT_AUX_LEFT,
     PORT_AUX_RIGHT,
 )
-from ic_core.engine import ICRewriteStats
+from ic_core.engine import ICRewriteStats, DEFAULT_ENGINE_RESOLVED
+from ic_core.facade import (
+    DEFAULT_RUNTIME_CONFIG,
+    DEFAULT_RUNTIME_RESOLVED,
+    DEFAULT_RUNTIME_OPS,
+    ICRuntimeOps,
+)
 from ic_core.bundles import WireEndpoints, WirePtrPair, WireStarEndpoints
+from ic_core.config import (
+    ICWireConfig,
+    ICScanConfig,
+    ICGraphResolved,
+    ICEngineResolved,
+    ICExecutionConfig,
+    ICExecutionResolved,
+    ICRuntimeConfig,
+    ICRuntimeResolved,
+    DEFAULT_WIRE_CONFIG,
+    DEFAULT_SCAN_CONFIG,
+    DEFAULT_GRAPH_RESOLVED,
+)
 from prism_core.compact import (
     CompactResult,
     CompactConfig,
-    DEFAULT_COMPACT_CONFIG,
 )
+from ic_core.config import DEFAULT_IC_COMPACT_CONFIG
 from prism_core.alloc import AllocConfig, DEFAULT_ALLOC_CONFIG
 
 __all__ = [
@@ -62,9 +81,25 @@ __all__ = [
     "WireEndpoints",
     "WirePtrPair",
     "WireStarEndpoints",
+    "ICWireConfig",
+    "ICScanConfig",
+    "ICGraphResolved",
+    "ICEngineResolved",
+    "ICExecutionConfig",
+    "ICExecutionResolved",
+    "ICRuntimeConfig",
+    "ICRuntimeResolved",
+    "DEFAULT_WIRE_CONFIG",
+    "DEFAULT_SCAN_CONFIG",
+    "DEFAULT_GRAPH_RESOLVED",
+    "DEFAULT_ENGINE_RESOLVED",
+    "DEFAULT_RUNTIME_CONFIG",
+    "DEFAULT_RUNTIME_RESOLVED",
+    "DEFAULT_RUNTIME_OPS",
+    "ICRuntimeOps",
     "CompactResult",
     "CompactConfig",
-    "DEFAULT_COMPACT_CONFIG",
+    "DEFAULT_IC_COMPACT_CONFIG",
     "AllocConfig",
     "DEFAULT_ALLOC_CONFIG",
     "TYPE_FREE",

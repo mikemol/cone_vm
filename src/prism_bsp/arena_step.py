@@ -40,6 +40,8 @@ from prism_bsp.space import (
 from prism_bsp.config import (
     ArenaInteractConfig,
     ArenaCycleConfig,
+    ArenaSortConfig,
+    DEFAULT_ARENA_SORT_CONFIG,
     DEFAULT_ARENA_INTERACT_CONFIG,
     DEFAULT_ARENA_CYCLE_CONFIG,
     SwizzleWithPermFns,
@@ -392,13 +394,7 @@ def op_interact_bound_cfg(
 def cycle_core(
     arena,
     root_ptr,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    morton=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
+    sort_cfg: ArenaSortConfig,
     *,
     op_rank_fn=op_rank,
     servo_enabled_fn=_servo_enabled,
@@ -412,6 +408,13 @@ def cycle_core(
     damage_metrics_update_fn=_damage_metrics_update,
     op_interact_fn=op_interact,
 ):
+    do_sort = sort_cfg.do_sort
+    use_morton = sort_cfg.use_morton
+    block_size = sort_cfg.block_size
+    morton = sort_cfg.morton
+    l2_block_size = sort_cfg.l2_block_size
+    l1_block_size = sort_cfg.l1_block_size
+    do_global = sort_cfg.do_global
     # BSPˢ is renormalization only: must preserve denotation after q (m3).
     # BSPᵗ controls when identity is created via commit_stratum barriers.
     # COMMUTES: BSPᵗ ⟂ BSPˢ  [test: tests/test_arena_denotation_invariance.py::test_arena_denotation_invariance_random_suite]
@@ -492,13 +495,7 @@ def cycle_core_value(
     arena,
     root_ptr,
     policy_value,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    morton=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
+    sort_cfg: ArenaSortConfig,
     *,
     op_rank_fn=op_rank,
     servo_enabled_fn=_servo_enabled,
@@ -513,6 +510,13 @@ def cycle_core_value(
     op_interact_value_fn=op_interact_value,
 ):
     """Run one BSP cycle with policy_value as data (JAX value)."""
+    do_sort = sort_cfg.do_sort
+    use_morton = sort_cfg.use_morton
+    block_size = sort_cfg.block_size
+    morton = sort_cfg.morton
+    l2_block_size = sort_cfg.l2_block_size
+    l1_block_size = sort_cfg.l1_block_size
+    do_global = sort_cfg.do_global
     safe_gather_value_fn_guarded = resolve_safe_gather_value_fn(
         safe_gather_value_fn=safe_gather_value_fn,
         guard_cfg=guard_cfg,
@@ -598,14 +602,8 @@ def cycle_core_value(
 def cycle(
     arena,
     root_ptr,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    morton=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
     *,
+    sort_cfg: ArenaSortConfig = DEFAULT_ARENA_SORT_CONFIG,
     op_rank_fn=op_rank,
     servo_enabled_fn=_servo_enabled,
     servo_update_fn=_servo_update,
@@ -621,13 +619,7 @@ def cycle(
     return cycle_core(
         arena,
         root_ptr,
-        do_sort=do_sort,
-        use_morton=use_morton,
-        block_size=block_size,
-        morton=morton,
-        l2_block_size=l2_block_size,
-        l1_block_size=l1_block_size,
-        do_global=do_global,
+        sort_cfg=sort_cfg,
         op_rank_fn=op_rank_fn,
         servo_enabled_fn=servo_enabled_fn,
         servo_update_fn=servo_update_fn,
@@ -646,14 +638,8 @@ def cycle_value(
     arena,
     root_ptr,
     policy_value,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    morton=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
     *,
+    sort_cfg: ArenaSortConfig = DEFAULT_ARENA_SORT_CONFIG,
     op_rank_fn=op_rank,
     servo_enabled_fn=_servo_enabled,
     servo_update_fn=_servo_update,
@@ -670,13 +656,7 @@ def cycle_value(
         arena,
         root_ptr,
         policy_value,
-        do_sort=do_sort,
-        use_morton=use_morton,
-        block_size=block_size,
-        morton=morton,
-        l2_block_size=l2_block_size,
-        l1_block_size=l1_block_size,
-        do_global=do_global,
+        sort_cfg=sort_cfg,
         op_rank_fn=op_rank_fn,
         servo_enabled_fn=servo_enabled_fn,
         servo_update_fn=servo_update_fn,
@@ -693,14 +673,8 @@ def cycle_value(
 def cycle_cfg(
     arena,
     root_ptr,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    morton=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
     *,
+    sort_cfg: ArenaSortConfig = DEFAULT_ARENA_SORT_CONFIG,
     cfg: ArenaCycleConfig = DEFAULT_ARENA_CYCLE_CONFIG,
 ):
     """Interface/Control wrapper for cycle_core with DI bundle."""
@@ -833,13 +807,7 @@ def cycle_cfg(
             arena,
             root_ptr,
             safe_gather_policy_value,
-            do_sort=do_sort,
-            use_morton=use_morton,
-            block_size=block_size,
-            morton=morton,
-            l2_block_size=l2_block_size,
-            l1_block_size=l1_block_size,
-            do_global=do_global,
+            sort_cfg=sort_cfg,
             op_rank_fn=op_rank_fn,
             servo_enabled_fn=servo_enabled_fn,
             servo_update_fn=servo_update_fn,
@@ -862,13 +830,7 @@ def cycle_cfg(
     return cycle_core(
         arena,
         root_ptr,
-        do_sort=do_sort,
-        use_morton=use_morton,
-        block_size=block_size,
-        morton=morton,
-        l2_block_size=l2_block_size,
-        l1_block_size=l1_block_size,
-        do_global=do_global,
+        sort_cfg=sort_cfg,
         op_rank_fn=op_rank_fn,
         servo_enabled_fn=servo_enabled_fn,
         servo_update_fn=servo_update_fn,
@@ -886,14 +848,8 @@ def cycle_bound_cfg(
     arena,
     root_ptr,
     policy_binding: PolicyBinding,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    morton=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
     *,
+    sort_cfg: ArenaSortConfig = DEFAULT_ARENA_SORT_CONFIG,
     cfg: ArenaCycleConfig | None = None,
 ):
     """PolicyBinding-required wrapper for cycle_cfg."""
@@ -918,13 +874,7 @@ def cycle_bound_cfg(
     return cycle_cfg(
         arena,
         root_ptr,
-        do_sort=do_sort,
-        use_morton=use_morton,
-        block_size=block_size,
-        morton=morton,
-        l2_block_size=l2_block_size,
-        l1_block_size=l1_block_size,
-        do_global=do_global,
+        sort_cfg=sort_cfg,
         cfg=cfg,
     )
 
