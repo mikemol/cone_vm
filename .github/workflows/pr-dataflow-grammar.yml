@@ -45,18 +45,22 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import pathlib
           import urllib.request
 
           token = os.environ["GITHUB_TOKEN"]
           repo = os.environ["REPO"]
           issue = os.environ["PR_NUMBER"]
           run_url = os.environ["RUN_URL"]
-          body = (
-              "<!-- dataflow-grammar -->\n"
-              "Dataflow grammar graph generated.\n\n"
-              "- Artifact: dataflow-grammar\n"
-              f"- Download: {run_url}\n"
-          )
+          report_path = pathlib.Path("artifacts/dataflow_grammar/report.md")
+          if report_path.exists():
+              report = report_path.read_text()
+          else:
+              report = "<!-- dataflow-grammar -->\nDataflow grammar graph generated.\n"
+          footer = f"\n\n- Artifact: dataflow-grammar\n- Download: {run_url}\n"
+          body = report + footer
+          if len(body) > 60000:
+              body = body[:60000] + "\n\n(truncated)\n" + footer
 
           url = f"https://api.github.com/repos/{repo}/issues/{issue}/comments"
           req = urllib.request.Request(

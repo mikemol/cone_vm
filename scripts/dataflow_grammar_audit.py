@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import argparse
 import ast
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 
 @dataclass
@@ -244,6 +244,34 @@ def analyze_file(path: Path, recursive: bool = True) -> dict[str, list[set[str]]
     return groups_by_fn
 
 
+def _iter_config_fields(path: Path) -> dict[str, set[str]]:
+    """Best-effort extraction of @dataclass config bundles (fields ending with _fn)."""
+    try:
+        tree = ast.parse(path.read_text())
+    except Exception:
+        return {}
+    bundles: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        decorators = {getattr(d, "id", None) for d in node.decorator_list}
+        if "dataclass" not in decorators and not node.name.endswith("Config"):
+            continue
+        fields: set[str] = set()
+        for stmt in node.body:
+            if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                name = stmt.target.id
+                if name.endswith("_fn"):
+                    fields.add(name)
+            elif isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    if isinstance(target, ast.Name) and target.id.endswith("_fn"):
+                        fields.add(target.id)
+        if fields:
+            bundles[node.name] = fields
+    return bundles
+
+
 def _emit_dot(groups_by_path: dict[Path, dict[str, list[set[str]]]]) -> str:
     lines = [
         "digraph dataflow_grammar {",
@@ -271,11 +299,165 @@ def _emit_dot(groups_by_path: dict[Path, dict[str, list[set[str]]]]) -> str:
     return "\n".join(lines)
 
 
+def _component_graph(groups_by_path: dict[Path, dict[str, list[set[str]]]]):
+    nodes: dict[str, dict[str, str]] = {}
+    adj: dict[str, set[str]] = defaultdict(set)
+    bundle_map: dict[str, set[str]] = {}
+    for path, groups in groups_by_path.items():
+        file_id = str(path)
+        for fn, bundles in groups.items():
+            if not bundles:
+                continue
+            fn_id = f"fn::{file_id}::{fn}"
+            nodes[fn_id] = {"kind": "fn", "label": f"{path.name}:{fn}"}
+            for idx, bundle in enumerate(bundles):
+                bundle_id = f"b::{file_id}::{fn}::{idx}"
+                nodes[bundle_id] = {
+                    "kind": "bundle",
+                    "label": ", ".join(sorted(bundle)),
+                }
+                bundle_map[bundle_id] = bundle
+                adj[fn_id].add(bundle_id)
+                adj[bundle_id].add(fn_id)
+    return nodes, adj, bundle_map
+
+
+def _connected_components(nodes: dict[str, dict[str, str]], adj: dict[str, set[str]]) -> list[list[str]]:
+    seen: set[str] = set()
+    comps: list[list[str]] = []
+    for node in nodes:
+        if node in seen:
+            continue
+        q: deque[str] = deque([node])
+        seen.add(node)
+        comp: list[str] = []
+        while q:
+            curr = q.popleft()
+            comp.append(curr)
+            for nxt in adj.get(curr, ()):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    q.append(nxt)
+        comps.append(sorted(comp))
+    return comps
+
+
+def _render_mermaid_component(
+    nodes: dict[str, dict[str, str]],
+    bundle_map: dict[str, set[str]],
+    adj: dict[str, set[str]],
+    component: list[str],
+    config_bundles_by_path: dict[Path, dict[str, set[str]]],
+) -> tuple[str, str]:
+    lines = ["```mermaid", "flowchart LR"]
+    fn_nodes = [n for n in component if nodes[n]["kind"] == "fn"]
+    bundle_nodes = [n for n in component if nodes[n]["kind"] == "bundle"]
+    for n in fn_nodes:
+        label = nodes[n]["label"].replace('"', "'")
+        lines.append(f'  {abs(hash(n))}["{label}"]')
+    for n in bundle_nodes:
+        label = nodes[n]["label"].replace('"', "'")
+        lines.append(f'  {abs(hash(n))}(({label}))')
+    for n in component:
+        for nxt in adj.get(n, ()):
+            if nxt in component and nodes[n]["kind"] == "fn":
+                lines.append(f"  {abs(hash(n))} --> {abs(hash(nxt))}")
+    lines.append("  classDef fn fill:#cfe8ff,stroke:#2b6cb0,stroke-width:1px;")
+    lines.append("  classDef bundle fill:#ffe9c6,stroke:#c05621,stroke-width:1px;")
+    if fn_nodes:
+        lines.append(
+            "  class "
+            + ",".join(str(abs(hash(n))) for n in fn_nodes)
+            + " fn;"
+        )
+    if bundle_nodes:
+        lines.append(
+            "  class "
+            + ",".join(str(abs(hash(n))) for n in bundle_nodes)
+            + " bundle;"
+        )
+    lines.append("```")
+
+    observed = [bundle_map[n] for n in bundle_nodes if n in bundle_map]
+    component_paths: set[Path] = set()
+    for n in fn_nodes:
+        parts = n.split("::", 2)
+        if len(parts) == 3:
+            component_paths.add(Path(parts[1]))
+    declared = set()
+    for path in component_paths:
+        config_path = path.parent / "config.py"
+        bundles = config_bundles_by_path.get(config_path)
+        if not bundles:
+            continue
+        for fields in bundles.values():
+            declared.add(tuple(sorted(fields)))
+    observed_norm = {tuple(sorted(b)) for b in observed}
+    observed_only = sorted(observed_norm - declared) if declared else sorted(observed_norm)
+    declared_only = sorted(declared - observed_norm)
+    summary_lines = [
+        f"Functions: {len(fn_nodes)}",
+        f"Observed bundles: {len(observed_norm)}",
+    ]
+    if not declared:
+        summary_lines.append("Declared Config bundles: none found for this component.")
+    if observed_only:
+        summary_lines.append("Observed-only bundles (not declared in Configs):")
+        summary_lines.extend(f"  - {', '.join(bundle)}" for bundle in observed_only)
+    if declared_only:
+        summary_lines.append("Declared Config bundles not observed in this component:")
+        summary_lines.extend(f"  - {', '.join(bundle)}" for bundle in declared_only)
+    summary = "\n".join(summary_lines)
+    return "\n".join(lines), summary
+
+
+def _emit_report(
+    groups_by_path: dict[Path, dict[str, list[set[str]]]],
+    max_components: int,
+) -> str:
+    nodes, adj, bundle_map = _component_graph(groups_by_path)
+    components = _connected_components(nodes, adj)
+    roots = {p if p.is_dir() else p.parent for p in groups_by_path}
+    root = sorted(roots)[0] if roots else Path(".")
+    config_bundles_by_path = {}
+    for path in sorted(root.rglob("config.py")):
+        config_bundles_by_path[path] = _iter_config_fields(path)
+    protocols = root / "prism_vm_core" / "protocols.py"
+    if protocols.exists():
+        config_bundles_by_path[protocols] = _iter_config_fields(protocols)
+    lines = [
+        "<!-- dataflow-grammar -->",
+        "Dataflow grammar audit (observed forwarding bundles).",
+        "",
+    ]
+    if not components:
+        return "\n".join(lines + ["No bundle components detected."])
+    if len(components) > max_components:
+        lines.append(
+            f"Showing top {max_components} components of {len(components)}."
+        )
+    for idx, comp in enumerate(components[:max_components], start=1):
+        lines.append(f"### Component {idx}")
+        mermaid, summary = _render_mermaid_component(
+            nodes, bundle_map, adj, comp, config_bundles_by_path
+        )
+        lines.append(mermaid)
+        lines.append("")
+        lines.append("Summary:")
+        lines.append("```")
+        lines.append(summary)
+        lines.append("```")
+        lines.append("")
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("paths", nargs="+")
     parser.add_argument("--no-recursive", action="store_true")
     parser.add_argument("--dot", default=None, help="Write DOT graph to file or '-' for stdout.")
+    parser.add_argument("--report", default=None, help="Write Markdown report (mermaid) to file.")
+    parser.add_argument("--max-components", type=int, default=10, help="Max components in report.")
     args = parser.parse_args()
     paths = _iter_paths(args.paths)
     groups_by_path: dict[Path, dict[str, list[set[str]]]] = {}
@@ -287,6 +469,11 @@ def main() -> None:
             print(dot)
         else:
             Path(args.dot).write_text(dot)
+        if args.report is None:
+            return
+    if args.report is not None:
+        report = _emit_report(groups_by_path, args.max_components)
+        Path(args.report).write_text(report)
         return
     for path, groups in groups_by_path.items():
         print(f"# {path}")
