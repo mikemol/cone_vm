@@ -282,66 +282,139 @@ def _is_broad_type(annot: str | None) -> bool:
     return base in {"Any", "object"}
 
 
-def analyze_type_flow(path: Path) -> tuple[list[str], list[str]]:
-    """Return (tighten_suggestions, ambiguity_warnings) for a module."""
-    try:
-        tree = ast.parse(path.read_text())
-    except Exception:
-        return [], []
-    funcs = _collect_functions(tree)
-    if not funcs:
-        return [], []
-    fn_by_name = {f.name: f for f in funcs}
-    fn_param_orders = {f.name: _param_names(f) for f in funcs}
-    fn_param_annots = {f.name: _param_annotations(f) for f in funcs}
-    suggestions: list[str] = []
-    ambiguities: list[str] = []
-    parents = ParentAnnotator()
-    parents.visit(tree)
-    parent_map = parents.parents
+@dataclass
+class FunctionInfo:
+    name: str
+    qual: str
+    path: Path
+    params: list[str]
+    annots: dict[str, str | None]
+    calls: list[tuple[str, dict[str, str], dict[str, str]]]
 
-    for fn in funcs:
-        _, call_args = _analyze_function(fn, parent_map)
-        if not call_args:
+
+def _module_name(path: Path) -> str:
+    rel = path.with_suffix("")
+    return ".".join(rel.parts)
+
+
+def _build_function_index(paths: list[Path]) -> tuple[dict[str, list[FunctionInfo]], dict[str, FunctionInfo]]:
+    by_name: dict[str, list[FunctionInfo]] = defaultdict(list)
+    by_qual: dict[str, FunctionInfo] = {}
+    for path in paths:
+        try:
+            tree = ast.parse(path.read_text())
+        except Exception:
             continue
-        param_annots = fn_param_annots.get(fn.name, {})
-        downstream: dict[str, set[str]] = defaultdict(set)
-        for callee_name, pos_map, kw_map in call_args:
-            callee = _callee_key(callee_name)
-            if callee not in fn_by_name:
-                continue
-            callee_params = fn_param_orders.get(callee, [])
-            callee_annots = fn_param_annots.get(callee, {})
-            for pos_idx, param in pos_map.items():
-                try:
-                    idx = int(pos_idx)
-                except ValueError:
-                    continue
-                if idx >= len(callee_params):
-                    continue
-                callee_param = callee_params[idx]
-                annot = callee_annots.get(callee_param)
-                if annot:
-                    downstream[param].add(annot)
-            for kw_name, param in kw_map.items():
-                annot = callee_annots.get(kw_name)
-                if annot:
-                    downstream[param].add(annot)
-        for param, annots in downstream.items():
-            if not annots:
-                continue
-            if len(annots) > 1:
-                ambiguities.append(
-                    f"{path.name}:{fn.name}.{param} downstream types conflict: {sorted(annots)}"
-                )
-                continue
-            downstream_annot = next(iter(annots))
-            current = param_annots.get(param)
-            if _is_broad_type(current) and downstream_annot:
-                suggestions.append(
-                    f"{path.name}:{fn.name}.{param} can tighten to {downstream_annot}"
-                )
-    return suggestions, ambiguities
+        funcs = _collect_functions(tree)
+        if not funcs:
+            continue
+        parents = ParentAnnotator()
+        parents.visit(tree)
+        parent_map = parents.parents
+        module = _module_name(path)
+        for fn in funcs:
+            _, call_args = _analyze_function(fn, parent_map)
+            info = FunctionInfo(
+                name=fn.name,
+                qual=f"{module}.{fn.name}",
+                path=path,
+                params=_param_names(fn),
+                annots=_param_annotations(fn),
+                calls=call_args,
+            )
+            by_name[fn.name].append(info)
+            by_qual[info.qual] = info
+    return by_name, by_qual
+
+
+def _resolve_callee(
+    callee_name: str,
+    caller: FunctionInfo,
+    by_name: dict[str, list[FunctionInfo]],
+    by_qual: dict[str, FunctionInfo],
+) -> FunctionInfo | None:
+    if not callee_name:
+        return None
+    # Exact qualified name match.
+    if callee_name in by_qual:
+        return by_qual[callee_name]
+    # If call uses module.func, try match by module suffix.
+    if "." in callee_name:
+        parts = callee_name.split(".")
+        func = parts[-1]
+        module = ".".join(parts[:-1])
+        candidates = [
+            info
+            for info in by_name.get(func, [])
+            if info.qual.endswith(f"{module}.{func}")
+        ]
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+    # Fallback: unique function name across repo.
+    candidates = by_name.get(callee_name, [])
+    if len(candidates) == 1:
+        return candidates[0]
+    return None
+
+
+def analyze_type_flow_repo(paths: list[Path]) -> tuple[list[str], list[str]]:
+    """Repo-wide fixed-point pass for downstream type tightening."""
+    by_name, by_qual = _build_function_index(paths)
+    inferred: dict[str, dict[str, str | None]] = {}
+    for infos in by_name.values():
+        for info in infos:
+            inferred[info.qual] = dict(info.annots)
+
+    def _get_annot(info: FunctionInfo, param: str) -> str | None:
+        return inferred.get(info.qual, {}).get(param)
+
+    suggestions: set[str] = set()
+    ambiguities: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for infos in by_name.values():
+            for info in infos:
+                downstream: dict[str, set[str]] = defaultdict(set)
+                for callee_name, pos_map, kw_map in info.calls:
+                    callee = _resolve_callee(callee_name, info, by_name, by_qual)
+                    if callee is None:
+                        continue
+                    callee_params = callee.params
+                    for pos_idx, param in pos_map.items():
+                        try:
+                            idx = int(pos_idx)
+                        except ValueError:
+                            continue
+                        if idx >= len(callee_params):
+                            continue
+                        callee_param = callee_params[idx]
+                        annot = _get_annot(callee, callee_param)
+                        if annot:
+                            downstream[param].add(annot)
+                    for kw_name, param in kw_map.items():
+                        annot = _get_annot(callee, kw_name)
+                        if annot:
+                            downstream[param].add(annot)
+                for param, annots in downstream.items():
+                    if not annots:
+                        continue
+                    if len(annots) > 1:
+                        ambiguities.add(
+                            f"{info.path.name}:{info.name}.{param} downstream types conflict: {sorted(annots)}"
+                        )
+                        continue
+                    downstream_annot = next(iter(annots))
+                    current = _get_annot(info, param)
+                    if _is_broad_type(current) and downstream_annot:
+                        if inferred[info.qual].get(param) != downstream_annot:
+                            inferred[info.qual][param] = downstream_annot
+                            changed = True
+                        suggestions.add(
+                            f"{info.path.name}:{info.name}.{param} can tighten to {downstream_annot}"
+                        )
+    return sorted(suggestions), sorted(ambiguities)
 
 
 def _iter_config_fields(path: Path) -> dict[str, set[str]]:
@@ -664,12 +737,7 @@ def main() -> None:
             )
         return
     if args.type_audit:
-        suggestions: list[str] = []
-        ambiguities: list[str] = []
-        for path in paths:
-            s, a = analyze_type_flow(path)
-            suggestions.extend(s)
-            ambiguities.extend(a)
+        suggestions, ambiguities = analyze_type_flow_repo(paths)
         if suggestions:
             print("Type tightening candidates:")
             for line in suggestions[: args.type_audit_max]:
