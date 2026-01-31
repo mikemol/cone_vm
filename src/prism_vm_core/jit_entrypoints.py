@@ -43,6 +43,7 @@ from prism_bsp.config import (
     DEFAULT_ARENA_INTERACT_CONFIG,
     DEFAULT_ARENA_CYCLE_CONFIG,
     DEFAULT_INTRINSIC_CONFIG,
+    SwizzleWithPermFnsBound,
 )
 from prism_vm_core.protocols import EmitCandidatesFn, HostRaiseFn, InternFn
 
@@ -785,6 +786,13 @@ def _cycle_jit(
     op_interact_fn,
 ):
     cycle_core_fn = bind_optional_kwargs(_cycle_core, guard_cfg=guard_cfg)
+    swizzle_with_perm_fns = SwizzleWithPermFnsBound(
+        with_perm=op_sort_and_swizzle_with_perm_fn,
+        morton_with_perm=op_sort_and_swizzle_morton_with_perm_fn,
+        blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_fn,
+        hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_fn,
+        servo_with_perm=op_sort_and_swizzle_servo_with_perm_fn,
+    )
 
     def _impl(arena, root_ptr):
         return cycle_core_fn(
@@ -801,11 +809,7 @@ def _cycle_jit(
             servo_enabled_fn=lambda: servo_enabled_value,
             servo_update_fn=servo_update_fn,
             op_morton_fn=op_morton_fn,
-            op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_fn,
-            op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_fn,
-            op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_fn,
-            op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
-            op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
+            swizzle_with_perm_fns=swizzle_with_perm_fns,
             safe_gather_fn=safe_gather_fn,
             arena_root_hash_fn=_noop_root_hash,
             damage_tile_size_fn=_noop_tile_size,

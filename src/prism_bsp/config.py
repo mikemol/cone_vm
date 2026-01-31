@@ -659,6 +659,17 @@ class SwizzleWithPermFns:
 
 
 @dataclass(frozen=True, slots=True)
+class SwizzleWithPermFnsBound:
+    """Required swizzle-with-perm bundle (no None fields)."""
+
+    with_perm: OpSortWithPermFn
+    morton_with_perm: OpSortWithPermFn
+    blocked_with_perm: OpSortWithPermFn
+    hierarchical_with_perm: OpSortWithPermFn
+    servo_with_perm: OpSortWithPermFn
+
+
+@dataclass(frozen=True, slots=True)
 class ArenaCycleConfig:
     """Arena cycle DI bundle."""
 
@@ -712,6 +723,7 @@ __all__ = [
     "ArenaInteractConfig",
     "DEFAULT_ARENA_INTERACT_CONFIG",
     "SwizzleWithPermFns",
+    "SwizzleWithPermFnsBound",
     "ArenaCycleConfig",
     "DEFAULT_ARENA_CYCLE_CONFIG",
     "IntrinsicConfig",

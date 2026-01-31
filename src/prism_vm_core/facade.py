@@ -66,6 +66,7 @@ from prism_bsp.config import (
     ArenaInteractConfig,
     DEFAULT_ARENA_INTERACT_CONFIG,
     SwizzleWithPermFns,
+    SwizzleWithPermFnsBound,
     ArenaCycleConfig,
     DEFAULT_ARENA_CYCLE_CONFIG,
     IntrinsicConfig,
