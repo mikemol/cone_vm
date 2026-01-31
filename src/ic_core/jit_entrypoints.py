@@ -18,7 +18,8 @@ from ic_core.engine import (
     DEFAULT_ENGINE_RESOLVED,
 )
 from ic_core.engine import ic_apply_active_pairs, ic_reduce
-from ic_core.types import ICState, WireEndpoints, WirePtrPair, WireStarEndpoints
+from ic_core.bundles import WireEndpoints, WirePtrPair, WireStarEndpoints
+from ic_core.graph import ICState
 from ic_core.graph import (
     ic_compact_active_pairs,
     ic_compact_active_pairs_result,
