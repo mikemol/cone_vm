@@ -1,5 +1,5 @@
 ---
-doc_revision: 1
+doc_revision: 2
 reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
 ---
 
@@ -68,3 +68,19 @@ Local run:
 ```
 scripts/check_agda_container.sh
 ```
+
+## Dataflow grammar invariant
+Recurring parameter bundles are treated as type-level smells. Any bundle that
+crosses function boundaries must be promoted to a dataclass (config or local
+bundle), or explicitly documented.
+
+The dataflow grammar audit enforces:
+- Tier 1/2 bundles (crossing config or recurring across functions) must be
+  promoted to a dataclass bundle.
+- Tier 3 bundles (single-site) must either be promoted or documented in-place.
+
+To document an intentional unbundled tuple, add a marker comment:
+```
+# dataflow-bundle: a1, a2, a3
+```
+and explain why it must remain unbundled.

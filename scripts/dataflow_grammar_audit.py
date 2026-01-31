@@ -21,6 +21,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Iterator
+import re
 
 
 @dataclass
@@ -272,6 +273,30 @@ def _iter_config_fields(path: Path) -> dict[str, set[str]]:
     return bundles
 
 
+_BUNDLE_MARKER = re.compile(r"dataflow-bundle:\s*(.*)")
+
+
+def _iter_documented_bundles(path: Path) -> set[tuple[str, ...]]:
+    """Return bundles documented via '# dataflow-bundle: a, b' markers."""
+    bundles: set[tuple[str, ...]] = set()
+    try:
+        text = path.read_text()
+    except Exception:
+        return bundles
+    for line in text.splitlines():
+        match = _BUNDLE_MARKER.search(line)
+        if not match:
+            continue
+        payload = match.group(1)
+        if not payload:
+            continue
+        parts = [p.strip() for p in re.split(r"[,\s]+", payload) if p.strip()]
+        if len(parts) < 2:
+            continue
+        bundles.add(tuple(sorted(parts)))
+    return bundles
+
+
 def _emit_dot(groups_by_path: dict[Path, dict[str, list[set[str]]]]) -> str:
     lines = [
         "digraph dataflow_grammar {",
@@ -296,7 +321,7 @@ def _emit_dot(groups_by_path: dict[Path, dict[str, list[set[str]]]]) -> str:
                 lines.append(f"    {fn_id} -> {bundle_id};")
         lines.append("  }")
     lines.append("}")
-    return "\n".join(lines)
+    return "\n".join(lines), violations
 
 
 def _component_graph(groups_by_path: dict[Path, dict[str, list[set[str]]]]):
@@ -348,6 +373,7 @@ def _render_mermaid_component(
     adj: dict[str, set[str]],
     component: list[str],
     config_bundles_by_path: dict[Path, dict[str, set[str]]],
+    documented_bundles_by_path: dict[Path, set[tuple[str, ...]]],
 ) -> tuple[str, str]:
     lines = ["```mermaid", "flowchart LR"]
     fn_nodes = [n for n in component if nodes[n]["kind"] == "fn"]
@@ -379,12 +405,16 @@ def _render_mermaid_component(
     lines.append("```")
 
     observed = [bundle_map[n] for n in bundle_nodes if n in bundle_map]
+    bundle_counts: dict[tuple[str, ...], int] = defaultdict(int)
+    for bundle in observed:
+        bundle_counts[tuple(sorted(bundle))] += 1
     component_paths: set[Path] = set()
     for n in fn_nodes:
         parts = n.split("::", 2)
         if len(parts) == 3:
             component_paths.add(Path(parts[1]))
     declared = set()
+    documented = set()
     for path in component_paths:
         config_path = path.parent / "config.py"
         bundles = config_bundles_by_path.get(config_path)
@@ -392,9 +422,18 @@ def _render_mermaid_component(
             continue
         for fields in bundles.values():
             declared.add(tuple(sorted(fields)))
+        documented |= documented_bundles_by_path.get(path, set())
     observed_norm = {tuple(sorted(b)) for b in observed}
     observed_only = sorted(observed_norm - declared) if declared else sorted(observed_norm)
     declared_only = sorted(declared - observed_norm)
+    documented_only = sorted(observed_norm & documented)
+    def _tier(bundle: tuple[str, ...]) -> str:
+        count = bundle_counts.get(bundle, 1)
+        if declared:
+            return "tier-1"
+        if count > 1:
+            return "tier-2"
+        return "tier-3"
     summary_lines = [
         f"Functions: {len(fn_nodes)}",
         f"Observed bundles: {len(observed_norm)}",
@@ -403,7 +442,15 @@ def _render_mermaid_component(
         summary_lines.append("Declared Config bundles: none found for this component.")
     if observed_only:
         summary_lines.append("Observed-only bundles (not declared in Configs):")
-        summary_lines.extend(f"  - {', '.join(bundle)}" for bundle in observed_only)
+        for bundle in observed_only:
+            tier = _tier(bundle)
+            documented_flag = "documented" if bundle in documented else "undocumented"
+            summary_lines.append(
+                f"  - {', '.join(bundle)} ({tier}, {documented_flag})"
+            )
+    if documented_only:
+        summary_lines.append("Documented bundles (dataflow-bundle markers):")
+        summary_lines.extend(f"  - {', '.join(bundle)}" for bundle in documented_only)
     if declared_only:
         summary_lines.append("Declared Config bundles not observed in this component:")
         summary_lines.extend(f"  - {', '.join(bundle)}" for bundle in declared_only)
@@ -414,32 +461,41 @@ def _render_mermaid_component(
 def _emit_report(
     groups_by_path: dict[Path, dict[str, list[set[str]]]],
     max_components: int,
-) -> str:
+) -> tuple[str, list[str]]:
     nodes, adj, bundle_map = _component_graph(groups_by_path)
     components = _connected_components(nodes, adj)
     roots = {p if p.is_dir() else p.parent for p in groups_by_path}
     root = sorted(roots)[0] if roots else Path(".")
     config_bundles_by_path = {}
+    documented_bundles_by_path = {}
     for path in sorted(root.rglob("config.py")):
         config_bundles_by_path[path] = _iter_config_fields(path)
     protocols = root / "prism_vm_core" / "protocols.py"
     if protocols.exists():
         config_bundles_by_path[protocols] = _iter_config_fields(protocols)
+    for path in sorted(root.rglob("*.py")):
+        documented_bundles_by_path[path] = _iter_documented_bundles(path)
     lines = [
         "<!-- dataflow-grammar -->",
         "Dataflow grammar audit (observed forwarding bundles).",
         "",
     ]
     if not components:
-        return "\n".join(lines + ["No bundle components detected."])
+        return "\n".join(lines + ["No bundle components detected."]), []
     if len(components) > max_components:
         lines.append(
             f"Showing top {max_components} components of {len(components)}."
         )
+    violations: list[str] = []
     for idx, comp in enumerate(components[:max_components], start=1):
         lines.append(f"### Component {idx}")
         mermaid, summary = _render_mermaid_component(
-            nodes, bundle_map, adj, comp, config_bundles_by_path
+            nodes,
+            bundle_map,
+            adj,
+            comp,
+            config_bundles_by_path,
+            documented_bundles_by_path,
         )
         lines.append(mermaid)
         lines.append("")
@@ -448,6 +504,19 @@ def _emit_report(
         lines.append(summary)
         lines.append("```")
         lines.append("")
+        for line in summary.splitlines():
+            if "(tier-3, undocumented)" in line:
+                violations.append(line.strip())
+            if "(tier-1," in line or "(tier-2," in line:
+                if "undocumented" in line:
+                    violations.append(line.strip())
+                elif "documented" in line:
+                    violations.append(line.strip())
+    if violations:
+        lines.append("Violations:")
+        lines.append("```")
+        lines.extend(violations)
+        lines.append("```")
     return "\n".join(lines)
 
 
@@ -458,6 +527,11 @@ def main() -> None:
     parser.add_argument("--dot", default=None, help="Write DOT graph to file or '-' for stdout.")
     parser.add_argument("--report", default=None, help="Write Markdown report (mermaid) to file.")
     parser.add_argument("--max-components", type=int, default=10, help="Max components in report.")
+    parser.add_argument(
+        "--fail-on-violations",
+        action="store_true",
+        help="Exit non-zero if undocumented/undeclared bundle violations are detected.",
+    )
     args = parser.parse_args()
     paths = _iter_paths(args.paths)
     groups_by_path: dict[Path, dict[str, list[set[str]]]] = {}
@@ -472,8 +546,12 @@ def main() -> None:
         if args.report is None:
             return
     if args.report is not None:
-        report = _emit_report(groups_by_path, args.max_components)
+        report, violations = _emit_report(groups_by_path, args.max_components)
         Path(args.report).write_text(report)
+        if args.fail_on_violations and violations:
+            raise SystemExit(
+                f"dataflow grammar violations detected: {len(violations)}"
+            )
         return
     for path, groups in groups_by_path.items():
         print(f"# {path}")

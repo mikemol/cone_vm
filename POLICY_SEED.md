@@ -1,5 +1,5 @@
 ---
-doc_revision: 1
+doc_revision: 2
 reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
 ---
 
@@ -49,6 +49,12 @@ commutation, and test obligations for polysemous terms: `in/glossary.md`.
 **Relationship:** This policy governs *where/when/how* code may execute (security and
 execution safety). The glossary governs *what the code means* and *what must commute*
 (semantic correctness). Both contracts must be satisfied for any change to be valid.
+
+**Dataflow grammar invariant:** The repository enforces a dataflow grammar audit
+that treats recurring parameter bundles as type-level obligations. Any bundle that
+crosses function boundaries must be promoted to a dataclass (config or local bundle),
+or explicitly documented with a `# dataflow-bundle:` marker. This is enforced in CI
+as part of semantic correctness.
 
 ---
 

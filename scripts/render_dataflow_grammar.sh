@@ -9,7 +9,10 @@ REPORT_FILE="${OUT_DIR}/report.md"
 
 mkdir -p "${OUT_DIR}"
 
-python scripts/dataflow_grammar_audit.py "${ROOT}" --dot "${DOT_FILE}" --report "${REPORT_FILE}"
+python scripts/dataflow_grammar_audit.py "${ROOT}" \
+  --dot "${DOT_FILE}" \
+  --report "${REPORT_FILE}" \
+  --fail-on-violations
 
 if command -v dot >/dev/null 2>&1; then
   dot -Tpng "${DOT_FILE}" -o "${PNG_FILE}"
