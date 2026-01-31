@@ -457,7 +457,6 @@ def _cycle_candidates_core_impl(
     host_bool_value_fn = resolved.host_bool_value_fn
     host_int_value_fn = resolved.host_int_value_fn
     runtime_fns = resolved.runtime_fns
-    cnf2_slot1_enabled_fn = runtime_fns.cnf2_slot1_enabled_fn
     cnf2_metrics_update_fn = runtime_fns.cnf2_metrics_update_fn
     # BSPᵗ: temporal superstep / barrier semantics.
     frontier_ids = _committed_ids(frontier_ids)
@@ -565,7 +564,8 @@ def _cycle_candidates_core_impl(
     # test guards (m3 normative), hyperstrata visibility is enforced so slot1
     # reads only from slot0 + pre-step.
     # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
-    slot1_gate = cnf2_slot1_enabled_fn()
+    # M2 commit: slot1 is always enabled; no runtime gate.
+    slot1_gate = True
     slot1_add = is_add_suc & slot1_gate
     slot1_mul = is_mul_suc & slot1_gate
     slot1_enabled = slot1_add | slot1_mul

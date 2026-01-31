@@ -42,20 +42,8 @@ from prism_core.safety import (
     require_static_policy,
     require_value_policy,
 )
-from prism_core.modes import (
-    ValidateMode,
-    require_validate_mode,
-    BspMode,
-    coerce_bsp_mode,
-    Cnf2Mode,
-    coerce_cnf2_mode,
-)
-from prism_core.errors import (
-    PrismPolicyModeError,
-    PrismPolicyBindingError,
-    PrismCnf2ModeError,
-    PrismCnf2ModeConflictError,
-)
+from prism_core.modes import ValidateMode, require_validate_mode, BspMode, coerce_bsp_mode
+from prism_core.errors import PrismPolicyModeError, PrismPolicyBindingError
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
 from prism_bsp.config import (
@@ -63,9 +51,7 @@ from prism_bsp.config import (
     Cnf2BoundConfig,
     Cnf2StaticBoundConfig,
     Cnf2ValueBoundConfig,
-    Cnf2Flags,
     DEFAULT_CNF2_CONFIG,
-    DEFAULT_CNF2_FLAGS,
     Cnf2RuntimeFns,
     DEFAULT_CNF2_RUNTIME_FNS,
     Cnf2CandidateFns,
@@ -649,8 +635,6 @@ def cnf2_config_with_guard(
     """Return a Cnf2Config with guard_cfg set."""
     return replace(cfg, guard_cfg=guard_cfg)
 from prism_vm_core.gating import (
-    _cnf2_enabled as _cnf2_enabled_default,
-    _cnf2_slot1_enabled as _cnf2_slot1_enabled_default,
     _default_bsp_mode,
     _gpu_metrics_device_index,
     _gpu_metrics_enabled,
@@ -773,8 +757,6 @@ ValidateMode = ValidateMode
 require_validate_mode = require_validate_mode
 BspMode = BspMode
 coerce_bsp_mode = coerce_bsp_mode
-Cnf2Mode = Cnf2Mode
-coerce_cnf2_mode = coerce_cnf2_mode
 PolicyValue = PolicyValue
 POLICY_VALUE_CORRUPT = POLICY_VALUE_CORRUPT
 POLICY_VALUE_CLAMP = POLICY_VALUE_CLAMP
@@ -1004,8 +986,6 @@ _candidate_indices = _candidate_indices
 candidate_indices_cfg = candidate_indices_cfg
 _scatter_compacted_ids = _scatter_compacted_ids
 scatter_compacted_ids_cfg = _scatter_compacted_ids_cfg
-_cnf2_enabled = _cnf2_enabled_default
-_cnf2_slot1_enabled = _cnf2_slot1_enabled_default
 emit_candidates = _emit_candidates
 emit_candidates_cfg = _emit_candidates_cfg
 compact_candidates = _compact_candidates
@@ -1083,9 +1063,7 @@ _gpu_watchdog_create = _gpu_watchdog_create
 InternConfig = InternConfig
 DEFAULT_INTERN_CONFIG = DEFAULT_INTERN_CONFIG
 Cnf2Config = Cnf2Config
-Cnf2Flags = Cnf2Flags
 DEFAULT_CNF2_CONFIG = DEFAULT_CNF2_CONFIG
-DEFAULT_CNF2_FLAGS = DEFAULT_CNF2_FLAGS
 CoordConfig = CoordConfig
 DEFAULT_COORD_CONFIG = DEFAULT_COORD_CONFIG
 dispatch_kernel = dispatch_kernel
@@ -1289,32 +1267,14 @@ def _cycle_candidates_common(
     safe_gather_policy_value: PolicyValue | None,
     guard_cfg: GuardConfig | None,
     cnf2_cfg: Cnf2Config | None,
-    cnf2_flags: Cnf2Flags | None,
-    cnf2_mode: Cnf2Mode | None,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Shared wrapper for CNF-2 entrypoints with explicit policy mode."""
     if not isinstance(policy_mode, PolicyMode):
         raise PrismPolicyModeError(mode=policy_mode, context="cycle_candidates")
-    if cnf2_mode is not None and not isinstance(cnf2_mode, Cnf2Mode):
-        raise PrismCnf2ModeError(mode=cnf2_mode)
     if intern_fn is None:
         intern_fn = intern_nodes
-    if cnf2_cfg is not None and cnf2_flags is not None:
-        cnf2_cfg = replace(cnf2_cfg, flags=cnf2_flags)
-    elif cnf2_cfg is None and cnf2_flags is not None:
-        cnf2_cfg = Cnf2Config(flags=cnf2_flags)
     if cnf2_cfg is not None:
-        if cnf2_mode is None and cnf2_cfg.cnf2_mode is not None:
-            cnf2_mode = cnf2_cfg.cnf2_mode
-        elif cnf2_mode is not None and cnf2_cfg.cnf2_mode is not None:
-            mode_a = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates")
-            mode_b = coerce_cnf2_mode(cnf2_cfg.cnf2_mode, context="cycle_candidates")
-            if mode_a != mode_b:
-                raise PrismCnf2ModeConflictError(
-                    "cycle_candidates received both cnf2_mode and cfg.cnf2_mode",
-                    context="cycle_candidates",
-                )
         if intern_cfg is None:
             intern_cfg = cnf2_cfg.intern_cfg
         if guard_cfg is None and cnf2_cfg.guard_cfg is not None:
@@ -1325,7 +1285,6 @@ def _cycle_candidates_common(
             emit_candidates_fn = cnf2_cfg.emit_candidates_fn
         if runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
             runtime_fns = cnf2_cfg.runtime_fns
-        cnf2_flags = cnf2_cfg.flags if cnf2_flags is None else cnf2_flags
         if policy_mode == PolicyMode.STATIC:
             if cnf2_cfg.policy_binding is not None:
                 if cnf2_cfg.policy_binding.mode == PolicyMode.VALUE:
@@ -1389,33 +1348,6 @@ def _cycle_candidates_common(
                 context="cycle_candidates_value",
                 policy_mode=PolicyMode.VALUE,
             )
-    if cnf2_mode is not None:
-        mode = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates")
-        if mode != Cnf2Mode.AUTO:
-            if cnf2_flags is not None or runtime_fns is not DEFAULT_CNF2_RUNTIME_FNS:
-                raise PrismCnf2ModeConflictError(
-                    "cycle_candidates received cnf2_mode alongside cnf2_flags or runtime_fns overrides",
-                    context="cycle_candidates",
-                )
-            enabled_value = mode in (Cnf2Mode.BASE, Cnf2Mode.SLOT1)
-            slot1_value = mode == Cnf2Mode.SLOT1
-            runtime_fns = replace(
-                runtime_fns,
-                cnf2_enabled_fn=lambda: enabled_value,
-                cnf2_slot1_enabled_fn=lambda: slot1_value,
-            )
-            cnf2_flags = None
-    if cnf2_flags is not None:
-        if cnf2_flags.enabled is not None:
-            enabled_value = bool(cnf2_flags.enabled)
-            runtime_fns = replace(
-                runtime_fns, cnf2_enabled_fn=lambda: enabled_value
-            )
-        if cnf2_flags.slot1_enabled is not None:
-            slot1_value = bool(cnf2_flags.slot1_enabled)
-            runtime_fns = replace(
-                runtime_fns, cnf2_slot1_enabled_fn=lambda: slot1_value
-            )
     if emit_candidates_fn is None:
         emit_candidates_fn = _emit_candidates_default
     if host_raise_if_bad_fn is None:
@@ -1467,8 +1399,6 @@ def cycle_candidates_static(
     safe_gather_policy: SafetyPolicy | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | None = None,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation (static policy)."""
@@ -1485,8 +1415,6 @@ def cycle_candidates_static(
         safe_gather_policy_value=None,
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
-        cnf2_flags=cnf2_flags,
-        cnf2_mode=cnf2_mode,
         runtime_fns=runtime_fns,
     )
 
@@ -1503,8 +1431,6 @@ def cycle_candidates_value(
     safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | None = None,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation (policy as JAX value)."""
@@ -1521,8 +1447,6 @@ def cycle_candidates_value(
         safe_gather_policy_value=safe_gather_policy_value,
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
-        cnf2_flags=cnf2_flags,
-        cnf2_mode=cnf2_mode,
         runtime_fns=runtime_fns,
     )
 
@@ -1540,8 +1464,6 @@ def cycle_candidates(
     safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | None = None,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation with DI hooks.
@@ -1568,8 +1490,6 @@ def cycle_candidates(
             ),
             guard_cfg=guard_cfg,
             cnf2_cfg=cnf2_cfg,
-            cnf2_flags=cnf2_flags,
-            cnf2_mode=cnf2_mode,
             runtime_fns=runtime_fns,
         )
     return cycle_candidates_static(
@@ -1585,8 +1505,6 @@ def cycle_candidates(
         ),
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
-        cnf2_flags=cnf2_flags,
-        cnf2_mode=cnf2_mode,
         runtime_fns=runtime_fns,
     )
 
@@ -1602,15 +1520,11 @@ def cycle_candidates_bound(
     emit_candidates_fn: EmitCandidatesFn | None = None,
     host_raise_if_bad_fn: HostRaiseFn | None = None,
     guard_cfg: GuardConfig | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | None = None,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation with required PolicyBinding."""
     if host_raise_if_bad_fn is None:
         host_raise_if_bad_fn = _host_raise_if_bad
-    if cnf2_mode is not None:
-        _ = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates_bound")
     base_cfg = cfg.as_cfg()
     if base_cfg.policy_binding is not None or base_cfg.safe_gather_policy is not None or base_cfg.safe_gather_policy_value is not None:
         base_cfg = replace(
@@ -1619,10 +1533,6 @@ def cycle_candidates_bound(
             safe_gather_policy=None,
             safe_gather_policy_value=None,
         )
-    if cnf2_flags is not None:
-        base_cfg = replace(base_cfg, flags=cnf2_flags)
-    if cnf2_mode is not None:
-        base_cfg = replace(base_cfg, cnf2_mode=cnf2_mode)
     cfg = cnf2_config_bound(cfg.policy_binding, cfg=base_cfg)
     bundle = _EmitInternFns(emit_candidates_fn=emit_candidates_fn, intern_fn=intern_fn)
     ledger, frontier_ids, strata, q_map = _cycle_candidates_bound(

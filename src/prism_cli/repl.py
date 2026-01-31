@@ -78,7 +78,6 @@ from prism_vm_core.types import (
 )
 from prism_vm_core.facade import (
     _key_order_commutative_host,
-    _cnf2_enabled,
     _normalize_bsp_mode,
     cycle_candidates,
     init_arena,
@@ -506,8 +505,6 @@ def run_program_lines_bsp(
     if vm is None:
         vm = PrismVM_BSP()
     bsp_mode = _normalize_bsp_mode(bsp_mode)
-    if bsp_mode == BspMode.CNF2 and not _cnf2_enabled():
-        raise ValueError("bsp_mode='cnf2' disabled until m2")
     for inp in lines:
         inp = inp.strip()
         if not inp or inp.startswith("#"):

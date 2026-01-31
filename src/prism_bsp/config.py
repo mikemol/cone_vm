@@ -16,8 +16,8 @@ from prism_core.safety import (
     oob_any,
     oob_any_value,
 )
-from prism_core.modes import Cnf2Mode, coerce_cnf2_mode, ValidateMode, require_validate_mode
-from prism_core.errors import PrismCnf2ModeConflictError, PrismPolicyBindingError
+from prism_core.modes import ValidateMode, require_validate_mode
+from prism_core.errors import PrismPolicyBindingError
 from prism_core.di import call_with_optional_kwargs
 from prism_ledger.config import InternConfig
 from prism_core.protocols import (
@@ -57,26 +57,12 @@ from prism_vm_core.protocols import (
 from prism_vm_core.candidates import candidate_indices_cfg
 from prism_coord.coord import coord_xor_batch
 from prism_ledger.intern import intern_nodes
-from prism_vm_core.gating import _cnf2_enabled, _cnf2_slot1_enabled
-from prism_metrics.metrics import _cnf2_metrics_enabled, _cnf2_metrics_update
+from prism_metrics.metrics import _cnf2_metrics_update
 from prism_vm_core.guards import _guards_enabled
 from prism_vm_core.domains import _host_bool_value, _host_int_value
 from prism_vm_core.hashes import _ledger_roots_hash_host
 from prism_semantics.commit import commit_stratum_bound, commit_stratum_value
 
-
-@dataclass(frozen=True, slots=True)
-class Cnf2Flags:
-    """CNF-2 gate toggles for DI.
-
-    None means "defer to default gating".
-    """
-
-    enabled: bool | None = None
-    slot1_enabled: bool | None = None
-
-
-DEFAULT_CNF2_FLAGS = Cnf2Flags()
 
 @dataclass(frozen=True, slots=True)
 class Cnf2Config:
@@ -86,8 +72,6 @@ class Cnf2Config:
     arguments override config values (DI precedence).
     """
 
-    cnf2_mode: Cnf2Mode | None = None
-    flags: Cnf2Flags | None = None
     intern_cfg: InternConfig | None = None
     coord_cfg: CoordConfig | None = None
     intern_fn: InternFn | None = None
@@ -140,7 +124,6 @@ class Cnf2ResolvedInputs:
     host_int_value_fn: HostIntValueFn
     guards_enabled_fn: GuardsEnabledFn
     ledger_roots_hash_host_fn: LedgerRootsHashFn
-    cnf2_mode: Cnf2Mode | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,9 +148,6 @@ class Cnf2CandidateFns:
 class Cnf2RuntimeFns:
     """Bundle of runtime control hooks observed as a forwarding group."""
 
-    cnf2_enabled_fn: Callable[[], bool] = _cnf2_enabled
-    cnf2_slot1_enabled_fn: Callable[[], bool] = _cnf2_slot1_enabled
-    cnf2_metrics_enabled_fn: Callable[[], bool] = _cnf2_metrics_enabled
     cnf2_metrics_update_fn: Callable[[int, int, int], None] = _cnf2_metrics_update
 
 
@@ -316,7 +296,6 @@ def resolve_cnf2_inputs(
     ledger_roots_hash_default = ledger_roots_hash_host_fn
     runtime_default = runtime_fns
 
-    cnf2_mode = None
     if cfg is not None:
         if cfg.policy_fns is not None:
             policy_bundle = cfg.policy_fns
@@ -342,7 +321,6 @@ def resolve_cnf2_inputs(
                 context="cycle_candidates_core",
                 policy_mode="ambiguous",
             )
-        cnf2_mode = cfg.cnf2_mode
         guard_cfg = cfg.guard_cfg if guard_cfg is None else guard_cfg
         intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
         if cfg.coord_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
@@ -397,40 +375,11 @@ def resolve_cnf2_inputs(
             ledger_roots_hash_default,
             cfg.ledger_roots_hash_host_fn,
         )
-        if cfg.flags is not None:
-            if cfg.flags.enabled is not None:
-                enabled_value = bool(cfg.flags.enabled)
-                runtime_fns = replace(
-                    runtime_fns, cnf2_enabled_fn=lambda: enabled_value
-                )
-            if cfg.flags.slot1_enabled is not None:
-                slot1_value = bool(cfg.flags.slot1_enabled)
-                runtime_fns = replace(
-                    runtime_fns, cnf2_slot1_enabled_fn=lambda: slot1_value
-                )
         if cfg.safe_gather_ok_value_fn is not None and getattr(safe_gather_ok_fn, "_prism_policy_bound", False):
             raise PrismPolicyBindingError(
                 "cycle_candidates_core received cfg.safe_gather_ok_value_fn with policy-bound safe_gather_ok_fn",
                 context="cycle_candidates_core",
                 policy_mode="ambiguous",
-            )
-    if cnf2_mode is not None:
-        mode = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates_core")
-        if mode != Cnf2Mode.AUTO:
-            if (
-                cfg is not None
-                and cfg.flags is not None
-            ) or runtime_fns is not runtime_default:
-                raise PrismCnf2ModeConflictError(
-                    "cycle_candidates_core received cnf2_mode alongside cnf2_flags or runtime_fns overrides",
-                    context="cycle_candidates_core",
-                )
-            enabled_value = mode in (Cnf2Mode.BASE, Cnf2Mode.SLOT1)
-            slot1_value = mode == Cnf2Mode.SLOT1
-            runtime_fns = replace(
-                runtime_fns,
-                cnf2_enabled_fn=lambda: enabled_value,
-                cnf2_slot1_enabled_fn=lambda: slot1_value,
             )
     if intern_cfg is not None and intern_fn is intern_nodes:
         intern_fn = partial(intern_nodes, cfg=intern_cfg)
@@ -444,8 +393,6 @@ def resolve_cnf2_inputs(
             context="cycle_candidates_core",
             policy_mode="static",
         )
-    if runtime_fns.cnf2_metrics_enabled_fn is not None and not runtime_fns.cnf2_metrics_enabled_fn():
-        runtime_fns = replace(runtime_fns, cnf2_metrics_update_fn=lambda *_: None)
     if node_batch_fn is None:
         raise ValueError("node_batch_fn is required")
     if emit_candidates_fn is None:
@@ -479,7 +426,6 @@ def resolve_cnf2_inputs(
         host_int_value_fn=host_int_value_fn,
         guards_enabled_fn=guards_enabled_fn,
         ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
-        cnf2_mode=cnf2_mode,
     )
 
 
@@ -737,8 +683,6 @@ class IntrinsicConfig:
 DEFAULT_INTRINSIC_CONFIG = IntrinsicConfig()
 
 __all__ = [
-    "Cnf2Flags",
-    "DEFAULT_CNF2_FLAGS",
     "Cnf2Config",
     "DEFAULT_CNF2_CONFIG",
     "Cnf2StaticBoundConfig",

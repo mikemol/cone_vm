@@ -24,8 +24,6 @@ def test_cqrs_replay_matches_intrinsic_cycles():
 
 
 def test_cqrs_replay_matches_cnf2_cycles():
-    if not pv._cnf2_enabled():
-        pytest.skip("CNF-2 disabled")
     vm = pv.PrismVM_BSP()
     root_ptr = harness.parse_expr(vm, "(mul (suc zero) (suc zero))")
     frontier = pv._committed_ids(jnp.array([int(root_ptr)], dtype=jnp.int32))

@@ -74,13 +74,6 @@ def _assert_ledger_snapshot(ledger, snapshot):
         assert (field == expected).all()
 
 
-def test_cycle_candidates_accepts_cnf2_flags():
-    _require_cycle_candidates()
-    ledger = pv.init_ledger()
-    frontier = committed_ids(pv.ZERO_PTR)
-    cycle_candidates(ledger, frontier, cnf2_flags=pv.Cnf2Flags(enabled=False))
-
-
 def test_cycle_candidates_empty_frontier_no_mutation():
     _require_cycle_candidates()
     ledger = pv.init_ledger()

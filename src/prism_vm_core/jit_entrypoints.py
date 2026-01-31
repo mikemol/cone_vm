@@ -14,11 +14,7 @@ import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
-from prism_core.errors import (
-    PrismPolicyBindingError,
-    PrismCnf2ModeError,
-    PrismCnf2ModeConflictError,
-)
+from prism_core.errors import PrismPolicyBindingError
 from prism_core.di import bind_optional_kwargs, cached_jit, resolve
 from prism_core.guards import (
     GuardConfig,
@@ -35,12 +31,11 @@ from prism_core.safety import (
     require_static_policy,
     require_value_policy,
 )
-from prism_core.modes import ValidateMode, Cnf2Mode, coerce_cnf2_mode
+from prism_core.modes import ValidateMode
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
 from prism_bsp.config import (
     Cnf2Config,
-    Cnf2Flags,
     Cnf2RuntimeFns,
     DEFAULT_CNF2_RUNTIME_FNS,
     ArenaInteractConfig,
@@ -469,31 +464,12 @@ def cycle_candidates_static_jit(
     safe_gather_policy: SafetyPolicy | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | None = None,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Return a jitted cycle_candidates entrypoint (static policy)."""
-    if cnf2_mode is not None and not isinstance(cnf2_mode, Cnf2Mode):
-        raise PrismCnf2ModeError(mode=cnf2_mode)
-
     if intern_fn is None:
         intern_fn = _ledger_intern.intern_nodes
-    if cnf2_cfg is not None and cnf2_flags is not None:
-        cnf2_cfg = replace(cnf2_cfg, flags=cnf2_flags)
-    elif cnf2_cfg is None and cnf2_flags is not None:
-        cnf2_cfg = Cnf2Config(flags=cnf2_flags)
     if cnf2_cfg is not None:
-        if cnf2_mode is None and cnf2_cfg.cnf2_mode is not None:
-            cnf2_mode = cnf2_cfg.cnf2_mode
-        elif cnf2_mode is not None and cnf2_cfg.cnf2_mode is not None:
-            mode_a = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates_static_jit")
-            mode_b = coerce_cnf2_mode(cnf2_cfg.cnf2_mode, context="cycle_candidates_static_jit")
-            if mode_a != mode_b:
-                raise PrismCnf2ModeConflictError(
-                    "cycle_candidates_static_jit received both cnf2_mode and cfg.cnf2_mode",
-                    context="cycle_candidates_static_jit",
-                )
         if intern_cfg is None:
             intern_cfg = cnf2_cfg.intern_cfg
         if intern_fn is None and cnf2_cfg.intern_fn is not None:
@@ -527,34 +503,6 @@ def cycle_candidates_static_jit(
             guard_cfg = cnf2_cfg.guard_cfg
         if runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
             runtime_fns = cnf2_cfg.runtime_fns
-        cnf2_flags = cnf2_cfg.flags if cnf2_flags is None else cnf2_flags
-    if cnf2_mode is not None:
-        mode = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates_static_jit")
-        if mode != Cnf2Mode.AUTO:
-            if cnf2_flags is not None or runtime_fns is not DEFAULT_CNF2_RUNTIME_FNS:
-                raise PrismCnf2ModeConflictError(
-                    "cycle_candidates_static_jit received cnf2_mode alongside cnf2_flags or runtime_fns overrides",
-                    context="cycle_candidates_static_jit",
-                )
-            enabled_value = mode in (Cnf2Mode.BASE, Cnf2Mode.SLOT1)
-            slot1_value = mode == Cnf2Mode.SLOT1
-            runtime_fns = replace(
-                runtime_fns,
-                cnf2_enabled_fn=lambda: enabled_value,
-                cnf2_slot1_enabled_fn=lambda: slot1_value,
-            )
-            cnf2_flags = None
-    if cnf2_flags is not None:
-        if cnf2_flags.enabled is not None:
-            enabled_value = bool(cnf2_flags.enabled)
-            runtime_fns = replace(
-                runtime_fns, cnf2_enabled_fn=lambda: enabled_value
-            )
-        if cnf2_flags.slot1_enabled is not None:
-            slot1_value = bool(cnf2_flags.slot1_enabled)
-            runtime_fns = replace(
-                runtime_fns, cnf2_slot1_enabled_fn=lambda: slot1_value
-            )
     if emit_candidates_fn is None:
         emit_candidates_fn = _emit_candidates_default
     if host_raise_if_bad_fn is None:
@@ -597,31 +545,12 @@ def cycle_candidates_value_jit(
     safe_gather_policy_value: jnp.ndarray | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | None = None,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Return a jitted cycle_candidates entrypoint (policy as JAX value)."""
-    if cnf2_mode is not None and not isinstance(cnf2_mode, Cnf2Mode):
-        raise PrismCnf2ModeError(mode=cnf2_mode)
-
     if intern_fn is None:
         intern_fn = _ledger_intern.intern_nodes
-    if cnf2_cfg is not None and cnf2_flags is not None:
-        cnf2_cfg = replace(cnf2_cfg, flags=cnf2_flags)
-    elif cnf2_cfg is None and cnf2_flags is not None:
-        cnf2_cfg = Cnf2Config(flags=cnf2_flags)
     if cnf2_cfg is not None:
-        if cnf2_mode is None and cnf2_cfg.cnf2_mode is not None:
-            cnf2_mode = cnf2_cfg.cnf2_mode
-        elif cnf2_mode is not None and cnf2_cfg.cnf2_mode is not None:
-            mode_a = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates_value_jit")
-            mode_b = coerce_cnf2_mode(cnf2_cfg.cnf2_mode, context="cycle_candidates_value_jit")
-            if mode_a != mode_b:
-                raise PrismCnf2ModeConflictError(
-                    "cycle_candidates_value_jit received both cnf2_mode and cfg.cnf2_mode",
-                    context="cycle_candidates_value_jit",
-                )
         if intern_cfg is None:
             intern_cfg = cnf2_cfg.intern_cfg
         if intern_fn is None and cnf2_cfg.intern_fn is not None:
@@ -656,34 +585,6 @@ def cycle_candidates_value_jit(
             guard_cfg = cnf2_cfg.guard_cfg
         if runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
             runtime_fns = cnf2_cfg.runtime_fns
-        cnf2_flags = cnf2_cfg.flags if cnf2_flags is None else cnf2_flags
-    if cnf2_mode is not None:
-        mode = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates_value_jit")
-        if mode != Cnf2Mode.AUTO:
-            if cnf2_flags is not None or runtime_fns is not DEFAULT_CNF2_RUNTIME_FNS:
-                raise PrismCnf2ModeConflictError(
-                    "cycle_candidates_value_jit received cnf2_mode alongside cnf2_flags or runtime_fns overrides",
-                    context="cycle_candidates_value_jit",
-                )
-            enabled_value = mode in (Cnf2Mode.BASE, Cnf2Mode.SLOT1)
-            slot1_value = mode == Cnf2Mode.SLOT1
-            runtime_fns = replace(
-                runtime_fns,
-                cnf2_enabled_fn=lambda: enabled_value,
-                cnf2_slot1_enabled_fn=lambda: slot1_value,
-            )
-            cnf2_flags = None
-    if cnf2_flags is not None:
-        if cnf2_flags.enabled is not None:
-            enabled_value = bool(cnf2_flags.enabled)
-            runtime_fns = replace(
-                runtime_fns, cnf2_enabled_fn=lambda: enabled_value
-            )
-        if cnf2_flags.slot1_enabled is not None:
-            slot1_value = bool(cnf2_flags.slot1_enabled)
-            runtime_fns = replace(
-                runtime_fns, cnf2_slot1_enabled_fn=lambda: slot1_value
-            )
     if emit_candidates_fn is None:
         emit_candidates_fn = _emit_candidates_default
     if host_raise_if_bad_fn is None:
@@ -727,13 +628,9 @@ def cycle_candidates_jit(
     safe_gather_policy_value: jnp.ndarray | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | None = None,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Return a jitted cycle_candidates entrypoint for fixed DI."""
-    if cnf2_mode is not None and not isinstance(cnf2_mode, Cnf2Mode):
-        raise PrismCnf2ModeError(mode=cnf2_mode)
     binding = resolve_policy_binding(
         policy=safe_gather_policy,
         policy_value=safe_gather_policy_value,
@@ -751,8 +648,6 @@ def cycle_candidates_jit(
             ),
             guard_cfg=guard_cfg,
             cnf2_cfg=cnf2_cfg,
-            cnf2_flags=cnf2_flags,
-            cnf2_mode=cnf2_mode,
             runtime_fns=runtime_fns,
         )
     return cycle_candidates_static_jit(
@@ -766,8 +661,6 @@ def cycle_candidates_jit(
         ),
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
-        cnf2_flags=cnf2_flags,
-        cnf2_mode=cnf2_mode,
         runtime_fns=runtime_fns,
     )
 @cached_jit

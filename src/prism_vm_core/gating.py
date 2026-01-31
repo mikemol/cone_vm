@@ -48,20 +48,10 @@ def _normalize_milestone(value):
     return baseline or 2
 
 
-def _cnf2_enabled():
-    # CNF-2 is now the default (m2 committed); gating is handled at call sites.
-    return True
-
-
-def _cnf2_slot1_enabled():
-    # Slot1 continuation defaults on in m2; disable only via explicit config.
-    return True
-
-
 def _default_bsp_mode() -> BspMode:
     # CNF-2 becomes the default at m2; intrinsic remains the oracle path.
     # See IMPLEMENTATION_PLAN.md (m1/m2 engine staging).
-    return BspMode.CNF2 if _cnf2_enabled() else BspMode.INTRINSIC
+    return BspMode.CNF2
 
 
 def _normalize_bsp_mode(bsp_mode):
@@ -98,8 +88,6 @@ __all__ = [
     "_parse_milestone_value",
     "_read_pytest_milestone",
     "_normalize_milestone",
-    "_cnf2_enabled",
-    "_cnf2_slot1_enabled",
     "_default_bsp_mode",
     "_normalize_bsp_mode",
     "_servo_enabled",
