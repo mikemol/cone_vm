@@ -9,6 +9,7 @@ from prism_core.di import call_with_optional_kwargs
 from prism_core.compact import CompactConfig, CompactResult, compact_mask_cfg
 from prism_core.safety import DEFAULT_SAFETY_POLICY, SafetyPolicy, oob_mask
 from ic_core.domains import _node_id, _port_id
+from ic_core.bundles import WireEndpoints, WirePtrPair, WireStarEndpoints
 
 # Interaction-combinator (IC) graph + safety helpers.
 
@@ -130,10 +131,7 @@ def _connect_ptrs(ports: jnp.ndarray, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray) ->
 @partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
 def ic_wire_jax(
     state: ICState,
-    node_a: jnp.ndarray,
-    port_a: jnp.ndarray,
-    node_b: jnp.ndarray,
-    port_b: jnp.ndarray,
+    endpoints: WireEndpoints,
     *,
     safety_policy: SafetyPolicy | None = None,
     safe_index_fn=safe_index_1d,
@@ -143,6 +141,7 @@ def ic_wire_jax(
     def _do(s):
         policy = safety_policy or DEFAULT_SAFETY_POLICY
         index_fn = safe_index_fn
+        node_a, port_a, node_b, port_b = endpoints
         node_a_u = jnp.asarray(node_a, dtype=jnp.uint32)
         port_a_u = jnp.asarray(port_a, dtype=jnp.uint32)
         node_b_u = jnp.asarray(node_b, dtype=jnp.uint32)
@@ -177,8 +176,7 @@ def ic_wire_jax(
 @partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
 def ic_wire_ptrs_jax(
     state: ICState,
-    ptr_a: jnp.ndarray,
-    ptr_b: jnp.ndarray,
+    ptrs: WirePtrPair,
     *,
     safety_policy: SafetyPolicy | None = None,
     safe_index_fn=safe_index_1d,
@@ -188,6 +186,7 @@ def ic_wire_ptrs_jax(
     def _do(s):
         policy = safety_policy or DEFAULT_SAFETY_POLICY
         index_fn = safe_index_fn
+        ptr_a, ptr_b = ptrs
         ptr_a_u = jnp.asarray(ptr_a, dtype=jnp.uint32)
         ptr_b_u = jnp.asarray(ptr_b, dtype=jnp.uint32)
         do = (ptr_a_u != jnp.uint32(0)) & (ptr_b_u != jnp.uint32(0))
@@ -229,29 +228,27 @@ def ic_wire_ptrs_jax(
 @partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
 def ic_wire_jax_safe(
     state: ICState,
-    node_a: jnp.ndarray,
-    port_a: jnp.ndarray,
-    node_b: jnp.ndarray,
-    port_b: jnp.ndarray,
+    endpoints: WireEndpoints,
     *,
     safety_policy: SafetyPolicy | None = None,
     safe_index_fn=safe_index_1d,
 ) -> ICState:
     """Device-only wire that no-ops on NULL endpoints."""
+    node_a, port_a, node_b, port_b = endpoints
     ptr_a = encode_port(jnp.asarray(node_a, jnp.uint32), jnp.asarray(port_a, jnp.uint32))
     ptr_b = encode_port(jnp.asarray(node_b, jnp.uint32), jnp.asarray(port_b, jnp.uint32))
     return ic_wire_ptrs_jax(
-        state, ptr_a, ptr_b, safety_policy=safety_policy, safe_index_fn=safe_index_fn
+        state,
+        WirePtrPair(ptr_a, ptr_b),
+        safety_policy=safety_policy,
+        safe_index_fn=safe_index_fn,
     )
 
 
 @partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
 def ic_wire_pairs_jax(
     state: ICState,
-    node_a: jnp.ndarray,
-    port_a: jnp.ndarray,
-    node_b: jnp.ndarray,
-    port_b: jnp.ndarray,
+    endpoints: WireEndpoints,
     *,
     safety_policy: SafetyPolicy | None = None,
     safe_index_fn=safe_index_1d,
@@ -261,6 +258,7 @@ def ic_wire_pairs_jax(
     def _do(s):
         policy = safety_policy or DEFAULT_SAFETY_POLICY
         index_fn = safe_index_fn
+        node_a, port_a, node_b, port_b = endpoints
         node_a_u = jnp.asarray(node_a, dtype=jnp.uint32)
         port_a_u = jnp.asarray(port_a, dtype=jnp.uint32)
         node_b_u = jnp.asarray(node_b, dtype=jnp.uint32)
@@ -307,8 +305,7 @@ def ic_wire_pairs_jax(
 @partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
 def ic_wire_ptr_pairs_jax(
     state: ICState,
-    ptr_a: jnp.ndarray,
-    ptr_b: jnp.ndarray,
+    ptrs: WirePtrPair,
     *,
     safety_policy: SafetyPolicy | None = None,
     safe_index_fn=safe_index_1d,
@@ -318,6 +315,7 @@ def ic_wire_ptr_pairs_jax(
     def _do(s):
         policy = safety_policy or DEFAULT_SAFETY_POLICY
         index_fn = safe_index_fn
+        ptr_a, ptr_b = ptrs
         ptr_a_u = jnp.asarray(ptr_a, dtype=jnp.uint32)
         ptr_b_u = jnp.asarray(ptr_b, dtype=jnp.uint32)
         do = (ptr_a_u != jnp.uint32(0)) & (ptr_b_u != jnp.uint32(0))
@@ -363,15 +361,13 @@ def ic_wire_ptr_pairs_jax(
 @partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
 def ic_wire_star_jax(
     state: ICState,
-    center_node: jnp.ndarray,
-    center_port: jnp.ndarray,
-    leaf_nodes: jnp.ndarray,
-    leaf_ports: jnp.ndarray,
+    endpoints: WireStarEndpoints,
     *,
     safety_policy: SafetyPolicy | None = None,
     safe_index_fn=safe_index_1d,
 ) -> ICState:
     """Wire a single center endpoint to many leaf endpoints (device-only)."""
+    center_node, center_port, leaf_nodes, leaf_ports = endpoints
     center_node = jnp.asarray(center_node, dtype=jnp.uint32)
     center_port = jnp.asarray(center_port, dtype=jnp.uint32)
     leaf_nodes = jnp.asarray(leaf_nodes, dtype=jnp.uint32)
@@ -381,10 +377,7 @@ def ic_wire_star_jax(
     port_a = jnp.full((k,), center_port, dtype=jnp.uint32)
     return ic_wire_pairs_jax(
         state,
-        node_a,
-        port_a,
-        leaf_nodes,
-        leaf_ports,
+        WireEndpoints(node_a, port_a, leaf_nodes, leaf_ports),
         safety_policy=safety_policy,
         safe_index_fn=safe_index_fn,
     )

@@ -218,13 +218,10 @@ def compact_active_pairs_result_jit_cfg(cfg: ICGraphConfig | None = None):
 def _wire_jax_jit(cfg: ICGraphConfig):
     safe_index_fn = _resolve_safe_index_fn(cfg)
 
-    def _impl(state, node_a, port_a, node_b, port_b):
+    def _impl(state, endpoints):
         return ic_wire_jax(
             state,
-            node_a,
-            port_a,
-            node_b,
-            port_b,
+            endpoints,
             safety_policy=cfg.safety_policy,
             safe_index_fn=safe_index_fn,
         )
@@ -248,13 +245,10 @@ def wire_jax_jit_cfg(cfg: ICGraphConfig | None = None):
 def _wire_jax_safe_jit(cfg: ICGraphConfig):
     safe_index_fn = _resolve_safe_index_fn(cfg)
 
-    def _impl(state, node_a, port_a, node_b, port_b):
+    def _impl(state, endpoints):
         return ic_wire_jax_safe(
             state,
-            node_a,
-            port_a,
-            node_b,
-            port_b,
+            endpoints,
             safety_policy=cfg.safety_policy,
             safe_index_fn=safe_index_fn,
         )
@@ -278,11 +272,10 @@ def wire_jax_safe_jit_cfg(cfg: ICGraphConfig | None = None):
 def _wire_ptrs_jit(cfg: ICGraphConfig):
     safe_index_fn = _resolve_safe_index_fn(cfg)
 
-    def _impl(state, ptr_a, ptr_b):
+    def _impl(state, ptrs):
         return ic_wire_ptrs_jax(
             state,
-            ptr_a,
-            ptr_b,
+            ptrs,
             safety_policy=cfg.safety_policy,
             safe_index_fn=safe_index_fn,
         )
@@ -306,13 +299,10 @@ def wire_ptrs_jit_cfg(cfg: ICGraphConfig | None = None):
 def _wire_pairs_jit(cfg: ICGraphConfig):
     safe_index_fn = _resolve_safe_index_fn(cfg)
 
-    def _impl(state, node_a, port_a, node_b, port_b):
+    def _impl(state, endpoints):
         return ic_wire_pairs_jax(
             state,
-            node_a,
-            port_a,
-            node_b,
-            port_b,
+            endpoints,
             safety_policy=cfg.safety_policy,
             safe_index_fn=safe_index_fn,
         )
@@ -336,11 +326,10 @@ def wire_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 def _wire_ptr_pairs_jit(cfg: ICGraphConfig):
     safe_index_fn = _resolve_safe_index_fn(cfg)
 
-    def _impl(state, ptr_a, ptr_b):
+    def _impl(state, ptrs):
         return ic_wire_ptr_pairs_jax(
             state,
-            ptr_a,
-            ptr_b,
+            ptrs,
             safety_policy=cfg.safety_policy,
             safe_index_fn=safe_index_fn,
         )
@@ -364,13 +353,10 @@ def wire_ptr_pairs_jit_cfg(cfg: ICGraphConfig | None = None):
 def _wire_star_jit(cfg: ICGraphConfig):
     safe_index_fn = _resolve_safe_index_fn(cfg)
 
-    def _impl(state, center_node, center_port, leaf_nodes, leaf_ports):
+    def _impl(state, endpoints):
         return ic_wire_star_jax(
             state,
-            center_node,
-            center_port,
-            leaf_nodes,
-            leaf_ports,
+            endpoints,
             safety_policy=cfg.safety_policy,
             safe_index_fn=safe_index_fn,
         )

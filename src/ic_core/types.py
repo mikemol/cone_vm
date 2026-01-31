@@ -32,6 +32,7 @@ from ic_core.graph import (
     PORT_AUX_RIGHT,
 )
 from ic_core.engine import ICRewriteStats
+from ic_core.bundles import WireEndpoints, WirePtrPair, WireStarEndpoints
 from prism_core.compact import (
     CompactResult,
     CompactConfig,
@@ -58,6 +59,9 @@ __all__ = [
     "_host_bool_value",
     "ICState",
     "ICRewriteStats",
+    "WireEndpoints",
+    "WirePtrPair",
+    "WireStarEndpoints",
     "CompactResult",
     "CompactConfig",
     "DEFAULT_COMPACT_CONFIG",

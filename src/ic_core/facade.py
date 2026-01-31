@@ -32,6 +32,7 @@ from ic_core.guards import (
 )
 
 from ic_core.config import ICEngineConfig, ICGraphConfig, ICRuleConfig, DEFAULT_GRAPH_CONFIG
+from ic_core.bundles import WireEndpoints, WirePtrPair, WireStarEndpoints
 from ic_core.domains import (
     HostBool,
     HostInt,
@@ -295,10 +296,7 @@ def rule_config_with_alloc(
 
 def ic_wire_jax_cfg(
     state: ICState,
-    node_a: jnp.ndarray,
-    port_a: jnp.ndarray,
-    node_b: jnp.ndarray,
-    port_b: jnp.ndarray,
+    endpoints: WireEndpoints,
     *,
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
@@ -306,10 +304,7 @@ def ic_wire_jax_cfg(
     safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_jax(
         state,
-        node_a,
-        port_a,
-        node_b,
-        port_b,
+        endpoints,
         safety_policy=cfg.safety_policy,
         safe_index_fn=safe_index_fn,
     )
@@ -317,10 +312,7 @@ def ic_wire_jax_cfg(
 
 def ic_wire_jax_safe_cfg(
     state: ICState,
-    node_a: jnp.ndarray,
-    port_a: jnp.ndarray,
-    node_b: jnp.ndarray,
-    port_b: jnp.ndarray,
+    endpoints: WireEndpoints,
     *,
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
@@ -328,10 +320,7 @@ def ic_wire_jax_safe_cfg(
     safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_jax_safe(
         state,
-        node_a,
-        port_a,
-        node_b,
-        port_b,
+        endpoints,
         safety_policy=cfg.safety_policy,
         safe_index_fn=safe_index_fn,
     )
@@ -339,8 +328,7 @@ def ic_wire_jax_safe_cfg(
 
 def ic_wire_ptrs_jax_cfg(
     state: ICState,
-    ptr_a: jnp.ndarray,
-    ptr_b: jnp.ndarray,
+    ptrs: WirePtrPair,
     *,
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
@@ -348,8 +336,7 @@ def ic_wire_ptrs_jax_cfg(
     safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_ptrs_jax(
         state,
-        ptr_a,
-        ptr_b,
+        ptrs,
         safety_policy=cfg.safety_policy,
         safe_index_fn=safe_index_fn,
     )
@@ -357,10 +344,7 @@ def ic_wire_ptrs_jax_cfg(
 
 def ic_wire_pairs_jax_cfg(
     state: ICState,
-    node_a: jnp.ndarray,
-    port_a: jnp.ndarray,
-    node_b: jnp.ndarray,
-    port_b: jnp.ndarray,
+    endpoints: WireEndpoints,
     *,
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
@@ -368,10 +352,7 @@ def ic_wire_pairs_jax_cfg(
     safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_pairs_jax(
         state,
-        node_a,
-        port_a,
-        node_b,
-        port_b,
+        endpoints,
         safety_policy=cfg.safety_policy,
         safe_index_fn=safe_index_fn,
     )
@@ -379,8 +360,7 @@ def ic_wire_pairs_jax_cfg(
 
 def ic_wire_ptr_pairs_jax_cfg(
     state: ICState,
-    ptr_a: jnp.ndarray,
-    ptr_b: jnp.ndarray,
+    ptrs: WirePtrPair,
     *,
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
@@ -388,8 +368,7 @@ def ic_wire_ptr_pairs_jax_cfg(
     safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_ptr_pairs_jax(
         state,
-        ptr_a,
-        ptr_b,
+        ptrs,
         safety_policy=cfg.safety_policy,
         safe_index_fn=safe_index_fn,
     )
@@ -397,10 +376,7 @@ def ic_wire_ptr_pairs_jax_cfg(
 
 def ic_wire_star_jax_cfg(
     state: ICState,
-    center_node: jnp.ndarray,
-    center_port: jnp.ndarray,
-    leaf_nodes: jnp.ndarray,
-    leaf_ports: jnp.ndarray,
+    endpoints: WireStarEndpoints,
     *,
     cfg: ICGraphConfig = DEFAULT_GRAPH_CONFIG,
 ) -> ICState:
@@ -408,10 +384,7 @@ def ic_wire_star_jax_cfg(
     safe_index_fn = _resolve_safe_index_fn(cfg)
     return ic_wire_star_jax(
         state,
-        center_node,
-        center_port,
-        leaf_nodes,
-        leaf_ports,
+        endpoints,
         safety_policy=cfg.safety_policy,
         safe_index_fn=safe_index_fn,
     )

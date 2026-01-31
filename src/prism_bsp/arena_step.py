@@ -66,46 +66,6 @@ _DEFAULT_SWIZZLE_WITH_PERM_VALUE_FNS = SwizzleWithPermFnsBound(
 )
 
 
-def _resolve_swizzle_with_perm_fns(
-    base: SwizzleWithPermFnsBound,
-    *,
-    bundle: SwizzleWithPermFns | None = None,
-    with_perm=None,
-    morton_with_perm=None,
-    blocked_with_perm=None,
-    hierarchical_with_perm=None,
-    servo_with_perm=None,
-) -> SwizzleWithPermFnsBound:
-    if bundle is not None:
-        if bundle.with_perm is not None:
-            with_perm = bundle.with_perm
-        if bundle.morton_with_perm is not None:
-            morton_with_perm = bundle.morton_with_perm
-        if bundle.blocked_with_perm is not None:
-            blocked_with_perm = bundle.blocked_with_perm
-        if bundle.hierarchical_with_perm is not None:
-            hierarchical_with_perm = bundle.hierarchical_with_perm
-        if bundle.servo_with_perm is not None:
-            servo_with_perm = bundle.servo_with_perm
-    return SwizzleWithPermFnsBound(
-        with_perm=with_perm if with_perm is not None else base.with_perm,
-        morton_with_perm=(
-            morton_with_perm if morton_with_perm is not None else base.morton_with_perm
-        ),
-        blocked_with_perm=(
-            blocked_with_perm if blocked_with_perm is not None else base.blocked_with_perm
-        ),
-        hierarchical_with_perm=(
-            hierarchical_with_perm
-            if hierarchical_with_perm is not None
-            else base.hierarchical_with_perm
-        ),
-        servo_with_perm=(
-            servo_with_perm if servo_with_perm is not None else base.servo_with_perm
-        ),
-    )
-
-
 def _op_interact_core(
     arena,
     safe_gather_fn,
@@ -650,11 +610,7 @@ def cycle(
     servo_enabled_fn=_servo_enabled,
     servo_update_fn=_servo_update,
     op_morton_fn=op_morton,
-    op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm,
-    op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm,
-    op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm,
-    op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm,
-    op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm,
+    swizzle_with_perm_fns: SwizzleWithPermFnsBound = _DEFAULT_SWIZZLE_WITH_PERM_FNS,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     guard_cfg=None,
     arena_root_hash_fn=_arena_root_hash_host,
@@ -662,14 +618,6 @@ def cycle(
     damage_metrics_update_fn=_damage_metrics_update,
     op_interact_fn=op_interact,
 ):
-    swizzle_with_perm_fns = _resolve_swizzle_with_perm_fns(
-        _DEFAULT_SWIZZLE_WITH_PERM_FNS,
-        with_perm=op_sort_and_swizzle_with_perm_fn,
-        morton_with_perm=op_sort_and_swizzle_morton_with_perm_fn,
-        blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_fn,
-        hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_fn,
-        servo_with_perm=op_sort_and_swizzle_servo_with_perm_fn,
-    )
     return cycle_core(
         arena,
         root_ptr,
@@ -710,11 +658,7 @@ def cycle_value(
     servo_enabled_fn=_servo_enabled,
     servo_update_fn=_servo_update,
     op_morton_fn=op_morton,
-    op_sort_and_swizzle_with_perm_value_fn=op_sort_and_swizzle_with_perm_value,
-    op_sort_and_swizzle_morton_with_perm_value_fn=op_sort_and_swizzle_morton_with_perm_value,
-    op_sort_and_swizzle_blocked_with_perm_value_fn=op_sort_and_swizzle_blocked_with_perm_value,
-    op_sort_and_swizzle_hierarchical_with_perm_value_fn=op_sort_and_swizzle_hierarchical_with_perm_value,
-    op_sort_and_swizzle_servo_with_perm_value_fn=op_sort_and_swizzle_servo_with_perm_value,
+    swizzle_with_perm_fns: SwizzleWithPermFnsBound = _DEFAULT_SWIZZLE_WITH_PERM_VALUE_FNS,
     safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
     guard_cfg=None,
     arena_root_hash_fn=_arena_root_hash_host,
@@ -722,14 +666,6 @@ def cycle_value(
     damage_metrics_update_fn=_damage_metrics_update,
     op_interact_value_fn=op_interact_value,
 ):
-    swizzle_with_perm_fns = _resolve_swizzle_with_perm_fns(
-        _DEFAULT_SWIZZLE_WITH_PERM_VALUE_FNS,
-        with_perm=op_sort_and_swizzle_with_perm_value_fn,
-        morton_with_perm=op_sort_and_swizzle_morton_with_perm_value_fn,
-        blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_value_fn,
-        hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_value_fn,
-        servo_with_perm=op_sort_and_swizzle_servo_with_perm_value_fn,
-    )
     return cycle_core_value(
         arena,
         root_ptr,
@@ -886,6 +822,13 @@ def cycle_cfg(
         else:
             op_interact_fn = lambda a: op_interact(a, safe_gather_fn=safe_gather_fn)
     if safe_gather_policy_value is not None and safe_gather_value_fn is not None:
+        swizzle_with_perm_fns = SwizzleWithPermFnsBound(
+            with_perm=op_sort_and_swizzle_with_perm_fn,
+            morton_with_perm=op_sort_and_swizzle_morton_with_perm_fn,
+            blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_fn,
+            hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_fn,
+            servo_with_perm=op_sort_and_swizzle_servo_with_perm_fn,
+        )
         return cycle_value(
             arena,
             root_ptr,
@@ -901,11 +844,7 @@ def cycle_cfg(
             servo_enabled_fn=servo_enabled_fn,
             servo_update_fn=servo_update_fn,
             op_morton_fn=op_morton_fn,
-            op_sort_and_swizzle_with_perm_value_fn=op_sort_and_swizzle_with_perm_fn,
-            op_sort_and_swizzle_morton_with_perm_value_fn=op_sort_and_swizzle_morton_with_perm_fn,
-            op_sort_and_swizzle_blocked_with_perm_value_fn=op_sort_and_swizzle_blocked_with_perm_fn,
-            op_sort_and_swizzle_hierarchical_with_perm_value_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
-            op_sort_and_swizzle_servo_with_perm_value_fn=op_sort_and_swizzle_servo_with_perm_fn,
+            swizzle_with_perm_fns=swizzle_with_perm_fns,
             safe_gather_value_fn=safe_gather_value_fn,
             guard_cfg=cfg.guard_cfg,
             arena_root_hash_fn=arena_root_hash_fn,
@@ -913,8 +852,7 @@ def cycle_cfg(
             damage_metrics_update_fn=damage_metrics_update_fn,
             op_interact_value_fn=op_interact_fn,
         )
-    swizzle_with_perm_fns = _resolve_swizzle_with_perm_fns(
-        _DEFAULT_SWIZZLE_WITH_PERM_FNS,
+    swizzle_with_perm_fns = SwizzleWithPermFnsBound(
         with_perm=op_sort_and_swizzle_with_perm_fn,
         morton_with_perm=op_sort_and_swizzle_morton_with_perm_fn,
         blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_fn,

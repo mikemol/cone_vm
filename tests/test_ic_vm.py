@@ -17,7 +17,10 @@ def test_ic_port_encode_decode_roundtrip():
 
 def test_ic_wire_jax_roundtrip():
     state = ic.ic_init(4)
-    state = ic.ic_wire_jax(state, jnp.uint32(1), jnp.uint32(0), jnp.uint32(2), jnp.uint32(0))
+    endpoints = ic.WireEndpoints(
+        jnp.uint32(1), jnp.uint32(0), jnp.uint32(2), jnp.uint32(0)
+    )
+    state = ic.ic_wire_jax(state, endpoints)
     n1, p1 = ic.decode_port(state.ports[1, 0])
     n2, p2 = ic.decode_port(state.ports[2, 0])
     assert int(n1) == 2
@@ -29,21 +32,22 @@ def test_ic_wire_jax_roundtrip():
 def test_ic_wire_jax_safe_noop():
     state = ic.ic_init(4)
     ports_before = state.ports
-    state = ic.ic_wire_jax_safe(
-        state, jnp.uint32(0), jnp.uint32(0), jnp.uint32(2), jnp.uint32(0)
+    endpoints = ic.WireEndpoints(
+        jnp.uint32(0), jnp.uint32(0), jnp.uint32(2), jnp.uint32(0)
     )
+    state = ic.ic_wire_jax_safe(state, endpoints)
     assert jnp.array_equal(state.ports, ports_before)
 
 
 def test_ic_wire_pairs_jax_basic():
     state = ic.ic_init(6)
-    state = ic.ic_wire_pairs_jax(
-        state,
+    endpoints = ic.WireEndpoints(
         jnp.array([1, 3], dtype=jnp.uint32),
         jnp.array([0, 1], dtype=jnp.uint32),
         jnp.array([2, 4], dtype=jnp.uint32),
         jnp.array([0, 2], dtype=jnp.uint32),
     )
+    state = ic.ic_wire_pairs_jax(state, endpoints)
     n1, p1 = ic.decode_port(state.ports[1, 0])
     n2, p2 = ic.decode_port(state.ports[2, 0])
     assert int(n1) == 2
@@ -74,7 +78,7 @@ def test_ic_wire_ptr_pairs_jax_null_skip():
         ],
         dtype=jnp.uint32,
     )
-    state = ic.ic_wire_ptr_pairs_jax(state, ptr_a, ptr_b)
+    state = ic.ic_wire_ptr_pairs_jax(state, ic.WirePtrPair(ptr_a, ptr_b))
     n1, p1 = ic.decode_port(state.ports[1, 0])
     n2, p2 = ic.decode_port(state.ports[2, 0])
     assert int(n1) == 2
@@ -88,9 +92,10 @@ def test_ic_wire_star_jax_leafs_connect():
     state = ic.ic_init(5)
     leaf_nodes = jnp.array([2, 3], dtype=jnp.uint32)
     leaf_ports = jnp.array([0, 0], dtype=jnp.uint32)
-    state = ic.ic_wire_star_jax(
-        state, jnp.uint32(1), jnp.uint32(0), leaf_nodes, leaf_ports
+    endpoints = ic.WireStarEndpoints(
+        jnp.uint32(1), jnp.uint32(0), leaf_nodes, leaf_ports
     )
+    state = ic.ic_wire_star_jax(state, endpoints)
     for leaf in (2, 3):
         node, port = ic.decode_port(state.ports[leaf, 0])
         assert int(node) == 1
