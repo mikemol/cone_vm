@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # Prism VM Evolution Implementation Plan
 
 This plan implements the features described in `in/in-4.md` through

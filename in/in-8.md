@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # **Implementing Branchless Interaction Combinator Rewrite Rules on GPUs: A Tensor-Theoretic Approach to Optimal Graph Reduction**
 
 NOTE: DEFERRED. This is a future roadmap track (see IMPLEMENTATION_PLAN.md "Roadmap Extension: in-8 Pivot").

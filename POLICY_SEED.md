@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 Excellent. What you’re asking for is not “documentation” in the usual sense. You’re asking for a **self-stabilizing policy nucleus**: a document that is simultaneously
 
 * **normative** (it constrains behavior),

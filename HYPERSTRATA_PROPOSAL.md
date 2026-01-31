@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # Hyperstrata and Hypervalue CNF-2 Proposal
 
 Status: m3 semantic commitment (implementation staged; no code changes implied).

@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # in-27 Update Audit (Delta + Correctness Impacts)
 
 This note captures the impact of the edits made to `in/in-27.md` after it was staged. It focuses on semantic correctness, testability, and alignment with existing Prism contracts (`q`/denotation invariance, BSPˢ gauge symmetry).

@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # The Hierarchical Fluid Memory: Mitigating Shatter via Morton-Ordered BSP Arenas
 
 NOTE: REFINED by in-14.md to treat the arena/BSP path as performance-only; the ledger + CNF-2 pipeline is the semantic spine.

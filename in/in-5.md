@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # 2:1 Alternating BSP Layout for Hierarchical Graph Locality
 
 NOTE: REFINED by in-14.md; hierarchical arenas are a performance-only layer (M5 optional).

@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # Contributing
 
 Thanks for contributing. This repo enforces a strict execution policy to protect
@@ -33,6 +38,14 @@ mise exec -- python scripts/policy_check.py --workflows
 
 CI also runs `scripts/policy_check.py --workflows --posture`, which checks the
 GitHub Actions settings for this repository.
+
+## Doc front-matter (reader-only re-internment signal)
+Markdown docs include a YAML front-matter block with:
+- `doc_revision` (integer)
+- `reader_reintern` (reader-only guidance)
+
+When you make a conceptual change, bump `doc_revision`. This is a reader-only
+signal to re-intern; it is not enforced by tooling or repo state.
 
 ## GPU tests and sandboxed environments
 Some tests rely on CUDA/JAX GPU backends. If you are running in a sandboxed

@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # Prism VM
 
 Prism VM is a small JAX-backed interpreter for a tiny IR (zero/suc/add/mul) with

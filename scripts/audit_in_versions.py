@@ -12,6 +12,15 @@ import analyze
 TOKEN_PATTERN = analyze.TOKEN_PATTERN
 
 
+def _strip_front_matter(text):
+    if not text.startswith("---\n"):
+        return text
+    parts = text.split("\n---\n", 1)
+    if len(parts) == 2:
+        return parts[1].lstrip("\n")
+    return text
+
+
 def _tokenize(text, stopwords, pattern=TOKEN_PATTERN):
     token_re = re.compile(pattern)
     tokens = [t.lower() for t in token_re.findall(text)]
@@ -23,7 +32,7 @@ def _bigrams(tokens):
 
 
 def _stats_for(path, stopwords):
-    text = Path(path).read_text()
+    text = _strip_front_matter(Path(path).read_text())
     tokens = _tokenize(text, stopwords)
     token_counts = Counter(tokens)
     token_set = set(token_counts)
@@ -141,6 +150,13 @@ def _build_report(docs_dir, compare_paths, stopwords):
     glossary = Path(docs_dir) / "glossary.md"
     has_glossary = glossary.exists()
     title = "# Audit: in/in-*.md + in/glossary.md" if has_glossary else "# Audit: in/in-*.md"
+    front_matter = [
+        "---",
+        "doc_revision: 1",
+        'reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."',
+        "---",
+        "",
+    ]
     header = [
         title,
         "",
@@ -163,7 +179,7 @@ def _build_report(docs_dir, compare_paths, stopwords):
         prior = doc
     if has_glossary:
         sections.append(_section_for(glossary, None, compare_paths, stopwords))
-    return "\n".join(header + sections) + "\n"
+    return "\n".join(front_matter + header + sections) + "\n"
 
 
 def main():
