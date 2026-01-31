@@ -348,12 +348,6 @@ def runtime_config_from_graph_rule(
     )
 
 
-DEFAULT_RUNTIME_CONFIG = runtime_config_from_graph_rule(
-    DEFAULT_GRAPH_CONFIG, DEFAULT_RULE_CONFIG
-)
-DEFAULT_RUNTIME_RESOLVED = resolve_runtime_config(DEFAULT_RUNTIME_CONFIG)
-
-
 def resolve_runtime_cfg(cfg: ICRuntimeConfig) -> ICRuntimeResolved:
     """Resolve a runtime config into a bound bundle."""
     return resolve_runtime_config(cfg)
@@ -902,6 +896,12 @@ def engine_config_from_rules(
         halted_fn=halted_fn,
         scan_corrupt_fn=scan_corrupt_fn,
     )
+
+
+DEFAULT_RUNTIME_CONFIG = runtime_config_from_graph_rule(
+    DEFAULT_GRAPH_CONFIG, DEFAULT_RULE_CONFIG
+)
+DEFAULT_RUNTIME_RESOLVED = resolve_runtime_config(DEFAULT_RUNTIME_CONFIG)
 
 
 def apply_active_pairs_jit_from_rules(
