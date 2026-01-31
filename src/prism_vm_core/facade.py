@@ -1566,7 +1566,7 @@ def cycle_candidates_bound(
         host_raise_if_bad_fn = _host_raise_if_bad
     if cnf2_mode is not None:
         _ = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates_bound")
-    base_cfg = cfg.as_cfg() if cnf2_cfg is None else cnf2_cfg
+    base_cfg = cfg.as_cfg()
     if base_cfg.policy_binding is not None or base_cfg.safe_gather_policy is not None or base_cfg.safe_gather_policy_value is not None:
         base_cfg = replace(
             base_cfg,
