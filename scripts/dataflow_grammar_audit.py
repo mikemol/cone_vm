@@ -97,6 +97,27 @@ def _param_names(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
     return names
 
 
+def _param_annotations(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, str | None]:
+    args = fn.args.posonlyargs + fn.args.args + fn.args.kwonlyargs
+    names = [a.arg for a in args]
+    annots: dict[str, str | None] = {}
+    for name, arg in zip(names, args):
+        if arg.annotation is None:
+            annots[name] = None
+        else:
+            try:
+                annots[name] = ast.unparse(arg.annotation)
+            except Exception:
+                annots[name] = None
+    if fn.args.vararg:
+        annots[fn.args.vararg.arg] = None
+    if fn.args.kwarg:
+        annots[fn.args.kwarg.arg] = None
+    if names and names[0] in {"self", "cls"}:
+        annots.pop(names[0], None)
+    return annots
+
+
 def _analyze_function(fn, parents):
     params = _param_names(fn)
     use_map = {p: ParamUse(set(), False) for p in params}
@@ -246,6 +267,81 @@ def analyze_file(path: Path, recursive: bool = True) -> dict[str, list[set[str]]
                 groups_by_fn[fn] = combined
                 changed = True
     return groups_by_fn
+
+
+def _callee_key(name: str) -> str:
+    if not name:
+        return name
+    return name.split(".")[-1]
+
+
+def _is_broad_type(annot: str | None) -> bool:
+    if annot is None:
+        return True
+    base = annot.replace("typing.", "")
+    return base in {"Any", "object"}
+
+
+def analyze_type_flow(path: Path) -> tuple[list[str], list[str]]:
+    """Return (tighten_suggestions, ambiguity_warnings) for a module."""
+    try:
+        tree = ast.parse(path.read_text())
+    except Exception:
+        return [], []
+    funcs = _collect_functions(tree)
+    if not funcs:
+        return [], []
+    fn_by_name = {f.name: f for f in funcs}
+    fn_param_orders = {f.name: _param_names(f) for f in funcs}
+    fn_param_annots = {f.name: _param_annotations(f) for f in funcs}
+    suggestions: list[str] = []
+    ambiguities: list[str] = []
+    parents = ParentAnnotator()
+    parents.visit(tree)
+    parent_map = parents.parents
+
+    for fn in funcs:
+        _, call_args = _analyze_function(fn, parent_map)
+        if not call_args:
+            continue
+        param_annots = fn_param_annots.get(fn.name, {})
+        downstream: dict[str, set[str]] = defaultdict(set)
+        for callee_name, pos_map, kw_map in call_args:
+            callee = _callee_key(callee_name)
+            if callee not in fn_by_name:
+                continue
+            callee_params = fn_param_orders.get(callee, [])
+            callee_annots = fn_param_annots.get(callee, {})
+            for pos_idx, param in pos_map.items():
+                try:
+                    idx = int(pos_idx)
+                except ValueError:
+                    continue
+                if idx >= len(callee_params):
+                    continue
+                callee_param = callee_params[idx]
+                annot = callee_annots.get(callee_param)
+                if annot:
+                    downstream[param].add(annot)
+            for kw_name, param in kw_map.items():
+                annot = callee_annots.get(kw_name)
+                if annot:
+                    downstream[param].add(annot)
+        for param, annots in downstream.items():
+            if not annots:
+                continue
+            if len(annots) > 1:
+                ambiguities.append(
+                    f"{path.name}:{fn.name}.{param} downstream types conflict: {sorted(annots)}"
+                )
+                continue
+            downstream_annot = next(iter(annots))
+            current = param_annots.get(param)
+            if _is_broad_type(current) and downstream_annot:
+                suggestions.append(
+                    f"{path.name}:{fn.name}.{param} can tighten to {downstream_annot}"
+                )
+    return suggestions, ambiguities
 
 
 def _iter_config_fields(path: Path) -> dict[str, set[str]]:
@@ -531,6 +627,17 @@ def main() -> None:
     parser.add_argument("--report", default=None, help="Write Markdown report (mermaid) to file.")
     parser.add_argument("--max-components", type=int, default=10, help="Max components in report.")
     parser.add_argument(
+        "--type-audit",
+        action="store_true",
+        help="Emit type-tightening suggestions based on downstream annotations.",
+    )
+    parser.add_argument(
+        "--type-audit-max",
+        type=int,
+        default=50,
+        help="Max type-tightening entries to print.",
+    )
+    parser.add_argument(
         "--fail-on-violations",
         action="store_true",
         help="Exit non-zero if undocumented/undeclared bundle violations are detected.",
@@ -555,6 +662,22 @@ def main() -> None:
             raise SystemExit(
                 f"dataflow grammar violations detected: {len(violations)}"
             )
+        return
+    if args.type_audit:
+        suggestions: list[str] = []
+        ambiguities: list[str] = []
+        for path in paths:
+            s, a = analyze_type_flow(path)
+            suggestions.extend(s)
+            ambiguities.extend(a)
+        if suggestions:
+            print("Type tightening candidates:")
+            for line in suggestions[: args.type_audit_max]:
+                print(f"- {line}")
+        if ambiguities:
+            print("Type ambiguities (conflicting downstream expectations):")
+            for line in ambiguities[: args.type_audit_max]:
+                print(f"- {line}")
         return
     for path, groups in groups_by_path.items():
         print(f"# {path}")

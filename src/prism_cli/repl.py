@@ -499,12 +499,7 @@ def run_program_lines_bsp(
         l2_block_size=l2_block_size,
         use_morton=use_morton,
     )
-    block_size = sort_bundle.block_size
-    do_global = sort_bundle.do_global
-    do_sort = sort_bundle.do_sort
-    l1_block_size = sort_bundle.l1_block_size
-    l2_block_size = sort_bundle.l2_block_size
-    use_morton = sort_bundle.use_morton
+    sort_kwargs = sort_bundle.__dict__
     validate_mode = coerce_validate_mode(
         validate_mode, context="run_program_lines_bsp"
     )
@@ -553,8 +548,6 @@ def repl(
     validate_mode: ValidateMode = ValidateMode.NONE,
 ):
     cli_bundle = CliSortMiniBundle(block_size=block_size, use_morton=use_morton)
-    block_size = cli_bundle.block_size
-    use_morton = cli_bundle.use_morton
     validate_mode = coerce_validate_mode(validate_mode, context="repl")
     if mode == "bsp":
         vm = PrismVM_BSP()
@@ -582,8 +575,7 @@ def repl(
                 run_program_lines_bsp(
                     [inp],
                     vm,
-                    use_morton=use_morton,
-                    block_size=block_size,
+                    **cli_bundle.__dict__,
                     bsp_mode=bsp_mode,
                     validate_mode=validate_mode,
                 )
