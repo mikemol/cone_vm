@@ -158,6 +158,20 @@ Additional **read-only** permissions are allowed when required for enforcement
 (e.g. `actions: read` for posture checks), but write scopes are forbidden by
 default.
 
+**Narrow exception (PR discourse enrichment):**
+
+Workflows running on **GitHub-hosted runners** may request minimal write
+permissions to post PR comments **only** for the purpose of enriching PR
+discussion (e.g. attaching rendered graphs or diagnostics). This exception
+applies only to:
+
+* `pull-requests: write` (no other write scopes),
+* actions pinned to full commit SHAs and allow-listed,
+* jobs that do **not** run on self-hosted runners,
+* comments that are purely informational (no code execution side effects).
+
+Self-hosted workflows MUST NOT request any write scopes.
+
 ### 4.5 Action Supply Chain
 
 * Only explicitly allow-listed actions may be used.

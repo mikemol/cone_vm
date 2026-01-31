@@ -96,7 +96,7 @@ def _event_names(on_block):
     return set()
 
 
-def _check_permissions(doc, path, errors):
+def _check_permissions(doc, path, errors, *, allow_pr_write=False):
     permissions = doc.get("permissions")
     if permissions is None:
         errors.append(f"{path}: missing top-level permissions")
@@ -108,11 +108,14 @@ def _check_permissions(doc, path, errors):
     if contents != "read":
         errors.append(f"{path}: permissions.contents must be 'read'")
     for key, value in permissions.items():
-        if value not in ("read", "none"):
-            errors.append(f"{path}: permissions.{key} must be 'read' or 'none'")
+        if value in ("read", "none"):
+            continue
+        if allow_pr_write and key == "pull-requests" and value == "write":
+            continue
+        errors.append(f"{path}: permissions.{key} must be 'read' or 'none'")
 
 
-def _check_job_permissions(job, path, job_name, errors):
+def _check_job_permissions(job, path, job_name, errors, *, allow_pr_write=False):
     permissions = job.get("permissions")
     if permissions is None:
         return
@@ -122,11 +125,20 @@ def _check_job_permissions(job, path, job_name, errors):
     contents = permissions.get("contents")
     if contents != "read":
         errors.append(f"{path}:{job_name}: permissions.contents must be 'read'")
+    is_self_hosted = _is_self_hosted(job.get("runs-on"))
     for key, value in permissions.items():
-        if value not in ("read", "none"):
-            errors.append(
-                f"{path}:{job_name}: permissions.{key} must be 'read' or 'none'"
-            )
+        if value in ("read", "none"):
+            continue
+        if (
+            allow_pr_write
+            and not is_self_hosted
+            and key == "pull-requests"
+            and value == "write"
+        ):
+            continue
+        errors.append(
+            f"{path}:{job_name}: permissions.{key} must be 'read' or 'none'"
+        )
 
 
 def _check_actions(job, path, job_name, errors):
@@ -205,12 +217,21 @@ def check_workflows():
     errors = []
     for path in sorted(WORKFLOW_DIR.glob("*.yml")):
         doc = _load_yaml(path)
-        _check_permissions(doc, path, errors)
-        _check_self_hosted_constraints(doc, path, errors)
         jobs = doc.get("jobs", {})
+        has_self_hosted = False
         if isinstance(jobs, dict):
             for name, job in jobs.items():
-                _check_job_permissions(job, path, name, errors)
+                if _is_self_hosted(job.get("runs-on")):
+                    has_self_hosted = True
+        events = _event_names(doc.get("on"))
+        allow_pr_write = (("pull_request" in events) or ("pull_request_target" in events)) and (not has_self_hosted)
+        _check_permissions(doc, path, errors, allow_pr_write=allow_pr_write)
+        _check_self_hosted_constraints(doc, path, errors)
+        if isinstance(jobs, dict):
+            for name, job in jobs.items():
+                _check_job_permissions(
+                    job, path, name, errors, allow_pr_write=allow_pr_write
+                )
                 _check_actions(job, path, name, errors)
     if errors:
         _fail(errors)
