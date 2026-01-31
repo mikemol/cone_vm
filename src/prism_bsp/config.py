@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, replace, field
 from functools import partial
 from typing import Callable, TypeAlias, Any
 
@@ -102,6 +102,9 @@ class Cnf2Config:
     apply_q_fn: ApplyQFn | None = None
     identity_q_fn: IdentityQFn | None = None
     policy_fns: "Cnf2PolicyFns" | None = None
+    runtime_fns: "Cnf2RuntimeFns" = field(
+        default_factory=lambda: DEFAULT_CNF2_RUNTIME_FNS
+    )
     safe_gather_ok_fn: SafeGatherOkFn | None = None
     safe_gather_ok_bound_fn: SafeGatherOkBoundFn | None = None
     safe_gather_ok_value_fn: SafeGatherOkValueFn | None = None
@@ -113,20 +116,13 @@ class Cnf2Config:
     safe_gather_policy: SafetyPolicy | None = None
     safe_gather_policy_value: PolicyValue | None = None
     policy_binding: PolicyBinding | None = None
-    cnf2_enabled_fn: Callable[[], bool] | None = None
-    cnf2_slot1_enabled_fn: Callable[[], bool] | None = None
-    cnf2_metrics_enabled_fn: Callable[[], bool] | None = None
-    cnf2_metrics_update_fn: Callable[[int, int, int], None] | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class Cnf2ResolvedInputs:
     """Resolved CNF-2 inputs with all config overrides applied."""
 
-    cnf2_enabled_fn: Callable[[], bool]
-    cnf2_slot1_enabled_fn: Callable[[], bool]
-    cnf2_metrics_enabled_fn: Callable[[], bool]
-    cnf2_metrics_update_fn: Callable[[int, int, int], None]
+    runtime_fns: "Cnf2RuntimeFns"
     guard_cfg: GuardConfig | None
     intern_cfg: InternConfig | None
     intern_fn: InternFn
@@ -163,6 +159,19 @@ class Cnf2CandidateFns:
     emit_candidates_fn: EmitCandidatesFn | None = None
     candidate_indices_fn: CandidateIndicesFn | None = None
     scatter_drop_fn: ScatterDropFn | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Cnf2RuntimeFns:
+    """Bundle of runtime control hooks observed as a forwarding group."""
+
+    cnf2_enabled_fn: Callable[[], bool] = _cnf2_enabled
+    cnf2_slot1_enabled_fn: Callable[[], bool] = _cnf2_slot1_enabled
+    cnf2_metrics_enabled_fn: Callable[[], bool] = _cnf2_metrics_enabled
+    cnf2_metrics_update_fn: Callable[[int, int, int], None] = _cnf2_metrics_update
+
+
+DEFAULT_CNF2_RUNTIME_FNS = Cnf2RuntimeFns()
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,10 +288,7 @@ def resolve_cnf2_inputs(
     host_int_value_fn: HostIntValueFn,
     guards_enabled_fn: GuardsEnabledFn,
     ledger_roots_hash_host_fn: LedgerRootsHashFn,
-    cnf2_enabled_fn: Callable[[], bool],
-    cnf2_slot1_enabled_fn: Callable[[], bool],
-    cnf2_metrics_enabled_fn: Callable[[], bool],
-    cnf2_metrics_update_fn: Callable[[int, int, int], None],
+    runtime_fns: Cnf2RuntimeFns,
 ) -> Cnf2ResolvedInputs:
     """Resolve CNF-2 config overrides into concrete inputs."""
 
@@ -308,10 +314,7 @@ def resolve_cnf2_inputs(
     host_int_default = host_int_value_fn
     guards_enabled_default = guards_enabled_fn
     ledger_roots_hash_default = ledger_roots_hash_host_fn
-    cnf2_enabled_default = cnf2_enabled_fn
-    cnf2_slot1_default = cnf2_slot1_enabled_fn
-    cnf2_metrics_enabled_default = cnf2_metrics_enabled_fn
-    cnf2_metrics_update_default = cnf2_metrics_update_fn
+    runtime_default = runtime_fns
 
     cnf2_mode = None
     if cfg is not None:
@@ -330,6 +333,9 @@ def resolve_cnf2_inputs(
                     safe_gather_ok_fn = policy_bundle.safe_gather_ok_bound_fn
             if policy_bundle.safe_gather_ok_value_fn is not None:
                 safe_gather_ok_value_fn = policy_bundle.safe_gather_ok_value_fn
+        runtime_bundle = cfg.runtime_fns
+        if runtime_fns is runtime_default:
+            runtime_fns = runtime_bundle
         if cfg.policy_binding is not None:
             raise PrismPolicyBindingError(
                 "cycle_candidates_core received cfg.policy_binding; bind at wrapper",
@@ -391,19 +397,17 @@ def resolve_cnf2_inputs(
             ledger_roots_hash_default,
             cfg.ledger_roots_hash_host_fn,
         )
-        if cfg.cnf2_metrics_enabled_fn is not None and cnf2_metrics_enabled_fn is cnf2_metrics_enabled_default:
-            cnf2_metrics_enabled_fn = cfg.cnf2_metrics_enabled_fn
-        if cfg.cnf2_metrics_update_fn is not None and cnf2_metrics_update_fn is cnf2_metrics_update_default:
-            cnf2_metrics_update_fn = cfg.cnf2_metrics_update_fn
-        if cfg.cnf2_enabled_fn is not None and cnf2_enabled_fn is cnf2_enabled_default:
-            cnf2_enabled_fn = cfg.cnf2_enabled_fn
-        if cfg.cnf2_slot1_enabled_fn is not None and cnf2_slot1_enabled_fn is cnf2_slot1_default:
-            cnf2_slot1_enabled_fn = cfg.cnf2_slot1_enabled_fn
         if cfg.flags is not None:
-            if cfg.flags.enabled is not None and cnf2_enabled_fn is cnf2_enabled_default:
-                cnf2_enabled_fn = lambda: bool(cfg.flags.enabled)
-            if cfg.flags.slot1_enabled is not None and cnf2_slot1_enabled_fn is cnf2_slot1_default:
-                cnf2_slot1_enabled_fn = lambda: bool(cfg.flags.slot1_enabled)
+            if cfg.flags.enabled is not None:
+                enabled_value = bool(cfg.flags.enabled)
+                runtime_fns = replace(
+                    runtime_fns, cnf2_enabled_fn=lambda: enabled_value
+                )
+            if cfg.flags.slot1_enabled is not None:
+                slot1_value = bool(cfg.flags.slot1_enabled)
+                runtime_fns = replace(
+                    runtime_fns, cnf2_slot1_enabled_fn=lambda: slot1_value
+                )
         if cfg.safe_gather_ok_value_fn is not None and getattr(safe_gather_ok_fn, "_prism_policy_bound", False):
             raise PrismPolicyBindingError(
                 "cycle_candidates_core received cfg.safe_gather_ok_value_fn with policy-bound safe_gather_ok_fn",
@@ -416,15 +420,18 @@ def resolve_cnf2_inputs(
             if (
                 cfg is not None
                 and cfg.flags is not None
-            ) or cnf2_enabled_fn is not cnf2_enabled_default or cnf2_slot1_enabled_fn is not cnf2_slot1_default:
+            ) or runtime_fns is not runtime_default:
                 raise PrismCnf2ModeConflictError(
-                    "cycle_candidates_core received cnf2_mode alongside cnf2_flags or cnf2_*_enabled_fn",
+                    "cycle_candidates_core received cnf2_mode alongside cnf2_flags or runtime_fns overrides",
                     context="cycle_candidates_core",
                 )
             enabled_value = mode in (Cnf2Mode.BASE, Cnf2Mode.SLOT1)
             slot1_value = mode == Cnf2Mode.SLOT1
-            cnf2_enabled_fn = lambda: enabled_value
-            cnf2_slot1_enabled_fn = lambda: slot1_value
+            runtime_fns = replace(
+                runtime_fns,
+                cnf2_enabled_fn=lambda: enabled_value,
+                cnf2_slot1_enabled_fn=lambda: slot1_value,
+            )
     if intern_cfg is not None and intern_fn is intern_nodes:
         intern_fn = partial(intern_nodes, cfg=intern_cfg)
     if intern_cfg is not None and coord_xor_batch_fn is coord_xor_batch:
@@ -437,8 +444,8 @@ def resolve_cnf2_inputs(
             context="cycle_candidates_core",
             policy_mode="static",
         )
-    if cnf2_metrics_enabled_fn is not None and not cnf2_metrics_enabled_fn():
-        cnf2_metrics_update_fn = lambda *_: None
+    if runtime_fns.cnf2_metrics_enabled_fn is not None and not runtime_fns.cnf2_metrics_enabled_fn():
+        runtime_fns = replace(runtime_fns, cnf2_metrics_update_fn=lambda *_: None)
     if node_batch_fn is None:
         raise ValueError("node_batch_fn is required")
     if emit_candidates_fn is None:
@@ -454,10 +461,7 @@ def resolve_cnf2_inputs(
     if identity_q_fn is None:
         raise ValueError("identity_q_fn is required")
     return Cnf2ResolvedInputs(
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-        cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
-        cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+        runtime_fns=runtime_fns,
         guard_cfg=guard_cfg,
         intern_cfg=intern_cfg,
         intern_fn=intern_fn,
@@ -754,6 +758,8 @@ __all__ = [
     "resolve_cnf2_inputs",
     "Cnf2CandidateInputs",
     "Cnf2CandidateFns",
+    "Cnf2RuntimeFns",
+    "DEFAULT_CNF2_RUNTIME_FNS",
     "Cnf2PolicyFns",
     "resolve_cnf2_candidate_inputs",
     "Cnf2InternInputs",

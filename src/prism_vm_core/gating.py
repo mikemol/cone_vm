@@ -49,28 +49,13 @@ def _normalize_milestone(value):
 
 
 def _cnf2_enabled():
-    # CNF-2 pipeline is staged for m2+; guard uses env/milestone in tests.
-    # See IMPLEMENTATION_PLAN.md (m2 CNF-2 enablement).
-    value = os.environ.get("PRISM_ENABLE_CNF2", "").strip().lower()
-    if value in ("1", "true", "yes", "on"):
-        return True
-    milestone = _normalize_milestone(os.environ.get("PRISM_MILESTONE", ""))
-    if milestone is None:
-        milestone = _read_pytest_milestone()
-    return milestone is not None and milestone >= 2
+    # CNF-2 is now the default (m2 committed); gating is handled at call sites.
+    return True
 
 
 def _cnf2_slot1_enabled():
-    # Slot1 continuation is staged for m2+; hyperstrata visibility is enforced
-    # under test guards (m3 normative) to justify continuation enablement.
-    # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
-    value = os.environ.get("PRISM_ENABLE_CNF2_SLOT1", "").strip().lower()
-    if value in ("1", "true", "yes", "on"):
-        return True
-    milestone = _normalize_milestone(os.environ.get("PRISM_MILESTONE", ""))
-    if milestone is None:
-        milestone = _read_pytest_milestone()
-    return milestone is not None and milestone >= 2
+    # Slot1 continuation defaults on in m2; disable only via explicit config.
+    return True
 
 
 def _default_bsp_mode() -> BspMode:

@@ -489,6 +489,64 @@ def _iter_documented_bundles(path: Path) -> set[tuple[str, ...]]:
     return bundles
 
 
+def _iter_dataclass_call_bundles(path: Path) -> set[tuple[str, ...]]:
+    """Return bundles promoted via local @dataclass constructor calls."""
+    bundles: set[tuple[str, ...]] = set()
+    try:
+        tree = ast.parse(path.read_text())
+    except Exception:
+        return bundles
+    dataclass_names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        decorators = {
+            ast.unparse(dec) if hasattr(ast, "unparse") else ""
+            for dec in node.decorator_list
+        }
+        if any("dataclass" in dec for dec in decorators):
+            dataclass_names.add(node.name)
+    if not dataclass_names:
+        return bundles
+
+    def _callee_name(call: ast.Call) -> str | None:
+        if isinstance(call.func, ast.Name):
+            return call.func.id
+        if isinstance(call.func, ast.Attribute):
+            return call.func.attr
+        return None
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        callee = _callee_name(node)
+        if callee not in dataclass_names:
+            continue
+        names: list[str] = []
+        ok = True
+        for arg in node.args:
+            if isinstance(arg, ast.Name):
+                names.append(arg.id)
+            else:
+                ok = False
+                break
+        if not ok:
+            continue
+        for kw in node.keywords:
+            if kw.arg is None:
+                ok = False
+                break
+            if isinstance(kw.value, ast.Name):
+                names.append(kw.value.id)
+            else:
+                ok = False
+                break
+        if not ok or len(names) < 2:
+            continue
+        bundles.add(tuple(sorted(names)))
+    return bundles
+
+
 def _emit_dot(groups_by_path: dict[Path, dict[str, list[set[str]]]]) -> str:
     lines = [
         "digraph dataflow_grammar {",
@@ -640,7 +698,9 @@ def _render_mermaid_component(
                 f"  - {', '.join(bundle)} ({tier}, {documented_flag})"
             )
     if documented_only:
-        summary_lines.append("Documented bundles (dataflow-bundle markers):")
+        summary_lines.append(
+            "Documented bundles (dataflow-bundle markers or local dataclass calls):"
+        )
         summary_lines.extend(f"  - {', '.join(bundle)}" for bundle in documented_only)
     if declared_only:
         summary_lines.append("Declared Config bundles not observed in this component:")
@@ -671,7 +731,9 @@ def _emit_report(
     if protocols.exists():
         config_bundles_by_path[protocols] = _iter_config_fields(protocols)
     for path in sorted(root.rglob("*.py")):
-        documented_bundles_by_path[path] = _iter_documented_bundles(path)
+        documented = _iter_documented_bundles(path)
+        promoted = _iter_dataclass_call_bundles(path)
+        documented_bundles_by_path[path] = documented | promoted
     lines = [
         "<!-- dataflow-grammar -->",
         "Dataflow grammar audit (observed forwarding bundles).",

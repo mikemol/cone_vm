@@ -61,6 +61,8 @@ __all__ = [
     "DEFAULT_CNF2_FLAGS",
     "Cnf2Config",
     "DEFAULT_CNF2_CONFIG",
+    "Cnf2RuntimeFns",
+    "DEFAULT_CNF2_RUNTIME_FNS",
     "Cnf2CandidateFns",
     "Cnf2PolicyFns",
     "ArenaInteractConfig",

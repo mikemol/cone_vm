@@ -66,6 +66,8 @@ from prism_bsp.config import (
     Cnf2Flags,
     DEFAULT_CNF2_CONFIG,
     DEFAULT_CNF2_FLAGS,
+    Cnf2RuntimeFns,
+    DEFAULT_CNF2_RUNTIME_FNS,
     Cnf2CandidateFns,
     Cnf2PolicyFns,
     ArenaInteractConfig,
@@ -1289,8 +1291,7 @@ def _cycle_candidates_common(
     cnf2_cfg: Cnf2Config | None,
     cnf2_flags: Cnf2Flags | None,
     cnf2_mode: Cnf2Mode | None,
-    cnf2_enabled_fn,
-    cnf2_slot1_enabled_fn,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Shared wrapper for CNF-2 entrypoints with explicit policy mode."""
     if not isinstance(policy_mode, PolicyMode):
@@ -1322,10 +1323,8 @@ def _cycle_candidates_common(
             intern_fn = cnf2_cfg.intern_fn
         if emit_candidates_fn is None and cnf2_cfg.emit_candidates_fn is not None:
             emit_candidates_fn = cnf2_cfg.emit_candidates_fn
-        if cnf2_enabled_fn is None and cnf2_cfg.cnf2_enabled_fn is not None:
-            cnf2_enabled_fn = cnf2_cfg.cnf2_enabled_fn
-        if cnf2_slot1_enabled_fn is None and cnf2_cfg.cnf2_slot1_enabled_fn is not None:
-            cnf2_slot1_enabled_fn = cnf2_cfg.cnf2_slot1_enabled_fn
+        if runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
+            runtime_fns = cnf2_cfg.runtime_fns
         cnf2_flags = cnf2_cfg.flags if cnf2_flags is None else cnf2_flags
         if policy_mode == PolicyMode.STATIC:
             if cnf2_cfg.policy_binding is not None:
@@ -1390,53 +1389,37 @@ def _cycle_candidates_common(
                 context="cycle_candidates_value",
                 policy_mode=PolicyMode.VALUE,
             )
-    def _resolve_gate(flag_value, fn_value, default_fn):
-        if flag_value is not None:
-            return bool(flag_value)
-        if fn_value is not None:
-            return bool(fn_value())
-        return bool(default_fn())
-
     if cnf2_mode is not None:
         mode = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates")
         if mode != Cnf2Mode.AUTO:
-            if cnf2_flags is not None or cnf2_enabled_fn is not None or cnf2_slot1_enabled_fn is not None:
+            if cnf2_flags is not None or runtime_fns is not DEFAULT_CNF2_RUNTIME_FNS:
                 raise PrismCnf2ModeConflictError(
-                    "cycle_candidates received cnf2_mode alongside cnf2_flags or cnf2_*_enabled_fn",
+                    "cycle_candidates received cnf2_mode alongside cnf2_flags or runtime_fns overrides",
                     context="cycle_candidates",
                 )
             enabled_value = mode in (Cnf2Mode.BASE, Cnf2Mode.SLOT1)
             slot1_value = mode == Cnf2Mode.SLOT1
-            cnf2_enabled_fn = lambda: enabled_value
-            cnf2_slot1_enabled_fn = lambda: slot1_value
+            runtime_fns = replace(
+                runtime_fns,
+                cnf2_enabled_fn=lambda: enabled_value,
+                cnf2_slot1_enabled_fn=lambda: slot1_value,
+            )
             cnf2_flags = None
     if cnf2_flags is not None:
-        if cnf2_enabled_fn is not None or cnf2_slot1_enabled_fn is not None:
-            raise PrismPolicyBindingError(
-                "Pass either cnf2_flags or cnf2_*_enabled_fn, not both.",
-                context="cycle_candidates",
+        if cnf2_flags.enabled is not None:
+            enabled_value = bool(cnf2_flags.enabled)
+            runtime_fns = replace(
+                runtime_fns, cnf2_enabled_fn=lambda: enabled_value
             )
-        enabled_value = _resolve_gate(
-            cnf2_flags.enabled, None, _cnf2_enabled_default
-        )
-        slot1_value = _resolve_gate(
-            cnf2_flags.slot1_enabled, None, _cnf2_slot1_enabled_default
-        )
-        cnf2_enabled_fn = lambda: enabled_value
-        cnf2_slot1_enabled_fn = lambda: slot1_value
+        if cnf2_flags.slot1_enabled is not None:
+            slot1_value = bool(cnf2_flags.slot1_enabled)
+            runtime_fns = replace(
+                runtime_fns, cnf2_slot1_enabled_fn=lambda: slot1_value
+            )
     if emit_candidates_fn is None:
         emit_candidates_fn = _emit_candidates_default
-    if cnf2_flags is None:
-        enabled_value = _resolve_gate(None, cnf2_enabled_fn, _cnf2_enabled_default)
-        slot1_value = _resolve_gate(
-            None, cnf2_slot1_enabled_fn, _cnf2_slot1_enabled_default
-        )
-        cnf2_enabled_fn = lambda: enabled_value
-        cnf2_slot1_enabled_fn = lambda: slot1_value
     if host_raise_if_bad_fn is None:
         host_raise_if_bad_fn = _host_raise_if_bad
-    if not cnf2_enabled_fn():
-        raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
     if policy_mode == PolicyMode.STATIC:
         if safe_gather_policy is None:
             safe_gather_policy = DEFAULT_SAFETY_POLICY
@@ -1450,8 +1433,7 @@ def _cycle_candidates_common(
             intern_fn=intern_fn,
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
-            cnf2_enabled_fn=cnf2_enabled_fn,
-            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+            runtime_fns=runtime_fns,
         )
     else:
         if safe_gather_policy_value is None:
@@ -1466,8 +1448,7 @@ def _cycle_candidates_common(
             intern_fn=intern_fn,
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
-            cnf2_enabled_fn=cnf2_enabled_fn,
-            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+            runtime_fns=runtime_fns,
         )
     if not bool(jax.device_get(ledger.corrupt)):
         host_raise_if_bad_fn(ledger, "Ledger capacity exceeded during cycle")
@@ -1488,8 +1469,7 @@ def cycle_candidates_static(
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
     cnf2_mode: Cnf2Mode | None = None,
-    cnf2_enabled_fn=None,
-    cnf2_slot1_enabled_fn=None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation (static policy)."""
     return _cycle_candidates_common(
@@ -1507,8 +1487,7 @@ def cycle_candidates_static(
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,
         cnf2_mode=cnf2_mode,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        runtime_fns=runtime_fns,
     )
 
 
@@ -1526,8 +1505,7 @@ def cycle_candidates_value(
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
     cnf2_mode: Cnf2Mode | None = None,
-    cnf2_enabled_fn=None,
-    cnf2_slot1_enabled_fn=None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation (policy as JAX value)."""
     return _cycle_candidates_common(
@@ -1545,8 +1523,7 @@ def cycle_candidates_value(
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,
         cnf2_mode=cnf2_mode,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        runtime_fns=runtime_fns,
     )
 
 
@@ -1565,8 +1542,7 @@ def cycle_candidates(
     cnf2_cfg: Cnf2Config | None = None,
     cnf2_flags: Cnf2Flags | None = None,
     cnf2_mode: Cnf2Mode | None = None,
-    cnf2_enabled_fn=None,
-    cnf2_slot1_enabled_fn=None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation with DI hooks.
 
@@ -1587,15 +1563,14 @@ def cycle_candidates(
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
             host_raise_if_bad_fn=host_raise_if_bad_fn,
-        safe_gather_policy_value=require_value_policy(
-            binding, context="cycle_candidates"
-        ),
+            safe_gather_policy_value=require_value_policy(
+                binding, context="cycle_candidates"
+            ),
             guard_cfg=guard_cfg,
             cnf2_cfg=cnf2_cfg,
             cnf2_flags=cnf2_flags,
             cnf2_mode=cnf2_mode,
-            cnf2_enabled_fn=cnf2_enabled_fn,
-            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+            runtime_fns=runtime_fns,
         )
     return cycle_candidates_static(
         ledger,
@@ -1612,8 +1587,7 @@ def cycle_candidates(
         cnf2_cfg=cnf2_cfg,
         cnf2_flags=cnf2_flags,
         cnf2_mode=cnf2_mode,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        runtime_fns=runtime_fns,
     )
 
 
@@ -1630,8 +1604,7 @@ def cycle_candidates_bound(
     guard_cfg: GuardConfig | None = None,
     cnf2_flags: Cnf2Flags | None = None,
     cnf2_mode: Cnf2Mode | None = None,
-    cnf2_enabled_fn=None,
-    cnf2_slot1_enabled_fn=None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation with required PolicyBinding."""
     if host_raise_if_bad_fn is None:
@@ -1661,8 +1634,7 @@ def cycle_candidates_bound(
         intern_fn=bundle.intern_fn if bundle.intern_fn is not None else _ledger_intern.intern_nodes,
         intern_cfg=intern_cfg,
         emit_candidates_fn=bundle.emit_candidates_fn if bundle.emit_candidates_fn is not None else _emit_candidates_default,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        runtime_fns=runtime_fns,
     )
     if not bool(jax.device_get(ledger.corrupt)):
         host_raise_if_bad_fn(ledger, "Ledger capacity exceeded during cycle")

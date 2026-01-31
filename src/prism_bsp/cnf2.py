@@ -25,12 +25,13 @@ from prism_core.modes import ValidateMode
 from prism_coord.coord import coord_xor_batch
 from prism_ledger.intern import intern_nodes
 from prism_ledger.config import InternConfig
-from prism_metrics.metrics import _cnf2_metrics_enabled, _cnf2_metrics_update
 from prism_bsp.config import (
     Cnf2Config,
     Cnf2BoundConfig,
     Cnf2StaticBoundConfig,
     Cnf2ValueBoundConfig,
+    Cnf2RuntimeFns,
+    DEFAULT_CNF2_RUNTIME_FNS,
     resolve_cnf2_inputs,
     resolve_cnf2_candidate_inputs,
     resolve_cnf2_intern_inputs,
@@ -53,7 +54,6 @@ from prism_vm_core.domains import (
     _host_int_value,
     _provisional_ids,
 )
-from prism_vm_core.gating import _cnf2_enabled, _cnf2_slot1_enabled
 from prism_vm_core.guards import _guards_enabled
 from prism_vm_core.hashes import _ledger_roots_hash_host
 from prism_vm_core.ontology import (
@@ -420,10 +420,7 @@ def _cycle_candidates_core_impl(
     safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
     host_bool_value_fn: HostBoolValueFn = _host_bool_value,
     host_int_value_fn: HostIntValueFn = _host_int_value,
-    cnf2_enabled_fn=_cnf2_enabled,
-    cnf2_slot1_enabled_fn=_cnf2_slot1_enabled,
-    cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
-    cnf2_metrics_update_fn=_cnf2_metrics_update,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     resolved = resolve_cnf2_inputs(
         cfg,
@@ -444,10 +441,7 @@ def _cycle_candidates_core_impl(
         host_int_value_fn=host_int_value_fn,
         guards_enabled_fn=_guards_enabled,
         ledger_roots_hash_host_fn=_ledger_roots_hash_host,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-        cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
-        cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+        runtime_fns=runtime_fns,
     )
     guard_cfg = resolved.guard_cfg
     intern_cfg = resolved.intern_cfg
@@ -462,8 +456,9 @@ def _cycle_candidates_core_impl(
     identity_q_fn = resolved.identity_q_fn
     host_bool_value_fn = resolved.host_bool_value_fn
     host_int_value_fn = resolved.host_int_value_fn
-    cnf2_slot1_enabled_fn = resolved.cnf2_slot1_enabled_fn
-    cnf2_metrics_update_fn = resolved.cnf2_metrics_update_fn
+    runtime_fns = resolved.runtime_fns
+    cnf2_slot1_enabled_fn = runtime_fns.cnf2_slot1_enabled_fn
+    cnf2_metrics_update_fn = runtime_fns.cnf2_metrics_update_fn
     # BSPᵗ: temporal superstep / barrier semantics.
     frontier_ids = _committed_ids(frontier_ids)
     frontier_arr = jnp.atleast_1d(frontier_ids.a)
@@ -693,10 +688,7 @@ def _cycle_candidates_core_static_bound(
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
     ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
-    cnf2_enabled_fn=_cnf2_enabled,
-    cnf2_slot1_enabled_fn=_cnf2_slot1_enabled,
-    cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
-    cnf2_metrics_update_fn=_cnf2_metrics_update,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """CNF-2 core (static policy) with policy decisions pre-bound at the edge.
 
@@ -720,11 +712,6 @@ def _cycle_candidates_core_static_bound(
 
     frontier_ids = _committed_ids(frontier_ids)
     # --- Algorithmic guards (explicit, non-policy) ---
-    # CNF-2 pipeline gate: explicitly staged by milestone/flags.
-    if not cnf2_enabled_fn():
-        # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
-        # See IMPLEMENTATION_PLAN.md (m2 CNF-2 pipeline).
-        raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
     # Corrupt ledger short-circuit: no rewrite on invalid state.
     # SYNC: host read to short-circuit on corrupt ledgers (m1).
     if host_bool_value_fn(ledger.corrupt):
@@ -782,10 +769,7 @@ def _cycle_candidates_core_static_bound(
         safe_gather_ok_value_fn=_jax_safe.safe_gather_1d_ok_value,
         host_bool_value_fn=host_bool_value_fn,
         host_int_value_fn=host_int_value_fn,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-        cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
-        cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+        runtime_fns=runtime_fns,
     )
 
 
@@ -812,10 +796,7 @@ def _cycle_candidates_core_value_bound(
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
     ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
-    cnf2_enabled_fn=_cnf2_enabled,
-    cnf2_slot1_enabled_fn=_cnf2_slot1_enabled,
-    cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
-    cnf2_metrics_update_fn=_cnf2_metrics_update,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """CNF-2 core (policy as JAX value) with policy decisions pre-bound at the edge.
 
@@ -836,14 +817,8 @@ def _cycle_candidates_core_value_bound(
         "safe_gather_ok_value_fn": safe_gather_ok_value_fn,
         "guard_cfg": guard_cfg,
     }
-
     frontier_ids = _committed_ids(frontier_ids)
     # --- Algorithmic guards (explicit, non-policy) ---
-    # CNF-2 pipeline gate: explicitly staged by milestone/flags.
-    if not cnf2_enabled_fn():
-        # CNF-2 candidate pipeline is staged for m2+ (plan); guard at entry.
-        # See IMPLEMENTATION_PLAN.md (m2 CNF-2 pipeline).
-        raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
     # Corrupt ledger short-circuit: no rewrite on invalid state.
     # SYNC: host read to short-circuit on corrupt ledgers (m1).
     if host_bool_value_fn(ledger.corrupt):
@@ -901,10 +876,7 @@ def _cycle_candidates_core_value_bound(
         safe_gather_ok_value_fn=safe_gather_ok_value_fn,
         host_bool_value_fn=host_bool_value_fn,
         host_int_value_fn=host_int_value_fn,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-        cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
-        cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+        runtime_fns=runtime_fns,
     )
 
 
@@ -947,11 +919,10 @@ def cycle_candidates_static(
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
     ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
-    cnf2_enabled_fn=_cnf2_enabled,
-    cnf2_slot1_enabled_fn=_cnf2_slot1_enabled,
-    cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
-    cnf2_metrics_update_fn=_cnf2_metrics_update,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
+    if cfg is not None and runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
+        runtime_fns = cfg.runtime_fns
     if cfg is not None and cfg.policy_binding is not None:
         if cfg.policy_binding.mode == PolicyMode.VALUE:
             raise PrismPolicyBindingError(
@@ -1038,10 +1009,7 @@ def cycle_candidates_static(
         host_int_value_fn=host_int_value_fn,
         guards_enabled_fn=guards_enabled_fn,
         ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-        cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
-        cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+        runtime_fns=runtime_fns,
     )
 
 
@@ -1069,11 +1037,10 @@ def cycle_candidates_value(
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
     ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
-    cnf2_enabled_fn=_cnf2_enabled,
-    cnf2_slot1_enabled_fn=_cnf2_slot1_enabled,
-    cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
-    cnf2_metrics_update_fn=_cnf2_metrics_update,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
+    if cfg is not None and runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
+        runtime_fns = cfg.runtime_fns
     if cfg is not None and cfg.policy_binding is not None:
         if cfg.policy_binding.mode == PolicyMode.STATIC:
             raise PrismPolicyBindingError(
@@ -1140,10 +1107,7 @@ def cycle_candidates_value(
         host_int_value_fn=host_int_value_fn,
         guards_enabled_fn=guards_enabled_fn,
         ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-        cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
-        cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+        runtime_fns=runtime_fns,
     )
 
 
@@ -1173,11 +1137,10 @@ def cycle_candidates(
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
     ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
-    cnf2_enabled_fn=_cnf2_enabled,
-    cnf2_slot1_enabled_fn=_cnf2_slot1_enabled,
-    cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
-    cnf2_metrics_update_fn=_cnf2_metrics_update,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
+    if cfg is not None and runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
+        runtime_fns = cfg.runtime_fns
     if cfg is not None and cfg.safe_gather_policy_value is not None:
         safe_gather_policy_value = cfg.safe_gather_policy_value
     if safe_gather_policy_value is not None:
@@ -1210,10 +1173,7 @@ def cycle_candidates(
             host_int_value_fn=host_int_value_fn,
             guards_enabled_fn=guards_enabled_fn,
             ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
-            cnf2_enabled_fn=cnf2_enabled_fn,
-            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-            cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
-            cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+            runtime_fns=runtime_fns,
         )
     return cycle_candidates_static(
         ledger,
@@ -1238,10 +1198,7 @@ def cycle_candidates(
         host_int_value_fn=host_int_value_fn,
         guards_enabled_fn=guards_enabled_fn,
         ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-        cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
-        cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+        runtime_fns=runtime_fns,
     )
 
 
@@ -1268,15 +1225,14 @@ def cycle_candidates_bound(
     host_int_value_fn: HostIntValueFn = _host_int_value,
     guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
     ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
-    cnf2_enabled_fn=_cnf2_enabled,
-    cnf2_slot1_enabled_fn=_cnf2_slot1_enabled,
-    cnf2_metrics_enabled_fn=_cnf2_metrics_enabled,
-    cnf2_metrics_update_fn=_cnf2_metrics_update,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """PolicyBinding-required wrapper for cycle_candidates.
 
     Binds policy + guard exactly once, then delegates to branch-free core.
     """
+    if runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
+        runtime_fns = cfg.cfg.runtime_fns
     if isinstance(cfg, Cnf2ValueBoundConfig):
         cfg_resolved, policy_value = cfg.bind_cfg(
             safe_gather_ok_value_fn=safe_gather_ok_value_fn,
@@ -1306,10 +1262,7 @@ def cycle_candidates_bound(
             host_int_value_fn=host_int_value_fn,
             guards_enabled_fn=guards_enabled_fn,
             ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
-            cnf2_enabled_fn=cnf2_enabled_fn,
-            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-            cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
-            cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+            runtime_fns=runtime_fns,
         )
     if not isinstance(cfg, Cnf2StaticBoundConfig):
         raise PrismPolicyBindingError(
@@ -1344,10 +1297,7 @@ def cycle_candidates_bound(
         host_int_value_fn=host_int_value_fn,
         guards_enabled_fn=guards_enabled_fn,
         ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
-        cnf2_metrics_enabled_fn=cnf2_metrics_enabled_fn,
-        cnf2_metrics_update_fn=cnf2_metrics_update_fn,
+        runtime_fns=runtime_fns,
     )
 
 
