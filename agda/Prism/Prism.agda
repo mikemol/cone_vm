@@ -8,3 +8,4 @@ import Prism.Novelty
 import Prism.FixedPoint
 import Prism.MinPrism
 import Prism.Boundaries
+import Prism.Spillway

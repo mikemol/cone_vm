@@ -106,6 +106,9 @@ def _op_interact_core(
     new_a2 = jnp.where(mask_zero, y_a2, a2)
 
     # Second: allocation for suc-case.
+    # Spillway bound (2:1): each active hot-add emits at most one net new node,
+    # so spillway usage is bounded by the active region size. See in/in-29.md
+    # "Ledger as Terminal Arena (Settlement)" and agda/Prism/Spillway.agda.
     available = jnp.maximum(cap - arena.count, 0)
     spawn = mask_suc.astype(jnp.int32)
     prefix = jnp.cumsum(spawn)
