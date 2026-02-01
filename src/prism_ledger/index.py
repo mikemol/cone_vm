@@ -15,6 +15,14 @@ class LedgerIndex:
     op_end: jnp.ndarray
 
 
+@dataclass(frozen=True, slots=True)
+class LedgerState:
+    """Ledger plus derived index bundle (canonical interning state)."""
+
+    ledger: Ledger
+    index: LedgerIndex
+
+
 def derive_ledger_index(
     ledger: Ledger,
     *,
@@ -38,4 +46,18 @@ def derive_ledger_index(
     return LedgerIndex(op_start=op_start, op_end=op_end)
 
 
-__all__ = ["LedgerIndex", "derive_ledger_index"]
+def derive_ledger_state(
+    ledger: Ledger,
+    *,
+    op_buckets_full_range: bool,
+) -> LedgerState:
+    """Derive a LedgerState from a ledger bundle (pure)."""
+    return LedgerState(
+        ledger=ledger,
+        index=derive_ledger_index(
+            ledger, op_buckets_full_range=op_buckets_full_range
+        ),
+    )
+
+
+__all__ = ["LedgerIndex", "LedgerState", "derive_ledger_index", "derive_ledger_state"]

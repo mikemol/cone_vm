@@ -48,7 +48,12 @@ from jax import lax
 from prism_core import jax_safe as _jax_safe
 from prism_core.permutation import _invert_perm
 from prism_ledger.config import DEFAULT_INTERN_CONFIG, InternConfig
-from prism_ledger.index import LedgerIndex, derive_ledger_index
+from prism_ledger.index import (
+    LedgerIndex,
+    LedgerState,
+    derive_ledger_index,
+    derive_ledger_state,
+)
 from prism_metrics.probes import (
     _coord_norm_probe_assert,
     _coord_norm_probe_enabled,
@@ -1154,6 +1159,61 @@ def intern_nodes(
     return ids, new_ledger
 
 
+def intern_nodes_state(
+    state: LedgerState,
+    batch_or_ops,
+    a1=None,
+    a2=None,
+    *,
+    cfg: InternConfig = DEFAULT_INTERN_CONFIG,
+    intern_impl_fn=_intern_nodes_impl,
+    lookup_node_id_fn=_lookup_node_id,
+    key_safe_normalize_fn=_key_safe_normalize_nodes,
+    guard_zero_args_fn=_guard_zero_args,
+    checked_pack_key_fn=_checked_pack_key,
+    guard_zero_row_fn=_guard_zero_row,
+    pack_key_fn=_pack_key,
+    candidate_indices_fn=_candidate_indices,
+    guard_max_fn=_guard_max,
+    guards_enabled_fn=_guards_enabled,
+    coord_norm_id_jax_fn=_coord_norm_id_jax,
+    coord_norm_id_jax_noprobe_fn=_coord_norm_id_jax_noprobe,
+    coord_norm_probe_enabled_fn=_coord_norm_probe_enabled,
+    coord_norm_probe_reset_cb_fn=_coord_norm_probe_reset_cb,
+    coord_norm_probe_assert_fn=_coord_norm_probe_assert,
+    scatter_drop_fn=_scatter_drop,
+):
+    """Intern nodes against a LedgerState, returning updated state."""
+    ids, new_ledger = intern_nodes(
+        state.ledger,
+        batch_or_ops,
+        a1,
+        a2,
+        cfg=cfg,
+        ledger_index=state.index,
+        intern_impl_fn=intern_impl_fn,
+        lookup_node_id_fn=lookup_node_id_fn,
+        key_safe_normalize_fn=key_safe_normalize_fn,
+        guard_zero_args_fn=guard_zero_args_fn,
+        checked_pack_key_fn=checked_pack_key_fn,
+        guard_zero_row_fn=guard_zero_row_fn,
+        pack_key_fn=pack_key_fn,
+        candidate_indices_fn=candidate_indices_fn,
+        guard_max_fn=guard_max_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        coord_norm_id_jax_fn=coord_norm_id_jax_fn,
+        coord_norm_id_jax_noprobe_fn=coord_norm_id_jax_noprobe_fn,
+        coord_norm_probe_enabled_fn=coord_norm_probe_enabled_fn,
+        coord_norm_probe_reset_cb_fn=coord_norm_probe_reset_cb_fn,
+        coord_norm_probe_assert_fn=coord_norm_probe_assert_fn,
+        scatter_drop_fn=scatter_drop_fn,
+    )
+    new_state = derive_ledger_state(
+        new_ledger, op_buckets_full_range=cfg.op_buckets_full_range
+    )
+    return ids, new_state
+
+
 __all__ = [
     "_coord_norm_id_jax",
     "_coord_norm_id_jax_noprobe",
@@ -1162,4 +1222,5 @@ __all__ = [
     "InternConfig",
     "DEFAULT_INTERN_CONFIG",
     "intern_nodes",
+    "intern_nodes_state",
 ]

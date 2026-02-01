@@ -1,13 +1,60 @@
 import os
 import sys
+import subprocess
 from pathlib import Path
 
-import jax
 import pytest
+
+
+def _gpu_total_mb() -> float | None:
+    try:
+        out = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            text=True,
+        ).strip()
+    except Exception:
+        return None
+    if not out:
+        return None
+    try:
+        return float(out.splitlines()[0])
+    except Exception:
+        return None
+
+
+def _set_jax_gpu_memory_limits() -> None:
+    # Disable preallocation unless explicitly set.
+    os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+    if "XLA_PYTHON_CLIENT_MEM_FRACTION" in os.environ:
+        return
+    fraction = os.environ.get("PRISM_JAX_GPU_MEM_FRACTION", "").strip()
+    if fraction:
+        os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = fraction
+        return
+    cap_mb = os.environ.get("PRISM_JAX_GPU_MEM_CAP_MB", "").strip()
+    if not cap_mb:
+        return
+    try:
+        cap = float(cap_mb)
+    except Exception:
+        return
+    total = _gpu_total_mb()
+    if total is None or total <= 0:
+        return
+    frac = max(min(cap / total, 1.0), 0.0)
+    os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(frac)
+
 
 # Enable strict scatter guard in tests unless explicitly overridden.
 os.environ.setdefault("PRISM_SCATTER_GUARD", "1")
 os.environ.setdefault("PRISM_TEST_GUARDS", "1")
+_set_jax_gpu_memory_limits()
+
+import jax
 
 # Ensure repo root is importable when pytest uses importlib mode.
 ROOT = os.path.dirname(os.path.dirname(__file__))

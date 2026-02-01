@@ -46,7 +46,12 @@ from prism_core.modes import ValidateMode, require_validate_mode, BspMode, coerc
 from prism_core.errors import PrismPolicyModeError, PrismPolicyBindingError
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
-from prism_ledger.index import LedgerIndex, derive_ledger_index
+from prism_ledger.index import (
+    LedgerIndex,
+    LedgerState,
+    derive_ledger_index,
+    derive_ledger_state,
+)
 from prism_bsp.config import (
     Cnf2Config,
     Cnf2BoundConfig,
@@ -968,6 +973,16 @@ def init_ledger():
     return _init_ledger(_pack_key, LEDGER_CAPACITY, OP_NULL, OP_ZERO)
 
 
+def init_ledger_state(*, cfg: InternConfig | None = None):
+    """Initialize a LedgerState with a derived index."""
+    ledger = init_ledger()
+    if cfg is None:
+        cfg = DEFAULT_INTERN_CONFIG
+    return derive_ledger_state(
+        ledger, op_buckets_full_range=cfg.op_buckets_full_range
+    )
+
+
 def ledger_has_corrupt(ledger) -> HostBool:
     """Interface/Control wrapper for host-visible corrupt checks.
 
@@ -1066,6 +1081,8 @@ InternConfig = InternConfig
 DEFAULT_INTERN_CONFIG = DEFAULT_INTERN_CONFIG
 LedgerIndex = LedgerIndex
 derive_ledger_index = derive_ledger_index
+LedgerState = LedgerState
+derive_ledger_state = derive_ledger_state
 Cnf2Config = Cnf2Config
 DEFAULT_CNF2_CONFIG = DEFAULT_CNF2_CONFIG
 CoordConfig = CoordConfig
@@ -1146,6 +1163,33 @@ def intern_nodes_with_index(
             raise TypeError("intern_nodes_with_index expects both a1 and a2 arrays")
         batch = NodeBatch(batch_or_ops, a1, a2)
     return intern_nodes_with_index_jit(cfg)(ledger, ledger_index, batch)
+
+
+def intern_nodes_state(
+    state: LedgerState,
+    batch_or_ops,
+    a1=None,
+    a2=None,
+    *,
+    cfg: InternConfig | None = None,
+):
+    """Interface/Control wrapper for intern_nodes on LedgerState."""
+    if cfg is None:
+        cfg = DEFAULT_INTERN_CONFIG
+    if a1 is None and a2 is None:
+        if not isinstance(batch_or_ops, NodeBatch):
+            raise TypeError("intern_nodes_state expects a NodeBatch or (ops, a1, a2)")
+        batch = batch_or_ops
+    else:
+        if a1 is None or a2 is None:
+            raise TypeError("intern_nodes_state expects both a1 and a2 arrays")
+        batch = NodeBatch(batch_or_ops, a1, a2)
+    ids, new_state = _ledger_intern.intern_nodes_state(
+        state,
+        batch,
+        cfg=cfg,
+    )
+    return ids, new_state
 
 
 def cycle_jit(
