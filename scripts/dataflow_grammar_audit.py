@@ -24,6 +24,11 @@ from pathlib import Path
 from typing import Iterable, Iterator
 import re
 
+try:  # Prefer the upgraded analyzer when available (e.g. via ../gabion).
+    from gabion.analysis.dataflow_audit import main as _gabion_main
+except Exception:  # pragma: no cover - optional dependency.
+    _gabion_main = None
+
 
 @dataclass
 class ParamUse:
@@ -1013,7 +1018,7 @@ def _render_type_mermaid(
     return "\n".join(lines)
 
 
-def main() -> None:
+def _local_main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("paths", nargs="+")
     parser.add_argument("--no-recursive", action="store_true")
@@ -1095,6 +1100,13 @@ def main() -> None:
             for bundle in bundles:
                 print(f"  bundle: {sorted(bundle)}")
         print()
+
+
+def main() -> None:
+    """Dispatch to gabion's analyzer when available, else run local audit."""
+    if _gabion_main is not None:
+        return _gabion_main()
+    return _local_main()
 
 
 if __name__ == "__main__":
