@@ -15,7 +15,7 @@ import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
 from prism_core.errors import PrismPolicyBindingError
-from prism_core.di import bind_optional_kwargs, cached_jit, resolve
+from prism_core.di import bind_optional_kwargs, cached_jit, resolve, call_with_optional_kwargs
 from prism_core.guards import (
     GuardConfig,
     resolve_safe_gather_fn,
@@ -34,6 +34,7 @@ from prism_core.safety import (
 from prism_core.modes import ValidateMode
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
+from prism_ledger.index import derive_ledger_state
 from prism_bsp.config import (
     Cnf2Config,
     Cnf2RuntimeFns,
@@ -48,7 +49,7 @@ from prism_bsp.config import (
     DEFAULT_INTRINSIC_CONFIG,
     SwizzleWithPermFnsBound,
 )
-from prism_vm_core.protocols import EmitCandidatesFn, HostRaiseFn, InternFn
+from prism_vm_core.protocols import EmitCandidatesFn, HostRaiseFn, InternFn, InternStateFn
 
 
 @dataclass(frozen=True)
@@ -149,14 +150,6 @@ def _noop_metrics(_arena, _tile_size):
 
 @cached_jit
 def _intern_nodes_jit(cfg: InternConfig):
-    def _impl(ledger, batch: NodeBatch):
-        return _ledger_intern.intern_nodes(ledger, batch, cfg=cfg)
-
-    return _impl
-
-
-@cached_jit
-def _intern_nodes_with_index_jit(cfg: InternConfig):
     def _impl(ledger, ledger_index, batch: NodeBatch):
         return _ledger_intern.intern_nodes(
             ledger, batch, cfg=cfg, ledger_index=ledger_index
@@ -165,8 +158,13 @@ def _intern_nodes_with_index_jit(cfg: InternConfig):
     return _impl
 
 
+@cached_jit
+def _intern_nodes_with_index_jit(cfg: InternConfig):
+    return _intern_nodes_jit(cfg)
+
+
 def intern_nodes_jit(cfg: InternConfig | None = None):
-    """Return a jitted intern_nodes entrypoint for a fixed config."""
+    """Return a jitted intern_nodes entrypoint that requires a LedgerIndex."""
     if cfg is None:
         cfg = DEFAULT_INTERN_CONFIG
     return _intern_nodes_jit(cfg)
@@ -1169,23 +1167,44 @@ def cycle_jit_bound_cfg(
 
 def cycle_intrinsic_jit(
     *,
+    intern_state_fn: InternStateFn | None = None,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
     node_batch_fn=None,
 ):
     """Return a jitted intrinsic cycle entrypoint for fixed DI."""
-    if intern_fn is None:
-        intern_fn = _ledger_intern.intern_nodes
-    if intern_cfg is not None and intern_fn is _ledger_intern.intern_nodes:
-        intern_fn = partial(_ledger_intern.intern_nodes, cfg=intern_cfg)
+    if intern_state_fn is not None and intern_fn is not None:
+        raise ValueError("Pass either intern_state_fn or intern_fn, not both.")
+    if intern_state_fn is None:
+        if intern_fn is None:
+            intern_state_fn = _ledger_intern.intern_nodes_state
+            if intern_cfg is not None and intern_state_fn is _ledger_intern.intern_nodes_state:
+                intern_state_fn = partial(_ledger_intern.intern_nodes_state, cfg=intern_cfg)
+        else:
+            cfg = intern_cfg or DEFAULT_INTERN_CONFIG
+
+            def _intern_state(state, batch):
+                ids, new_ledger = call_with_optional_kwargs(
+                    intern_fn,
+                    {"ledger_index": state.index},
+                    state.ledger,
+                    batch,
+                )
+                new_state = derive_ledger_state(
+                    new_ledger, op_buckets_full_range=cfg.op_buckets_full_range
+                )
+                return ids, new_state
+
+            intern_state_fn = _intern_state
     if node_batch_fn is None:
         node_batch_fn = NodeBatch
-    return _cycle_intrinsic_jit_impl(intern_fn, node_batch_fn)
+    return _cycle_intrinsic_jit_impl(intern_state_fn, node_batch_fn)
 
 
 def cycle_intrinsic_jit_cfg(
     cfg: IntrinsicConfig | None = None,
     *,
+    intern_state_fn: InternStateFn | None = None,
     intern_fn: InternFn | None = None,
     intern_cfg: InternConfig | None = None,
     node_batch_fn=None,
@@ -1199,6 +1218,7 @@ def cycle_intrinsic_jit_cfg(
         raise ValueError("Pass either cfg.intern_cfg or intern_cfg, not both.")
     intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
     return cycle_intrinsic_jit(
+        intern_state_fn=intern_state_fn,
         intern_fn=intern_fn,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,

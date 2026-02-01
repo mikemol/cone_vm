@@ -594,11 +594,32 @@ def _iter_config_fields(path: Path) -> dict[str, set[str]]:
     except Exception:
         return {}
     bundles: dict[str, set[str]] = {}
+
+    def _is_dataclass(dec: ast.AST) -> bool:
+        if isinstance(dec, ast.Name):
+            return dec.id == "dataclass"
+        if isinstance(dec, ast.Attribute):
+            return dec.attr == "dataclass"
+        if isinstance(dec, ast.Call):
+            func = dec.func
+            if isinstance(func, ast.Name):
+                return func.id == "dataclass"
+            if isinstance(func, ast.Attribute):
+                return func.attr == "dataclass"
+            try:
+                return "dataclass" in ast.unparse(dec)
+            except Exception:
+                return False
+        try:
+            return "dataclass" in ast.unparse(dec)
+        except Exception:
+            return False
+
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
             continue
-        decorators = {getattr(d, "id", None) for d in node.decorator_list}
-        if "dataclass" not in decorators and not node.name.endswith("Config"):
+        is_dataclass = any(_is_dataclass(dec) for dec in node.decorator_list)
+        if not is_dataclass and not node.name.endswith("Config"):
             continue
         fields: set[str] = set()
         for stmt in node.body:

@@ -85,7 +85,6 @@ from prism_vm_core.facade import (
     init_ledger,
     init_ledger_state,
     init_manifest,
-    intern_nodes,
     intern_nodes_state,
     node_batch,
     LedgerState,
@@ -327,8 +326,14 @@ class PrismVM_BSP:
             )
             ledger_obj = self.ledger.ledger
         else:
-            ids, self.ledger = intern_nodes(self.ledger, batch, cfg=self.intern_cfg)
-            ledger_obj = self.ledger
+            self.ledger = derive_ledger_state(
+                self.ledger,
+                op_buckets_full_range=self.intern_cfg.op_buckets_full_range,
+            )
+            ids, self.ledger = intern_nodes_state(
+                self.ledger, batch, cfg=self.intern_cfg
+            )
+            ledger_obj = self.ledger.ledger
         _host_raise_if_bad(
             ledger_obj,
             "Ledger capacity exceeded during interning",

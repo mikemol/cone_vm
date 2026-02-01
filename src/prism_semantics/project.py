@@ -2,7 +2,8 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 
-from prism_ledger.intern import intern_nodes
+from prism_ledger.intern import intern_nodes_state
+from prism_ledger.index import LedgerState, derive_ledger_state
 from prism_vm_core.domains import _host_int_value, _host_raise_if_bad, _ledger_id
 from prism_vm_core.ontology import OP_NULL
 from prism_vm_core.structures import NodeBatch
@@ -31,6 +32,10 @@ def _project_graph_to_ledger(
     label,
     limit=None,
 ):
+    if isinstance(ledger, LedgerState):
+        ledger_state = ledger
+    else:
+        ledger_state = derive_ledger_state(ledger)
     bundle = _ProjectArgs(opcode=opcode, arg1=arg1, arg2=arg2)
     ops = jax.device_get(bundle.opcode[:count])
     a1s = jax.device_get(bundle.arg1[:count])
@@ -39,7 +44,7 @@ def _project_graph_to_ledger(
     visiting = set()
 
     def _project(idx):
-        nonlocal ledger
+        nonlocal ledger_state
         idx_i = int(idx)
         if idx_i in mapping:
             return mapping[idx_i]
@@ -61,8 +66,8 @@ def _project_graph_to_ledger(
             return 0
         child1 = _project(int(a1s[idx_i]))
         child2 = _project(int(a2s[idx_i]))
-        ids, ledger = intern_nodes(
-            ledger,
+        ids, ledger_state = intern_nodes_state(
+            ledger_state,
             _node_batch(
                 jnp.array([op], dtype=jnp.int32),
                 jnp.array([child1], dtype=jnp.int32),
@@ -74,8 +79,10 @@ def _project_graph_to_ledger(
         return mapping[idx_i]
 
     root_out = _project(int(root_idx))
-    _host_raise_if_bad(ledger, f"{label}: projection exceeded ledger capacity")
-    return ledger, _ledger_id(root_out)
+    _host_raise_if_bad(
+        ledger_state.ledger, f"{label}: projection exceeded ledger capacity"
+    )
+    return ledger_state.ledger, _ledger_id(root_out)
 
 
 def project_manifest_to_ledger(manifest, root_ptr, ledger=None, limit=None):

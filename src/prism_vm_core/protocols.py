@@ -15,14 +15,20 @@ from prism_core.protocols import (
     SafeIndexFn,
     SafeIndexValueFn,
 )
-from prism_ledger.index import LedgerState
+from prism_ledger.index import LedgerIndex, LedgerState
 from prism_vm_core.structures import Arena, CandidateBuffer, Ledger, NodeBatch, Stratum
 
 
 @runtime_checkable
 class InternFn(Protocol):
     def __call__(
-        self, ledger: Ledger, batch_or_ops, a1=None, a2=None
+        self,
+        ledger: Ledger,
+        batch_or_ops,
+        a1=None,
+        a2=None,
+        *,
+        ledger_index: LedgerIndex | None = None,
     ) -> Tuple[jnp.ndarray, Ledger]:
         ...
 

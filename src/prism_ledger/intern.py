@@ -1052,7 +1052,7 @@ def intern_nodes(
     a2=None,
     *,
     cfg: InternConfig = DEFAULT_INTERN_CONFIG,
-    ledger_index: LedgerIndex | None = None,
+    ledger_index: LedgerIndex,
     intern_impl_fn=_intern_nodes_impl,
     lookup_node_id_fn=_lookup_node_id,
     key_safe_normalize_fn=_key_safe_normalize_nodes,
@@ -1095,9 +1095,7 @@ def intern_nodes(
     if proposed_ops.shape[0] == 0:
         return jnp.zeros_like(proposed_ops), ledger
     if ledger_index is None:
-        ledger_index = derive_ledger_index(
-            ledger, op_buckets_full_range=cfg.op_buckets_full_range
-        )
+        raise ValueError("intern_nodes requires a bound ledger_index")
     stop = ledger.oom | ledger.corrupt
     # NOTE: stop path returns zeros today; read-only lookup fallback is deferred.
 

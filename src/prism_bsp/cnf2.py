@@ -33,6 +33,8 @@ from prism_bsp.config import (
     Cnf2BoundConfig,
     Cnf2StaticBoundConfig,
     Cnf2ValueBoundConfig,
+    Cnf2CommitInputs,
+    Cnf2InternInputs,
     Cnf2RuntimeFns,
     DEFAULT_CNF2_RUNTIME_FNS,
     resolve_cnf2_inputs,
@@ -92,6 +94,8 @@ from prism_vm_core.protocols import (
 EMPTY_COMMIT_OPTIONAL: dict = {}
 
 
+# dataflow-bundle: commit_stratum_fn, intern_fn
+# CNF-2 commit/intern pair forwarded through DI resolution.
 # dataflow-bundle: _frontier, _ledger, _post_ids
 # root-assertion guard hook bundle (debug-only)
 # dataflow-bundle: next_frontier, post_ids
@@ -162,12 +166,14 @@ def _commit_stratum_state(
     state: LedgerState,
     stratum: Stratum,
     *,
-    commit_stratum_fn: CommitStratumFn,
+    commit_fns: Cnf2CommitInputs,
     commit_optional: dict,
-    intern_fn: InternFn,
     intern_cfg: InternConfig,
     **kwargs,
 ):
+    commit_stratum_fn = commit_fns.commit_stratum_fn
+    intern_fn = commit_fns.intern_fn
+
     def _intern_with_index(ledger, batch_or_ops, a1=None, a2=None):
         return call_with_optional_kwargs(
             intern_fn,
@@ -398,20 +404,54 @@ def scatter_compacted_ids_cfg(
     )
 
 
+def _ledger_index_is_bound(fn: Callable[..., object]) -> bool:
+    if getattr(fn, "_prism_ledger_index_bound", False):
+        return True
+    if isinstance(fn, partial):
+        keywords = fn.keywords or {}
+        return "ledger_index" in keywords
+    return False
+
+
+def _bind_intern_with_index(
+    ledger,
+    intern_inputs: Cnf2InternInputs,
+    *,
+    intern_cfg: InternConfig | None,
+) -> Cnf2InternInputs:
+    if _ledger_index_is_bound(intern_inputs.intern_fn):
+        return intern_inputs
+    cfg = intern_cfg or DEFAULT_INTERN_CONFIG
+    ledger_index = derive_ledger_state(
+        ledger, op_buckets_full_range=cfg.op_buckets_full_range
+    ).index
+
+    def _intern_with_index(*args, **kwargs):
+        return call_with_optional_kwargs(
+            intern_inputs.intern_fn,
+            {"ledger_index": ledger_index},
+            *args,
+            **kwargs,
+        )
+
+    setattr(_intern_with_index, "_prism_ledger_index_bound", True)
+    return replace(intern_inputs, intern_fn=_intern_with_index)
+
+
 def _intern_candidates_core(
     ledger,
     candidates,
     *,
-    compact_candidates_fn: Callable[..., tuple],
-    intern_fn: InternFn,
-    node_batch_fn: NodeBatchFn,
+    intern_inputs: Cnf2InternInputs,
 ):
-    compacted, count = compact_candidates_fn(candidates)
+    compacted, count = intern_inputs.compact_candidates_fn(candidates)
     enabled = compacted.enabled.astype(jnp.int32)
     ops = jnp.where(enabled, compacted.opcode, jnp.int32(0))
     a1 = jnp.where(enabled, compacted.arg1, jnp.int32(0))
     a2 = jnp.where(enabled, compacted.arg2, jnp.int32(0))
-    ids, new_ledger = intern_fn(ledger, node_batch_fn(ops, a1, a2))
+    ids, new_ledger = intern_inputs.intern_fn(
+        ledger, intern_inputs.node_batch_fn(ops, a1, a2)
+    )
     return ids, new_ledger, count
 
 
@@ -435,12 +475,15 @@ def intern_candidates(
         node_batch_fn=node_batch_fn,
         node_batch_default=_node_batch,
     )
+    resolved = _bind_intern_with_index(
+        ledger,
+        resolved,
+        intern_cfg=intern_cfg,
+    )
     return _intern_candidates_core(
         ledger,
         candidates,
-        compact_candidates_fn=resolved.compact_candidates_fn,
-        intern_fn=resolved.intern_fn,
-        node_batch_fn=resolved.node_batch_fn,
+        intern_inputs=resolved,
     )
 
 
@@ -455,6 +498,8 @@ def intern_candidates_cfg(
     node_batch_fn: NodeBatchFn = _node_batch,
 ):
     """Interface/Control wrapper for intern_candidates with DI bundle."""
+    if cfg is not None and intern_cfg is None:
+        intern_cfg = cfg.intern_cfg
     resolved = resolve_cnf2_intern_inputs(
         cfg,
         compact_candidates_fn=compact_candidates_fn,
@@ -466,12 +511,15 @@ def intern_candidates_cfg(
         node_batch_fn=node_batch_fn,
         node_batch_default=_node_batch,
     )
+    resolved = _bind_intern_with_index(
+        ledger,
+        resolved,
+        intern_cfg=intern_cfg,
+    )
     return _intern_candidates_core(
         ledger,
         candidates,
-        compact_candidates_fn=resolved.compact_candidates_fn,
-        intern_fn=resolved.intern_fn,
-        node_batch_fn=resolved.node_batch_fn,
+        intern_inputs=resolved,
     )
 
 def _cycle_candidates_core_impl_state(
@@ -483,7 +531,7 @@ def _cycle_candidates_core_impl_state(
     commit_optional: dict = EMPTY_COMMIT_OPTIONAL,
     post_q_handler,
     guard_cfg: GuardConfig | None = None,
-    intern_fn: InternFn = intern_nodes,
+    commit_fns: Cnf2CommitInputs,
     intern_state_fn: InternStateFn = intern_nodes_state,
     intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -491,7 +539,6 @@ def _cycle_candidates_core_impl_state(
     emit_candidates_fn: EmitCandidatesFn = emit_candidates,
     candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
     scatter_drop_fn: ScatterDropFn = _scatter_drop,
-    commit_stratum_fn: CommitStratumFn = commit_stratum,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
     assert_roots_fn=_assert_roots_noop,
@@ -505,13 +552,12 @@ def _cycle_candidates_core_impl_state(
         cfg,
         guard_cfg=guard_cfg,
         intern_cfg=intern_cfg,
-        intern_fn=intern_fn,
+        commit_fns=commit_fns,
         node_batch_fn=node_batch_fn,
         coord_xor_batch_fn=coord_xor_batch_fn,
         emit_candidates_fn=emit_candidates_fn,
         candidate_indices_fn=candidate_indices_fn,
         scatter_drop_fn=scatter_drop_fn,
-        commit_stratum_fn=commit_stratum_fn,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         safe_gather_ok_fn=safe_gather_ok_fn,
@@ -524,21 +570,23 @@ def _cycle_candidates_core_impl_state(
     )
     guard_cfg = resolved.guard_cfg
     intern_cfg = resolved.intern_cfg
-    intern_fn = resolved.intern_fn
+    commit_fns = resolved.commit_fns
     node_batch_fn = resolved.node_batch_fn
     coord_xor_batch_fn = resolved.coord_xor_batch_fn
     emit_candidates_fn = resolved.emit_candidates_fn
     candidate_indices_fn = resolved.candidate_indices_fn
     scatter_drop_fn = resolved.scatter_drop_fn
-    commit_stratum_fn = resolved.commit_stratum_fn
     apply_q_fn = resolved.apply_q_fn
     identity_q_fn = resolved.identity_q_fn
     host_bool_value_fn = resolved.host_bool_value_fn
     host_int_value_fn = resolved.host_int_value_fn
     runtime_fns = resolved.runtime_fns
     intern_cfg = _resolve_intern_cfg(cfg, intern_cfg)
-    if intern_fn is intern_nodes:
-        intern_fn = partial(intern_nodes, cfg=intern_cfg)
+    if commit_fns.intern_fn is intern_nodes:
+        commit_fns = Cnf2CommitInputs(
+            intern_fn=partial(intern_nodes, cfg=intern_cfg),
+            commit_stratum_fn=commit_fns.commit_stratum_fn,
+        )
     cnf2_metrics_update_fn = runtime_fns.cnf2_metrics_update_fn
     ledger = state.ledger
     # BSPᵗ: temporal superstep / barrier semantics.
@@ -735,18 +783,16 @@ def _cycle_candidates_core_impl_state(
     state2, _, q_map = _commit_stratum_state(
         state2,
         stratum0,
-        commit_stratum_fn=commit_stratum_fn,
+        commit_fns=commit_fns,
         commit_optional=commit_optional,
-        intern_fn=intern_fn,
         intern_cfg=intern_cfg,
         validate_mode=validate_mode,
     )
     state2, _, q_map = _commit_stratum_state(
         state2,
         stratum1,
-        commit_stratum_fn=commit_stratum_fn,
+        commit_fns=commit_fns,
         commit_optional=commit_optional,
-        intern_fn=intern_fn,
         intern_cfg=intern_cfg,
         prior_q=q_map,
         validate_mode=validate_mode,
@@ -759,9 +805,8 @@ def _cycle_candidates_core_impl_state(
         state2, _, q_map = _commit_stratum_state(
             state2,
             micro_stratum,
-            commit_stratum_fn=commit_stratum_fn,
+            commit_fns=commit_fns,
             commit_optional=commit_optional,
-            intern_fn=intern_fn,
             intern_cfg=intern_cfg,
             prior_q=q_map,
             validate_mode=validate_mode,
@@ -781,7 +826,7 @@ def _cycle_candidates_core_static_bound(
     cfg: Cnf2Config | None = None,
     safe_gather_policy: SafetyPolicy,
     guard_cfg: GuardConfig | None = None,
-    intern_fn: InternFn = intern_nodes,
+    commit_fns: Cnf2CommitInputs,
     intern_state_fn: InternStateFn = intern_nodes_state,
     intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -789,7 +834,6 @@ def _cycle_candidates_core_static_bound(
     emit_candidates_fn: EmitCandidatesFn = emit_candidates,
     candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
     scatter_drop_fn: ScatterDropFn = _scatter_drop,
-    commit_stratum_fn: CommitStratumFn = commit_stratum_static,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
     safe_gather_ok_fn: SafeGatherOkFn = _jax_safe.safe_gather_1d_ok,
@@ -804,7 +848,7 @@ def _cycle_candidates_core_static_bound(
     This entrypoint assumes:
     - safe_gather_policy is already resolved (non-optional),
     - safe_gather_ok_fn is already bound if policy-bound behavior is required,
-    - commit_stratum_fn is already the correct bound/static variant.
+    - commit_fns.commit_stratum_fn is already the correct bound/static variant.
 
     All policy binding / guard binding / config resolution must happen
     outside this function so the core remains branch-free with respect to
@@ -871,7 +915,7 @@ def _cycle_candidates_core_static_bound(
         commit_optional=commit_optional,
         post_q_handler=_post_q_handler,
         guard_cfg=guard_cfg,
-        intern_fn=intern_fn,
+        commit_fns=commit_fns,
         intern_state_fn=intern_state_fn,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
@@ -879,7 +923,6 @@ def _cycle_candidates_core_static_bound(
         emit_candidates_fn=emit_candidates_fn,
         candidate_indices_fn=candidate_indices_fn,
         scatter_drop_fn=scatter_drop_fn,
-        commit_stratum_fn=commit_stratum_fn,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         assert_roots_fn=_assert_roots,
@@ -899,7 +942,7 @@ def _cycle_candidates_core_value_bound(
     cfg: Cnf2Config | None = None,
     safe_gather_policy_value: PolicyValue,
     guard_cfg: GuardConfig | None = None,
-    intern_fn: InternFn = intern_nodes,
+    commit_fns: Cnf2CommitInputs,
     intern_state_fn: InternStateFn = intern_nodes_state,
     intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
@@ -907,7 +950,6 @@ def _cycle_candidates_core_value_bound(
     emit_candidates_fn: EmitCandidatesFn = emit_candidates,
     candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
     scatter_drop_fn: ScatterDropFn = _scatter_drop,
-    commit_stratum_fn: CommitStratumFn = commit_stratum_value,
     apply_q_fn: ApplyQFn = apply_q,
     identity_q_fn: IdentityQFn = _identity_q,
     safe_gather_ok_value_fn: SafeGatherOkValueFn = _jax_safe.safe_gather_1d_ok_value,
@@ -922,7 +964,7 @@ def _cycle_candidates_core_value_bound(
     This entrypoint assumes:
     - safe_gather_policy_value is already resolved (non-optional),
     - safe_gather_ok_value_fn is already guard-bound,
-    - commit_stratum_fn is already the correct value-policy variant.
+    - commit_fns.commit_stratum_fn is already the correct value-policy variant.
 
     All policy binding / guard binding / config resolution must happen
     outside this function so the core remains branch-free with respect to
@@ -988,7 +1030,7 @@ def _cycle_candidates_core_value_bound(
         commit_optional=commit_optional,
         post_q_handler=_post_q_handler,
         guard_cfg=guard_cfg,
-        intern_fn=intern_fn,
+        commit_fns=commit_fns,
         intern_state_fn=intern_state_fn,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
@@ -996,7 +1038,6 @@ def _cycle_candidates_core_value_bound(
         emit_candidates_fn=emit_candidates_fn,
         candidate_indices_fn=candidate_indices_fn,
         scatter_drop_fn=scatter_drop_fn,
-        commit_stratum_fn=commit_stratum_fn,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         assert_roots_fn=_assert_roots,
@@ -1115,6 +1156,10 @@ def cycle_candidates_static(
     guard_cfg = _resolve_guard_cfg(guard_cfg, cfg)
     if commit_stratum_fn is commit_stratum:
         commit_stratum_fn = commit_stratum_static
+    commit_fns = Cnf2CommitInputs(
+        intern_fn=intern_fn,
+        commit_stratum_fn=commit_stratum_fn,
+    )
     state, frontier, strata, q_map = _cycle_candidates_core_static_bound(
         ledger,
         frontier_ids,
@@ -1122,14 +1167,13 @@ def cycle_candidates_static(
         cfg=cfg,
         safe_gather_policy=safe_gather_policy,
         guard_cfg=guard_cfg,
-        intern_fn=intern_fn,
+        commit_fns=commit_fns,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         coord_xor_batch_fn=coord_xor_batch_fn,
         emit_candidates_fn=emit_candidates_fn,
         candidate_indices_fn=candidate_indices_fn,
         scatter_drop_fn=scatter_drop_fn,
-        commit_stratum_fn=commit_stratum_fn,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         safe_gather_ok_fn=safe_gather_ok_fn,
@@ -1235,6 +1279,10 @@ def cycle_candidates_static_state(
     guard_cfg = _resolve_guard_cfg(guard_cfg, cfg)
     if commit_stratum_fn is commit_stratum:
         commit_stratum_fn = commit_stratum_static
+    commit_fns = Cnf2CommitInputs(
+        intern_fn=intern_fn,
+        commit_stratum_fn=commit_stratum_fn,
+    )
     return _cycle_candidates_core_static_bound(
         state,
         frontier_ids,
@@ -1242,14 +1290,13 @@ def cycle_candidates_static_state(
         cfg=cfg,
         safe_gather_policy=safe_gather_policy,
         guard_cfg=guard_cfg,
-        intern_fn=intern_fn,
+        commit_fns=commit_fns,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         coord_xor_batch_fn=coord_xor_batch_fn,
         emit_candidates_fn=emit_candidates_fn,
         candidate_indices_fn=candidate_indices_fn,
         scatter_drop_fn=scatter_drop_fn,
-        commit_stratum_fn=commit_stratum_fn,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         safe_gather_ok_fn=safe_gather_ok_fn,
@@ -1332,6 +1379,10 @@ def cycle_candidates_value(
     )
     if commit_stratum_fn is commit_stratum:
         commit_stratum_fn = commit_stratum_value
+    commit_fns = Cnf2CommitInputs(
+        intern_fn=intern_fn,
+        commit_stratum_fn=commit_stratum_fn,
+    )
     state, frontier, strata, q_map = _cycle_candidates_core_value_bound(
         ledger,
         frontier_ids,
@@ -1339,14 +1390,13 @@ def cycle_candidates_value(
         cfg=cfg,
         safe_gather_policy_value=safe_gather_policy_value,
         guard_cfg=guard_cfg,
-        intern_fn=intern_fn,
+        commit_fns=commit_fns,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         coord_xor_batch_fn=coord_xor_batch_fn,
         emit_candidates_fn=emit_candidates_fn,
         candidate_indices_fn=candidate_indices_fn,
         scatter_drop_fn=scatter_drop_fn,
-        commit_stratum_fn=commit_stratum_fn,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         safe_gather_ok_fn=None,
@@ -1432,6 +1482,10 @@ def cycle_candidates_value_state(
     )
     if commit_stratum_fn is commit_stratum:
         commit_stratum_fn = commit_stratum_value
+    commit_fns = Cnf2CommitInputs(
+        intern_fn=intern_fn,
+        commit_stratum_fn=commit_stratum_fn,
+    )
     return _cycle_candidates_core_value_bound(
         state,
         frontier_ids,
@@ -1439,14 +1493,13 @@ def cycle_candidates_value_state(
         cfg=cfg,
         safe_gather_policy_value=safe_gather_policy_value,
         guard_cfg=guard_cfg,
-        intern_fn=intern_fn,
+        commit_fns=commit_fns,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         coord_xor_batch_fn=coord_xor_batch_fn,
         emit_candidates_fn=emit_candidates_fn,
         candidate_indices_fn=candidate_indices_fn,
         scatter_drop_fn=scatter_drop_fn,
-        commit_stratum_fn=commit_stratum_fn,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         safe_gather_ok_fn=None,
@@ -1680,6 +1733,13 @@ def cycle_candidates_bound(
             guard_cfg=guard_cfg,
             commit_stratum_fn=commit_stratum_fn,
         )
+        commit_stratum_value_fn = (
+            cfg_resolved.commit_stratum_fn or commit_stratum_value
+        )
+        commit_fns = Cnf2CommitInputs(
+            intern_fn=intern_fn,
+            commit_stratum_fn=commit_stratum_value_fn,
+        )
         state, frontier, strata, q_map = _cycle_candidates_core_value_bound(
             ledger,
             frontier_ids,
@@ -1687,14 +1747,13 @@ def cycle_candidates_bound(
             cfg=cfg_resolved,
             safe_gather_policy_value=policy_value,
             guard_cfg=None,
-            intern_fn=intern_fn,
+            commit_fns=commit_fns,
             intern_cfg=intern_cfg,
             node_batch_fn=node_batch_fn,
             coord_xor_batch_fn=coord_xor_batch_fn,
             emit_candidates_fn=emit_candidates_fn,
             candidate_indices_fn=candidate_indices_fn,
             scatter_drop_fn=scatter_drop_fn,
-            commit_stratum_fn=cfg_resolved.commit_stratum_fn or commit_stratum_value,
             apply_q_fn=apply_q_fn,
             identity_q_fn=identity_q_fn,
             safe_gather_ok_value_fn=cfg_resolved.safe_gather_ok_value_fn
@@ -1719,6 +1778,13 @@ def cycle_candidates_bound(
         guard_cfg=guard_cfg,
         commit_stratum_fn=commit_stratum_fn,
     )
+    commit_stratum_static_fn = (
+        cfg_resolved.commit_stratum_fn or commit_stratum_bound
+    )
+    commit_fns = Cnf2CommitInputs(
+        intern_fn=intern_fn,
+        commit_stratum_fn=commit_stratum_static_fn,
+    )
     state, frontier, strata, q_map = _cycle_candidates_core_static_bound(
         ledger,
         frontier_ids,
@@ -1726,14 +1792,13 @@ def cycle_candidates_bound(
         cfg=cfg_resolved,
         safe_gather_policy=policy,
         guard_cfg=None,
-        intern_fn=intern_fn,
+        commit_fns=commit_fns,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         coord_xor_batch_fn=coord_xor_batch_fn,
         emit_candidates_fn=emit_candidates_fn,
         candidate_indices_fn=candidate_indices_fn,
         scatter_drop_fn=scatter_drop_fn,
-        commit_stratum_fn=cfg_resolved.commit_stratum_fn or commit_stratum_bound,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         safe_gather_ok_fn=cfg_resolved.safe_gather_ok_bound_fn or safe_gather_ok_fn,
@@ -1782,6 +1847,13 @@ def cycle_candidates_bound_state(
             guard_cfg=guard_cfg,
             commit_stratum_fn=commit_stratum_fn,
         )
+        commit_stratum_value_fn = (
+            cfg_resolved.commit_stratum_fn or commit_stratum_value
+        )
+        commit_fns = Cnf2CommitInputs(
+            intern_fn=intern_fn,
+            commit_stratum_fn=commit_stratum_value_fn,
+        )
         state, frontier, strata, q_map = _cycle_candidates_core_value_bound(
             state,
             frontier_ids,
@@ -1789,14 +1861,13 @@ def cycle_candidates_bound_state(
             cfg=cfg_resolved,
             safe_gather_policy_value=policy_value,
             guard_cfg=None,
-            intern_fn=intern_fn,
+            commit_fns=commit_fns,
             intern_cfg=intern_cfg,
             node_batch_fn=node_batch_fn,
             coord_xor_batch_fn=coord_xor_batch_fn,
             emit_candidates_fn=emit_candidates_fn,
             candidate_indices_fn=candidate_indices_fn,
             scatter_drop_fn=scatter_drop_fn,
-            commit_stratum_fn=cfg_resolved.commit_stratum_fn or commit_stratum_value,
             apply_q_fn=apply_q_fn,
             identity_q_fn=identity_q_fn,
             safe_gather_ok_value_fn=cfg_resolved.safe_gather_ok_value_fn
@@ -1815,6 +1886,13 @@ def cycle_candidates_bound_state(
         guard_cfg=guard_cfg,
         commit_stratum_fn=commit_stratum_fn,
     )
+    commit_stratum_static_fn = (
+        cfg_resolved.commit_stratum_fn or commit_stratum_bound
+    )
+    commit_fns = Cnf2CommitInputs(
+        intern_fn=intern_fn,
+        commit_stratum_fn=commit_stratum_static_fn,
+    )
     state, frontier, strata, q_map = _cycle_candidates_core_static_bound(
         state,
         frontier_ids,
@@ -1822,14 +1900,13 @@ def cycle_candidates_bound_state(
         cfg=cfg_resolved,
         safe_gather_policy=policy,
         guard_cfg=None,
-        intern_fn=intern_fn,
+        commit_fns=commit_fns,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         coord_xor_batch_fn=coord_xor_batch_fn,
         emit_candidates_fn=emit_candidates_fn,
         candidate_indices_fn=candidate_indices_fn,
         scatter_drop_fn=scatter_drop_fn,
-        commit_stratum_fn=cfg_resolved.commit_stratum_fn or commit_stratum_bound,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         safe_gather_ok_fn=cfg_resolved.safe_gather_ok_fn or safe_gather_ok_fn,

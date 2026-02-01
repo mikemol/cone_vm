@@ -1169,8 +1169,10 @@ def intern_nodes(
             raise TypeError("intern_nodes expects both a1 and a2 arrays")
         batch = NodeBatch(batch_or_ops, a1, a2)
     if ledger_index is None:
-        return intern_nodes_jit(cfg)(ledger, batch)
-    return intern_nodes_with_index_jit(cfg)(ledger, ledger_index, batch)
+        ledger_index = derive_ledger_index(
+            ledger, op_buckets_full_range=cfg.op_buckets_full_range
+        )
+    return intern_nodes_jit(cfg)(ledger, ledger_index, batch)
 
 
 def intern_nodes_with_index(
@@ -1270,12 +1272,28 @@ def commit_stratum_static(
     """Static-policy wrapper for commit_stratum injection."""
     if intern_fn is None:
         intern_fn = intern_nodes
+    ledger_index = derive_ledger_index(
+        ledger, op_buckets_full_range=DEFAULT_INTERN_CONFIG.op_buckets_full_range
+    )
+    def _intern_with_index(ledger_in, batch_or_ops, a1=None, a2=None):
+        return call_with_optional_kwargs(
+            intern_fn,
+            {"ledger_index": ledger_index},
+            ledger_in,
+            batch_or_ops,
+            a1,
+            a2,
+        )
+
+    setattr(_intern_with_index, "_prism_ledger_index_bound", True)
     return _commit_stratum_static_impl(
         ledger,
         stratum,
         prior_q=prior_q,
         validate_mode=validate_mode,
-        intern_fn=intern_fn,
+        intern_fn=_intern_with_index,
+        ledger_index=ledger_index,
+        intern_cfg=DEFAULT_INTERN_CONFIG,
         safe_gather_policy=safe_gather_policy,
         guard_cfg=guard_cfg,
         policy_binding=policy_binding,
@@ -1296,12 +1314,28 @@ def commit_stratum_value(
     """Policy-value wrapper for commit_stratum injection."""
     if intern_fn is None:
         intern_fn = intern_nodes
+    ledger_index = derive_ledger_index(
+        ledger, op_buckets_full_range=DEFAULT_INTERN_CONFIG.op_buckets_full_range
+    )
+    def _intern_with_index(ledger_in, batch_or_ops, a1=None, a2=None):
+        return call_with_optional_kwargs(
+            intern_fn,
+            {"ledger_index": ledger_index},
+            ledger_in,
+            batch_or_ops,
+            a1,
+            a2,
+        )
+
+    setattr(_intern_with_index, "_prism_ledger_index_bound", True)
     return _commit_stratum_value_impl(
         ledger,
         stratum,
         prior_q=prior_q,
         validate_mode=validate_mode,
-        intern_fn=intern_fn,
+        intern_fn=_intern_with_index,
+        ledger_index=ledger_index,
+        intern_cfg=DEFAULT_INTERN_CONFIG,
         safe_gather_policy_value=safe_gather_policy_value,
         guard_cfg=guard_cfg,
         policy_binding=policy_binding,
@@ -1340,6 +1374,8 @@ def commit_stratum(
             policy_value=safe_gather_policy_value,
             context="commit_stratum",
         )
+    if intern_fn is None:
+        intern_fn = intern_nodes
     if binding.mode == PolicyMode.VALUE:
         return commit_stratum_value(
             ledger,

@@ -82,6 +82,7 @@ class Cnf2Config:
     candidate_fns: "Cnf2CandidateFns" | None = None
     compact_cfg: CompactConfig | None = None
     scatter_drop_fn: ScatterDropFn | None = None
+    commit_fns: "Cnf2CommitFns" | None = None
     commit_stratum_fn: CommitStratumFn | None = None
     apply_q_fn: ApplyQFn | None = None
     identity_q_fn: IdentityQFn | None = None
@@ -109,13 +110,12 @@ class Cnf2ResolvedInputs:
     runtime_fns: "Cnf2RuntimeFns"
     guard_cfg: GuardConfig | None
     intern_cfg: InternConfig | None
-    intern_fn: InternFn
+    commit_fns: "Cnf2CommitInputs"
     node_batch_fn: NodeBatchFn
     coord_xor_batch_fn: CoordXorBatchFn
     emit_candidates_fn: EmitCandidatesFn
     candidate_indices_fn: CandidateIndicesFn
     scatter_drop_fn: ScatterDropFn
-    commit_stratum_fn: CommitStratumFn
     apply_q_fn: ApplyQFn
     identity_q_fn: IdentityQFn
     safe_gather_ok_fn: SafeGatherOkFn
@@ -142,6 +142,22 @@ class Cnf2CandidateFns:
     emit_candidates_fn: EmitCandidatesFn | None = None
     candidate_indices_fn: CandidateIndicesFn | None = None
     scatter_drop_fn: ScatterDropFn | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Cnf2CommitInputs:
+    """Resolved commit/intern inputs for CNF-2."""
+
+    intern_fn: InternFn
+    commit_stratum_fn: CommitStratumFn
+
+
+@dataclass(frozen=True, slots=True)
+class Cnf2CommitFns:
+    """Bundle of commit/intern functions observed as a forwarding group."""
+
+    intern_fn: InternFn | None = None
+    commit_stratum_fn: CommitStratumFn | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -253,13 +269,12 @@ def resolve_cnf2_inputs(
     *,
     guard_cfg: GuardConfig | None,
     intern_cfg: InternConfig | None,
-    intern_fn: InternFn,
+    commit_fns: Cnf2CommitInputs,
     node_batch_fn: NodeBatchFn,
     coord_xor_batch_fn: CoordXorBatchFn,
     emit_candidates_fn: EmitCandidatesFn,
     candidate_indices_fn: CandidateIndicesFn,
     scatter_drop_fn: ScatterDropFn,
-    commit_stratum_fn: CommitStratumFn,
     apply_q_fn: ApplyQFn,
     identity_q_fn: IdentityQFn,
     safe_gather_ok_fn: SafeGatherOkFn,
@@ -271,6 +286,9 @@ def resolve_cnf2_inputs(
     runtime_fns: Cnf2RuntimeFns,
 ) -> Cnf2ResolvedInputs:
     """Resolve CNF-2 config overrides into concrete inputs."""
+
+    intern_fn = commit_fns.intern_fn
+    commit_stratum_fn = commit_fns.commit_stratum_fn
 
     def _maybe_override(current, default, override):
         if override is None:
@@ -297,6 +315,12 @@ def resolve_cnf2_inputs(
     runtime_default = runtime_fns
 
     if cfg is not None:
+        if cfg.commit_fns is not None:
+            commit_bundle = cfg.commit_fns
+            if commit_bundle.intern_fn is not None:
+                intern_fn = commit_bundle.intern_fn
+            if commit_bundle.commit_stratum_fn is not None:
+                commit_stratum_fn = commit_bundle.commit_stratum_fn
         if cfg.policy_fns is not None:
             policy_bundle = cfg.policy_fns
             if policy_bundle.commit_stratum_fn is not None:
@@ -356,6 +380,14 @@ def resolve_cnf2_inputs(
                     context="cycle_candidates_core",
                     policy_mode="static",
                 )
+        if cfg.commit_fns is not None and cfg.commit_fns.commit_stratum_fn is not None:
+            if getattr(safe_gather_ok_fn, "_prism_policy_bound", False):
+                if cfg.commit_fns.commit_stratum_fn is not commit_stratum_fn:
+                    raise PrismPolicyBindingError(
+                        "cycle_candidates_core received cfg.commit_fns.commit_stratum_fn with policy-bound safe_gather_ok_fn",
+                        context="cycle_candidates_core",
+                        policy_mode="static",
+                    )
         commit_stratum_fn = _maybe_override(
             commit_stratum_fn, commit_stratum_default, cfg.commit_stratum_fn
         )
@@ -407,17 +439,20 @@ def resolve_cnf2_inputs(
         raise ValueError("apply_q_fn is required")
     if identity_q_fn is None:
         raise ValueError("identity_q_fn is required")
+    commit_fns = Cnf2CommitInputs(
+        intern_fn=intern_fn,
+        commit_stratum_fn=commit_stratum_fn,
+    )
     return Cnf2ResolvedInputs(
         runtime_fns=runtime_fns,
         guard_cfg=guard_cfg,
         intern_cfg=intern_cfg,
-        intern_fn=intern_fn,
+        commit_fns=commit_fns,
         node_batch_fn=node_batch_fn,
         coord_xor_batch_fn=coord_xor_batch_fn,
         emit_candidates_fn=emit_candidates_fn,
         candidate_indices_fn=candidate_indices_fn,
         scatter_drop_fn=scatter_drop_fn,
-        commit_stratum_fn=commit_stratum_fn,
         apply_q_fn=apply_q_fn,
         identity_q_fn=identity_q_fn,
         safe_gather_ok_fn=safe_gather_ok_fn,
@@ -702,6 +737,8 @@ __all__ = [
     "resolve_cnf2_inputs",
     "Cnf2CandidateInputs",
     "Cnf2CandidateFns",
+    "Cnf2CommitInputs",
+    "Cnf2CommitFns",
     "Cnf2RuntimeFns",
     "DEFAULT_CNF2_RUNTIME_FNS",
     "Cnf2PolicyFns",
