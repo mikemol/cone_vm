@@ -25,8 +25,9 @@ from prism_core.safety import (
 from prism_core.errors import PrismPolicyBindingError
 from prism_core.modes import ValidateMode
 from prism_coord.coord import coord_xor_batch
-from prism_ledger.intern import intern_nodes
-from prism_ledger.config import InternConfig
+from prism_ledger.intern import intern_nodes, intern_nodes_state
+from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
+from prism_ledger.index import LedgerState, derive_ledger_state
 from prism_bsp.config import (
     Cnf2Config,
     Cnf2BoundConfig,
@@ -80,6 +81,7 @@ from prism_vm_core.protocols import (
     HostIntValueFn,
     IdentityQFn,
     InternFn,
+    InternStateFn,
     LedgerRootsHashFn,
     NodeBatchFn,
     ScatterDropFn,
@@ -118,6 +120,74 @@ _scatter_drop = _jax_safe.scatter_drop
 
 def _node_batch(op, a1, a2) -> NodeBatch:
     return NodeBatch(op=op, a1=a1, a2=a2)
+
+
+def _resolve_intern_cfg(
+    cfg: Cnf2Config | None, intern_cfg: InternConfig | None
+) -> InternConfig:
+    if intern_cfg is None and cfg is not None and cfg.intern_cfg is not None:
+        intern_cfg = cfg.intern_cfg
+    if intern_cfg is None:
+        intern_cfg = DEFAULT_INTERN_CONFIG
+    return intern_cfg
+
+
+def _state_with_ledger(state: LedgerState, ledger) -> LedgerState:
+    if ledger is state.ledger:
+        return state
+    return LedgerState(ledger=ledger, index=state.index)
+
+
+def _coord_xor_batch_state(
+    state: LedgerState,
+    left_ids,
+    right_ids,
+    *,
+    coord_xor_batch_fn: CoordXorBatchFn,
+    intern_cfg: InternConfig,
+) -> tuple[jnp.ndarray, LedgerState]:
+    ids, ledger = coord_xor_batch_fn(state.ledger, left_ids, right_ids)
+    if ledger is state.ledger:
+        return ids, state
+    return ids, derive_ledger_state(
+        ledger, op_buckets_full_range=intern_cfg.op_buckets_full_range
+    )
+
+
+def _commit_stratum_state(
+    state: LedgerState,
+    stratum: Stratum,
+    *,
+    commit_stratum_fn: CommitStratumFn,
+    commit_optional: dict,
+    intern_fn: InternFn,
+    intern_cfg: InternConfig,
+    **kwargs,
+):
+    def _intern_with_index(ledger, batch_or_ops, a1=None, a2=None):
+        return call_with_optional_kwargs(
+            intern_fn,
+            {"ledger_index": state.index},
+            ledger,
+            batch_or_ops,
+            a1,
+            a2,
+        )
+
+    ledger, canon_ids, q_map = call_with_optional_kwargs(
+        commit_stratum_fn,
+        commit_optional,
+        state.ledger,
+        stratum,
+        intern_fn=_intern_with_index,
+        **kwargs,
+    )
+    if ledger is state.ledger:
+        return state, canon_ids, q_map
+    new_state = derive_ledger_state(
+        ledger, op_buckets_full_range=intern_cfg.op_buckets_full_range
+    )
+    return new_state, canon_ids, q_map
 
 
 def emit_candidates(ledger, frontier_ids):
@@ -400,8 +470,8 @@ def intern_candidates_cfg(
         node_batch_fn=resolved.node_batch_fn,
     )
 
-def _cycle_candidates_core_impl(
-    ledger,
+def _cycle_candidates_core_impl_state(
+    state: LedgerState,
     frontier_ids,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
@@ -410,6 +480,7 @@ def _cycle_candidates_core_impl(
     post_q_handler,
     guard_cfg: GuardConfig | None = None,
     intern_fn: InternFn = intern_nodes,
+    intern_state_fn: InternStateFn = intern_nodes_state,
     intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
     coord_xor_batch_fn: CoordXorBatchFn = coord_xor_batch,
@@ -461,7 +532,11 @@ def _cycle_candidates_core_impl(
     host_bool_value_fn = resolved.host_bool_value_fn
     host_int_value_fn = resolved.host_int_value_fn
     runtime_fns = resolved.runtime_fns
+    intern_cfg = _resolve_intern_cfg(cfg, intern_cfg)
+    if intern_fn is intern_nodes:
+        intern_fn = partial(intern_nodes, cfg=intern_cfg)
     cnf2_metrics_update_fn = runtime_fns.cnf2_metrics_update_fn
+    ledger = state.ledger
     # BSPᵗ: temporal superstep / barrier semantics.
     frontier_ids = _committed_ids(frontier_ids)
     frontier_arr = jnp.atleast_1d(frontier_ids.a)
@@ -510,9 +585,14 @@ def _cycle_candidates_core_impl(
     coord_idx_safe = jnp.where(coord_valid, coord_idx, 0)
     coord_left = r_a1[coord_idx_safe][:coord_count_i]
     coord_right = r_a2[coord_idx_safe][:coord_count_i]
-    coord_ids_compact, ledger = coord_xor_batch_fn(
-        ledger, coord_left, coord_right
+    coord_ids_compact, state = _coord_xor_batch_state(
+        state,
+        coord_left,
+        coord_right,
+        coord_xor_batch_fn=coord_xor_batch_fn,
+        intern_cfg=intern_cfg,
     )
+    ledger = state.ledger
     coord_ids_full = jnp.zeros_like(coord_idx_safe)
     coord_ids_full = coord_ids_full.at[:coord_count_i].set(coord_ids_compact)
     coord_ids = _scatter_compacted_ids(
@@ -532,7 +612,13 @@ def _cycle_candidates_core_impl(
     ops0 = jnp.where(enabled0, compacted0.opcode, jnp.int32(0))
     a1_0 = jnp.where(enabled0, compacted0.arg1, jnp.int32(0))
     a2_0 = jnp.where(enabled0, compacted0.arg2, jnp.int32(0))
-    ids_compact, ledger0 = intern_fn(ledger, node_batch_fn(ops0, a1_0, a2_0))
+    ids_compact, state0 = call_with_optional_kwargs(
+        intern_state_fn,
+        {"cfg": intern_cfg},
+        state,
+        node_batch_fn(ops0, a1_0, a2_0),
+    )
+    ledger0 = state0.ledger
     size0 = candidates.enabled.shape[0]
     ids_full0 = _scatter_compacted_ids(
         comp_idx0,
@@ -584,9 +670,13 @@ def _cycle_candidates_core_impl(
     slot1_ops = jnp.where(slot1_enabled, slot1_ops, jnp.int32(0))
     slot1_a1 = jnp.where(slot1_enabled, slot1_a1, jnp.int32(0))
     slot1_a2 = jnp.where(slot1_enabled, slot1_a2, jnp.int32(0))
-    slot1_ids, ledger1 = intern_fn(
-        ledger0, node_batch_fn(slot1_ops, slot1_a1, slot1_a2)
+    slot1_ids, state1 = call_with_optional_kwargs(
+        intern_state_fn,
+        {"cfg": intern_cfg},
+        state0,
+        node_batch_fn(slot1_ops, slot1_a1, slot1_a2),
     )
+    ledger1 = state1.ledger
     zero_on_a1 = is_zero_a1
     zero_on_a2 = (~is_zero_a1) & is_zero_a2
     zero_other = jnp.where(zero_on_a1, r_a2, r_a1)
@@ -601,14 +691,21 @@ def _cycle_candidates_core_impl(
     wrap_strata = [(host_int_value_fn(ledger1.count), 0)]
     wrap_depths = depths
     next_frontier = base_next
-    ledger2 = ledger1
+    state2 = state1
+    ledger2 = state2.ledger
     while host_bool_value_fn(jnp.any((wrap_depths > 0) & (~ledger2.oom))):
         to_wrap = (wrap_depths > 0) & (~ledger2.oom)
         ops = jnp.where(to_wrap, jnp.int32(OP_SUC), jnp.int32(0))
         a1 = jnp.where(to_wrap, next_frontier, jnp.int32(0))
         a2 = jnp.zeros_like(a1)
         start = host_int_value_fn(ledger2.count)
-        new_ids, ledger2 = intern_fn(ledger2, node_batch_fn(ops, a1, a2))
+        new_ids, state2 = call_with_optional_kwargs(
+            intern_state_fn,
+            {"cfg": intern_cfg},
+            state2,
+            node_batch_fn(ops, a1, a2),
+        )
+        ledger2 = state2.ledger
         end = host_int_value_fn(ledger2.count)
         wrap_strata.append((start, end - start))
         next_frontier = jnp.where(to_wrap, new_ids, next_frontier)
@@ -631,41 +728,45 @@ def _cycle_candidates_core_impl(
     rewrite_child = host_int_value_fn(count0)
     changed_count = host_int_value_fn(jnp.sum(changed_mask.astype(jnp.int32)))
     cnf2_metrics_update_fn(rewrite_child, changed_count, int(count2_i))
-    ledger2, _, q_map = call_with_optional_kwargs(
-        commit_stratum_fn,
-        commit_optional,
-        ledger2,
+    state2, _, q_map = _commit_stratum_state(
+        state2,
         stratum0,
-        validate_mode=validate_mode,
+        commit_stratum_fn=commit_stratum_fn,
+        commit_optional=commit_optional,
         intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        validate_mode=validate_mode,
     )
-    ledger2, _, q_map = call_with_optional_kwargs(
-        commit_stratum_fn,
-        commit_optional,
-        ledger2,
+    state2, _, q_map = _commit_stratum_state(
+        state2,
         stratum1,
+        commit_stratum_fn=commit_stratum_fn,
+        commit_optional=commit_optional,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
         prior_q=q_map,
         validate_mode=validate_mode,
-        intern_fn=intern_fn,
     )
     # Wrapper strata are micro-strata in s=2; commit in order for hyperstrata visibility.
     for start_i, count_i in wrap_strata:
         micro_stratum = Stratum(
             start=jnp.int32(start_i), count=jnp.int32(count_i)
         )
-        ledger2, _, q_map = call_with_optional_kwargs(
-            commit_stratum_fn,
-            commit_optional,
-            ledger2,
+        state2, _, q_map = _commit_stratum_state(
+            state2,
             micro_stratum,
+            commit_stratum_fn=commit_stratum_fn,
+            commit_optional=commit_optional,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
             prior_q=q_map,
             validate_mode=validate_mode,
-            intern_fn=intern_fn,
         )
     next_frontier = _provisional_ids(next_frontier)
-    ledger2, post_ids = post_q_handler(ledger2, q_map, next_frontier)
-    assert_roots_fn(ledger2, next_frontier, post_ids)
-    return ledger2, next_frontier, (stratum0, stratum1, stratum2), q_map
+    ledger2, post_ids = post_q_handler(state2.ledger, q_map, next_frontier)
+    state2 = _state_with_ledger(state2, ledger2)
+    assert_roots_fn(state2.ledger, next_frontier, post_ids)
+    return state2, next_frontier, (stratum0, stratum1, stratum2), q_map
 
 
 def _cycle_candidates_core_static_bound(
@@ -677,6 +778,7 @@ def _cycle_candidates_core_static_bound(
     safe_gather_policy: SafetyPolicy,
     guard_cfg: GuardConfig | None = None,
     intern_fn: InternFn = intern_nodes,
+    intern_state_fn: InternStateFn = intern_nodes_state,
     intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
     coord_xor_batch_fn: CoordXorBatchFn = coord_xor_batch,
@@ -707,6 +809,14 @@ def _cycle_candidates_core_static_bound(
     mode = resolve_validate_mode(
         validate_mode, guards_enabled_fn=guards_enabled_fn, context="cycle_candidates"
     )
+    intern_cfg = _resolve_intern_cfg(cfg, intern_cfg)
+    if isinstance(ledger, LedgerState):
+        state = ledger
+        ledger = state.ledger
+    else:
+        state = derive_ledger_state(
+            ledger, op_buckets_full_range=intern_cfg.op_buckets_full_range
+        )
     commit_optional = {
         "safe_gather_policy": safe_gather_policy,
         "safe_gather_ok_fn": safe_gather_ok_fn,
@@ -720,7 +830,7 @@ def _cycle_candidates_core_static_bound(
     if host_bool_value_fn(ledger.corrupt):
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
         return (
-            ledger,
+            state,
             _provisional_ids(frontier_ids.a),
             (empty, empty, empty),
             identity_q_fn,
@@ -731,7 +841,7 @@ def _cycle_candidates_core_static_bound(
     if frontier_arr.shape[0] == 0:
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
         return (
-            ledger,
+            state,
             _provisional_ids(frontier_ids.a),
             (empty, empty, empty),
             identity_q_fn,
@@ -749,8 +859,8 @@ def _cycle_candidates_core_static_bound(
 
     _post_q_handler = make_cnf2_post_q_handler_static(apply_q_fn)
 
-    return _cycle_candidates_core_impl(
-        ledger,
+    return _cycle_candidates_core_impl_state(
+        state,
         frontier_ids,
         validate_mode=mode,
         cfg=cfg,
@@ -758,6 +868,7 @@ def _cycle_candidates_core_static_bound(
         post_q_handler=_post_q_handler,
         guard_cfg=guard_cfg,
         intern_fn=intern_fn,
+        intern_state_fn=intern_state_fn,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         coord_xor_batch_fn=coord_xor_batch_fn,
@@ -785,6 +896,7 @@ def _cycle_candidates_core_value_bound(
     safe_gather_policy_value: PolicyValue,
     guard_cfg: GuardConfig | None = None,
     intern_fn: InternFn = intern_nodes,
+    intern_state_fn: InternStateFn = intern_nodes_state,
     intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
     coord_xor_batch_fn: CoordXorBatchFn = coord_xor_batch,
@@ -815,6 +927,14 @@ def _cycle_candidates_core_value_bound(
     mode = resolve_validate_mode(
         validate_mode, guards_enabled_fn=guards_enabled_fn, context="cycle_candidates"
     )
+    intern_cfg = _resolve_intern_cfg(cfg, intern_cfg)
+    if isinstance(ledger, LedgerState):
+        state = ledger
+        ledger = state.ledger
+    else:
+        state = derive_ledger_state(
+            ledger, op_buckets_full_range=intern_cfg.op_buckets_full_range
+        )
     commit_optional = {
         "safe_gather_policy_value": safe_gather_policy_value,
         "safe_gather_ok_value_fn": safe_gather_ok_value_fn,
@@ -827,7 +947,7 @@ def _cycle_candidates_core_value_bound(
     if host_bool_value_fn(ledger.corrupt):
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
         return (
-            ledger,
+            state,
             _provisional_ids(frontier_ids.a),
             (empty, empty, empty),
             identity_q_fn,
@@ -838,7 +958,7 @@ def _cycle_candidates_core_value_bound(
     if frontier_arr.shape[0] == 0:
         empty = Stratum(start=ledger.count.astype(jnp.int32), count=jnp.int32(0))
         return (
-            ledger,
+            state,
             _provisional_ids(frontier_ids.a),
             (empty, empty, empty),
             identity_q_fn,
@@ -856,8 +976,8 @@ def _cycle_candidates_core_value_bound(
 
     _post_q_handler = make_cnf2_post_q_handler_value(apply_q_fn)
 
-    return _cycle_candidates_core_impl(
-        ledger,
+    return _cycle_candidates_core_impl_state(
+        state,
         frontier_ids,
         validate_mode=mode,
         cfg=cfg,
@@ -865,6 +985,7 @@ def _cycle_candidates_core_value_bound(
         post_q_handler=_post_q_handler,
         guard_cfg=guard_cfg,
         intern_fn=intern_fn,
+        intern_state_fn=intern_state_fn,
         intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         coord_xor_batch_fn=coord_xor_batch_fn,
@@ -990,8 +1111,128 @@ def cycle_candidates_static(
     guard_cfg = _resolve_guard_cfg(guard_cfg, cfg)
     if commit_stratum_fn is commit_stratum:
         commit_stratum_fn = commit_stratum_static
-    return _cycle_candidates_core_static_bound(
+    state, frontier, strata, q_map = _cycle_candidates_core_static_bound(
         ledger,
+        frontier_ids,
+        validate_mode=validate_mode,
+        cfg=cfg,
+        safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        node_batch_fn=node_batch_fn,
+        coord_xor_batch_fn=coord_xor_batch_fn,
+        emit_candidates_fn=emit_candidates_fn,
+        candidate_indices_fn=candidate_indices_fn,
+        scatter_drop_fn=scatter_drop_fn,
+        commit_stratum_fn=commit_stratum_fn,
+        apply_q_fn=apply_q_fn,
+        identity_q_fn=identity_q_fn,
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        host_bool_value_fn=host_bool_value_fn,
+        host_int_value_fn=host_int_value_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
+        runtime_fns=runtime_fns,
+    )
+    return state.ledger, frontier, strata, q_map
+
+
+def cycle_candidates_static_state(
+    state: LedgerState,
+    frontier_ids,
+    validate_mode: ValidateMode = ValidateMode.NONE,
+    *,
+    cfg: Cnf2Config | None = None,
+    safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
+    intern_fn: InternFn = intern_nodes,
+    intern_cfg: InternConfig | None = None,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    coord_xor_batch_fn: CoordXorBatchFn = coord_xor_batch,
+    emit_candidates_fn: EmitCandidatesFn = emit_candidates,
+    candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
+    scatter_drop_fn: ScatterDropFn = _scatter_drop,
+    commit_stratum_fn: CommitStratumFn = commit_stratum_static,
+    apply_q_fn: ApplyQFn = apply_q,
+    identity_q_fn: IdentityQFn = _identity_q,
+    safe_gather_ok_fn: SafeGatherOkFn = _jax_safe.safe_gather_1d_ok,
+    safe_gather_ok_bound_fn=None,
+    host_bool_value_fn: HostBoolValueFn = _host_bool_value,
+    host_int_value_fn: HostIntValueFn = _host_int_value,
+    guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
+    ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
+):
+    """CNF-2 evaluation (static policy) that preserves LedgerState."""
+    if cfg is not None and runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
+        runtime_fns = cfg.runtime_fns
+    if cfg is not None and cfg.policy_binding is not None:
+        if cfg.policy_binding.mode == PolicyMode.VALUE:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_static_state received cfg.policy_binding value-mode; "
+                "use cycle_candidates_value_state",
+                context="cycle_candidates_static_state",
+                policy_mode="static",
+            )
+        if safe_gather_policy is None:
+            safe_gather_policy = require_static_policy(
+                cfg.policy_binding, context="cycle_candidates_static_state"
+            )
+    if cfg is not None and cfg.safe_gather_policy_value is not None:
+        raise PrismPolicyBindingError(
+            "cycle_candidates_static_state received cfg.safe_gather_policy_value; "
+            "use cycle_candidates_value_state",
+            context="cycle_candidates_static_state",
+            policy_mode="static",
+        )
+    if safe_gather_policy is None and cfg is not None and cfg.safe_gather_policy is not None:
+        safe_gather_policy = cfg.safe_gather_policy
+    if cfg is not None and cfg.safe_gather_ok_bound_fn is not None:
+        if safe_gather_ok_bound_fn is not None:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_static_state received safe_gather_ok_bound_fn twice",
+                context="cycle_candidates_static_state",
+                policy_mode="static",
+            )
+        safe_gather_ok_bound_fn = cfg.safe_gather_ok_bound_fn
+    if (
+        cfg is not None
+        and cfg.safe_gather_ok_fn is not None
+        and safe_gather_ok_fn is _jax_safe.safe_gather_1d_ok
+    ):
+        safe_gather_ok_fn = cfg.safe_gather_ok_fn
+    if safe_gather_policy is None:
+        safe_gather_policy = DEFAULT_SAFETY_POLICY
+    if safe_gather_ok_bound_fn is not None:
+        if safe_gather_ok_fn is not _jax_safe.safe_gather_1d_ok:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_static_state received both safe_gather_ok_fn and "
+                "safe_gather_ok_bound_fn",
+                context="cycle_candidates_static_state",
+                policy_mode="static",
+            )
+        if guard_cfg is not None:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_static_state received guard_cfg with "
+                "safe_gather_ok_bound_fn; bind guard config into safe_gather_ok_fn",
+                context="cycle_candidates_static_state",
+                policy_mode="static",
+            )
+        if commit_stratum_fn in (commit_stratum, commit_stratum_static):
+            commit_stratum_fn = commit_stratum_bound
+        if commit_stratum_fn is not commit_stratum_bound:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_static_state received safe_gather_ok_bound_fn without commit_stratum_bound",
+                context="cycle_candidates_static_state",
+                policy_mode="static",
+            )
+        safe_gather_ok_fn = safe_gather_ok_bound_fn
+    guard_cfg = _resolve_guard_cfg(guard_cfg, cfg)
+    if commit_stratum_fn is commit_stratum:
+        commit_stratum_fn = commit_stratum_static
+    return _cycle_candidates_core_static_bound(
+        state,
         frontier_ids,
         validate_mode=validate_mode,
         cfg=cfg,
@@ -1087,8 +1328,108 @@ def cycle_candidates_value(
     )
     if commit_stratum_fn is commit_stratum:
         commit_stratum_fn = commit_stratum_value
-    return _cycle_candidates_core_value_bound(
+    state, frontier, strata, q_map = _cycle_candidates_core_value_bound(
         ledger,
+        frontier_ids,
+        validate_mode=validate_mode,
+        cfg=cfg,
+        safe_gather_policy_value=safe_gather_policy_value,
+        guard_cfg=guard_cfg,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        node_batch_fn=node_batch_fn,
+        coord_xor_batch_fn=coord_xor_batch_fn,
+        emit_candidates_fn=emit_candidates_fn,
+        candidate_indices_fn=candidate_indices_fn,
+        scatter_drop_fn=scatter_drop_fn,
+        commit_stratum_fn=commit_stratum_fn,
+        apply_q_fn=apply_q_fn,
+        identity_q_fn=identity_q_fn,
+        safe_gather_ok_fn=None,
+        safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+        host_bool_value_fn=host_bool_value_fn,
+        host_int_value_fn=host_int_value_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
+        runtime_fns=runtime_fns,
+    )
+    return state.ledger, frontier, strata, q_map
+
+
+def cycle_candidates_value_state(
+    state: LedgerState,
+    frontier_ids,
+    validate_mode: ValidateMode = ValidateMode.NONE,
+    *,
+    cfg: Cnf2Config | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
+    guard_cfg: GuardConfig | None = None,
+    intern_fn: InternFn = intern_nodes,
+    intern_cfg: InternConfig | None = None,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    coord_xor_batch_fn: CoordXorBatchFn = coord_xor_batch,
+    emit_candidates_fn: EmitCandidatesFn = emit_candidates,
+    candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
+    scatter_drop_fn: ScatterDropFn = _scatter_drop,
+    commit_stratum_fn: CommitStratumFn = commit_stratum_value,
+    apply_q_fn: ApplyQFn = apply_q,
+    identity_q_fn: IdentityQFn = _identity_q,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = _jax_safe.safe_gather_1d_ok_value,
+    safe_gather_ok_bound_fn=None,
+    host_bool_value_fn: HostBoolValueFn = _host_bool_value,
+    host_int_value_fn: HostIntValueFn = _host_int_value,
+    guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
+    ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
+):
+    """CNF-2 evaluation (policy as JAX value) that preserves LedgerState."""
+    if cfg is not None and runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
+        runtime_fns = cfg.runtime_fns
+    if cfg is not None and cfg.policy_binding is not None:
+        if cfg.policy_binding.mode == PolicyMode.STATIC:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_value_state received cfg.policy_binding static-mode; "
+                "use cycle_candidates_static_state",
+                context="cycle_candidates_value_state",
+                policy_mode="value",
+            )
+        if safe_gather_policy_value is None:
+            safe_gather_policy_value = require_value_policy(
+                cfg.policy_binding, context="cycle_candidates_value_state"
+            )
+    if cfg is not None and cfg.safe_gather_policy is not None:
+        raise PrismPolicyBindingError(
+            "cycle_candidates_value_state received cfg.safe_gather_policy; "
+            "use cycle_candidates_static_state",
+            context="cycle_candidates_value_state",
+            policy_mode="value",
+        )
+    if safe_gather_ok_bound_fn is not None or (
+        cfg is not None and cfg.safe_gather_ok_bound_fn is not None
+    ):
+        raise PrismPolicyBindingError(
+            "cycle_candidates_value_state received safe_gather_ok_bound_fn; "
+            "use cycle_candidates_static_state",
+            context="cycle_candidates_value_state",
+            policy_mode="value",
+        )
+    if (
+        safe_gather_policy_value is None
+        and cfg is not None
+        and cfg.safe_gather_policy_value is not None
+    ):
+        safe_gather_policy_value = cfg.safe_gather_policy_value
+    if safe_gather_policy_value is None:
+        safe_gather_policy_value = POLICY_VALUE_DEFAULT
+    guard_cfg = _resolve_guard_cfg(guard_cfg, cfg)
+    safe_gather_ok_value_fn = resolve_safe_gather_ok_value_fn(
+        safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+        guard_cfg=guard_cfg,
+    )
+    if commit_stratum_fn is commit_stratum:
+        commit_stratum_fn = commit_stratum_value
+    return _cycle_candidates_core_value_bound(
+        state,
         frontier_ids,
         validate_mode=validate_mode,
         cfg=cfg,
@@ -1205,6 +1546,97 @@ def cycle_candidates(
     )
 
 
+def cycle_candidates_state(
+    state: LedgerState,
+    frontier_ids,
+    validate_mode: ValidateMode = ValidateMode.NONE,
+    *,
+    cfg: Cnf2Config | None = None,
+    safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
+    guard_cfg: GuardConfig | None = None,
+    intern_fn: InternFn = intern_nodes,
+    intern_cfg: InternConfig | None = None,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    coord_xor_batch_fn: CoordXorBatchFn = coord_xor_batch,
+    emit_candidates_fn: EmitCandidatesFn = emit_candidates,
+    candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
+    scatter_drop_fn: ScatterDropFn = _scatter_drop,
+    commit_stratum_fn: CommitStratumFn = commit_stratum,
+    apply_q_fn: ApplyQFn = apply_q,
+    identity_q_fn: IdentityQFn = _identity_q,
+    safe_gather_ok_fn: SafeGatherOkFn = _jax_safe.safe_gather_1d_ok,
+    safe_gather_ok_bound_fn=None,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = _jax_safe.safe_gather_1d_ok_value,
+    host_bool_value_fn: HostBoolValueFn = _host_bool_value,
+    host_int_value_fn: HostIntValueFn = _host_int_value,
+    guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
+    ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
+):
+    if cfg is not None and runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
+        runtime_fns = cfg.runtime_fns
+    if cfg is not None and cfg.safe_gather_policy_value is not None:
+        safe_gather_policy_value = cfg.safe_gather_policy_value
+    if safe_gather_policy_value is not None:
+        if safe_gather_policy is not None:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_state received both safe_gather_policy and "
+                "safe_gather_policy_value",
+                context="cycle_candidates_state",
+                policy_mode="ambiguous",
+            )
+        return cycle_candidates_value_state(
+            state,
+            frontier_ids,
+            validate_mode=validate_mode,
+            cfg=cfg,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            node_batch_fn=node_batch_fn,
+            coord_xor_batch_fn=coord_xor_batch_fn,
+            emit_candidates_fn=emit_candidates_fn,
+            candidate_indices_fn=candidate_indices_fn,
+            scatter_drop_fn=scatter_drop_fn,
+            commit_stratum_fn=commit_stratum_fn,
+            apply_q_fn=apply_q_fn,
+            identity_q_fn=identity_q_fn,
+            safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+            host_bool_value_fn=host_bool_value_fn,
+            host_int_value_fn=host_int_value_fn,
+            guards_enabled_fn=guards_enabled_fn,
+            ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
+            runtime_fns=runtime_fns,
+        )
+    return cycle_candidates_static_state(
+        state,
+        frontier_ids,
+        validate_mode=validate_mode,
+        cfg=cfg,
+        safe_gather_policy=safe_gather_policy,
+        guard_cfg=guard_cfg,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        node_batch_fn=node_batch_fn,
+        coord_xor_batch_fn=coord_xor_batch_fn,
+        emit_candidates_fn=emit_candidates_fn,
+        candidate_indices_fn=candidate_indices_fn,
+        scatter_drop_fn=scatter_drop_fn,
+        commit_stratum_fn=commit_stratum_fn,
+        apply_q_fn=apply_q_fn,
+        identity_q_fn=identity_q_fn,
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        safe_gather_ok_bound_fn=safe_gather_ok_bound_fn,
+        host_bool_value_fn=host_bool_value_fn,
+        host_int_value_fn=host_int_value_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
+        runtime_fns=runtime_fns,
+    )
+
+
 def cycle_candidates_bound(
     ledger,
     frontier_ids,
@@ -1244,7 +1676,7 @@ def cycle_candidates_bound(
             guard_cfg=guard_cfg,
             commit_stratum_fn=commit_stratum_fn,
         )
-        return _cycle_candidates_core_value_bound(
+        state, frontier, strata, q_map = _cycle_candidates_core_value_bound(
             ledger,
             frontier_ids,
             validate_mode=validate_mode,
@@ -1269,6 +1701,7 @@ def cycle_candidates_bound(
             ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
             runtime_fns=runtime_fns,
         )
+        return state.ledger, frontier, strata, q_map
     if not isinstance(cfg, Cnf2StaticBoundConfig):
         raise PrismPolicyBindingError(
             "cycle_candidates_bound expected Cnf2StaticBoundConfig or Cnf2ValueBoundConfig",
@@ -1282,7 +1715,7 @@ def cycle_candidates_bound(
         guard_cfg=guard_cfg,
         commit_stratum_fn=commit_stratum_fn,
     )
-    return _cycle_candidates_core_static_bound(
+    state, frontier, strata, q_map = _cycle_candidates_core_static_bound(
         ledger,
         frontier_ids,
         validate_mode=validate_mode,
@@ -1306,6 +1739,103 @@ def cycle_candidates_bound(
         ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
         runtime_fns=runtime_fns,
     )
+    return state.ledger, frontier, strata, q_map
+
+
+def cycle_candidates_bound_state(
+    state: LedgerState,
+    frontier_ids,
+    cfg: Cnf2BoundConfig,
+    *,
+    validate_mode: ValidateMode = ValidateMode.NONE,
+    guard_cfg: GuardConfig | None = None,
+    intern_fn: InternFn = intern_nodes,
+    intern_cfg: InternConfig | None = None,
+    node_batch_fn: NodeBatchFn = _node_batch,
+    coord_xor_batch_fn: CoordXorBatchFn = coord_xor_batch,
+    emit_candidates_fn: EmitCandidatesFn = emit_candidates,
+    candidate_indices_fn: CandidateIndicesFn = _candidate_indices,
+    scatter_drop_fn: ScatterDropFn = _scatter_drop,
+    commit_stratum_fn: CommitStratumFn | None = None,
+    apply_q_fn: ApplyQFn = apply_q,
+    identity_q_fn: IdentityQFn = _identity_q,
+    safe_gather_ok_fn: SafeGatherOkFn = _jax_safe.safe_gather_1d_ok,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn = _jax_safe.safe_gather_1d_ok_value,
+    host_bool_value_fn: HostBoolValueFn = _host_bool_value,
+    host_int_value_fn: HostIntValueFn = _host_int_value,
+    guards_enabled_fn: GuardsEnabledFn = _guards_enabled,
+    ledger_roots_hash_host_fn: LedgerRootsHashFn = _ledger_roots_hash_host,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
+):
+    """PolicyBinding-required wrapper for cycle_candidates returning LedgerState."""
+    if runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
+        runtime_fns = cfg.cfg.runtime_fns
+    if isinstance(cfg, Cnf2ValueBoundConfig):
+        if commit_stratum_fn is None:
+            commit_stratum_fn = commit_stratum_value
+        cfg_resolved, policy_value = cfg.bind_cfg(
+            safe_gather_ok_value_fn=safe_gather_ok_value_fn,
+            guard_cfg=guard_cfg,
+            commit_stratum_fn=commit_stratum_fn,
+        )
+        state, frontier, strata, q_map = _cycle_candidates_core_value_bound(
+            state,
+            frontier_ids,
+            validate_mode=validate_mode,
+            cfg=cfg_resolved,
+            safe_gather_policy_value=policy_value,
+            guard_cfg=None,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            node_batch_fn=node_batch_fn,
+            coord_xor_batch_fn=coord_xor_batch_fn,
+            emit_candidates_fn=emit_candidates_fn,
+            candidate_indices_fn=candidate_indices_fn,
+            scatter_drop_fn=scatter_drop_fn,
+            commit_stratum_fn=cfg_resolved.commit_stratum_fn or commit_stratum_value,
+            apply_q_fn=apply_q_fn,
+            identity_q_fn=identity_q_fn,
+            safe_gather_ok_value_fn=cfg_resolved.safe_gather_ok_value_fn
+            or safe_gather_ok_value_fn,
+            host_bool_value_fn=host_bool_value_fn,
+            host_int_value_fn=host_int_value_fn,
+            guards_enabled_fn=guards_enabled_fn,
+            ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
+            runtime_fns=runtime_fns,
+        )
+        return state, frontier, strata, q_map
+    if commit_stratum_fn is None:
+        commit_stratum_fn = commit_stratum_bound
+    cfg_resolved, policy = cfg.bind_cfg(
+        safe_gather_ok_fn=safe_gather_ok_fn,
+        guard_cfg=guard_cfg,
+        commit_stratum_fn=commit_stratum_fn,
+    )
+    state, frontier, strata, q_map = _cycle_candidates_core_static_bound(
+        state,
+        frontier_ids,
+        validate_mode=validate_mode,
+        cfg=cfg_resolved,
+        safe_gather_policy=policy,
+        guard_cfg=None,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        node_batch_fn=node_batch_fn,
+        coord_xor_batch_fn=coord_xor_batch_fn,
+        emit_candidates_fn=emit_candidates_fn,
+        candidate_indices_fn=candidate_indices_fn,
+        scatter_drop_fn=scatter_drop_fn,
+        commit_stratum_fn=cfg_resolved.commit_stratum_fn or commit_stratum_bound,
+        apply_q_fn=apply_q_fn,
+        identity_q_fn=identity_q_fn,
+        safe_gather_ok_fn=cfg_resolved.safe_gather_ok_fn or safe_gather_ok_fn,
+        host_bool_value_fn=host_bool_value_fn,
+        host_int_value_fn=host_int_value_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        ledger_roots_hash_host_fn=ledger_roots_hash_host_fn,
+        runtime_fns=runtime_fns,
+    )
+    return state, frontier, strata, q_map
 
 
 __all__ = [
@@ -1321,7 +1851,11 @@ __all__ = [
     "intern_candidates",
     "intern_candidates_cfg",
     "cycle_candidates",
+    "cycle_candidates_state",
     "cycle_candidates_static",
+    "cycle_candidates_static_state",
     "cycle_candidates_value",
+    "cycle_candidates_value_state",
     "cycle_candidates_bound",
+    "cycle_candidates_bound_state",
 ]
