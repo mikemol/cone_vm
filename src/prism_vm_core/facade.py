@@ -732,6 +732,7 @@ from prism_vm_core.jit_entrypoints import (
     intern_candidates_jit,
     intern_candidates_jit_cfg,
     intern_nodes_jit,
+    intern_nodes_with_index_jit,
     op_interact_jit,
     op_interact_jit_cfg,
     op_interact_jit_bound_cfg,
@@ -1116,6 +1117,29 @@ def intern_nodes(
             raise TypeError("intern_nodes expects both a1 and a2 arrays")
         batch = NodeBatch(batch_or_ops, a1, a2)
     return intern_nodes_jit(cfg)(ledger, batch)
+
+
+def intern_nodes_with_index(
+    ledger,
+    ledger_index: LedgerIndex,
+    batch_or_ops,
+    a1=None,
+    a2=None,
+    *,
+    cfg: InternConfig | None = None,
+):
+    """Interface/Control wrapper for intern_nodes with a bound LedgerIndex."""
+    if cfg is None:
+        cfg = DEFAULT_INTERN_CONFIG
+    if a1 is None and a2 is None:
+        if not isinstance(batch_or_ops, NodeBatch):
+            raise TypeError("intern_nodes_with_index expects a NodeBatch or (ops, a1, a2)")
+        batch = batch_or_ops
+    else:
+        if a1 is None or a2 is None:
+            raise TypeError("intern_nodes_with_index expects both a1 and a2 arrays")
+        batch = NodeBatch(batch_or_ops, a1, a2)
+    return intern_nodes_with_index_jit(cfg)(ledger, ledger_index, batch)
 
 
 def cycle_jit(

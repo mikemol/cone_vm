@@ -257,6 +257,8 @@ __all__ = [
     "coord_xor_batch_cfg",
     "intern_nodes",
     "intern_nodes_jit",
+    "intern_nodes_with_index",
+    "intern_nodes_with_index_jit",
     "op_sort_and_swizzle_with_perm",
     "op_sort_and_swizzle_with_perm_value",
     "op_sort_with_perm_cfg",

@@ -152,11 +152,28 @@ def _intern_nodes_jit(cfg: InternConfig):
     return _impl
 
 
+@cached_jit
+def _intern_nodes_with_index_jit(cfg: InternConfig):
+    def _impl(ledger, ledger_index, batch: NodeBatch):
+        return _ledger_intern.intern_nodes(
+            ledger, batch, cfg=cfg, ledger_index=ledger_index
+        )
+
+    return _impl
+
+
 def intern_nodes_jit(cfg: InternConfig | None = None):
     """Return a jitted intern_nodes entrypoint for a fixed config."""
     if cfg is None:
         cfg = DEFAULT_INTERN_CONFIG
     return _intern_nodes_jit(cfg)
+
+
+def intern_nodes_with_index_jit(cfg: InternConfig | None = None):
+    """Return a jitted intern_nodes entrypoint that requires a LedgerIndex."""
+    if cfg is None:
+        cfg = DEFAULT_INTERN_CONFIG
+    return _intern_nodes_with_index_jit(cfg)
 
 
 @cached_jit
@@ -984,6 +1001,7 @@ def coord_norm_batch_jit(coord_norm_id_jax_fn=None):
 
 __all__ = [
     "intern_nodes_jit",
+    "intern_nodes_with_index_jit",
     "op_interact_jit",
     "op_interact_jit_cfg",
     "op_interact_jit_bound_cfg",
