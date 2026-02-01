@@ -1,5 +1,5 @@
 ---
-doc_revision: 2
+doc_revision: 3
 reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
 ---
 
@@ -61,6 +61,17 @@ scripts/run_tests.sh [pytest args...]
 ```
 If running under Codex or another sandboxed runner, increase the sandbox
 command timeout before invoking the helper.
+
+## Profiling targeted tests (bounded time)
+To capture a short profile of a slow test without waiting for completion:
+```
+mise exec -- python scripts/profile_pytest_slice.py \
+  --seconds 60 \
+  --out artifacts/profiles/pytest_slice.prof \
+  -- -q tests/test_strata_random_programs.py
+```
+This dumps a `.prof` file even if the test would take longer than the allotted
+time, so you can inspect hotspots without running the full suite.
 
 ## Agda proofs
 Agda checks run in a pinned container image. See `agda/README.md` for details.

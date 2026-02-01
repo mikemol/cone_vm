@@ -166,7 +166,16 @@ def _coord_norm_id_jax_noprobe(
     )
 
 
-def _lookup_node_id(ledger, op, a1, a2, *, pack_key_fn=_pack_key):
+def _lookup_node_id(
+    ledger,
+    op,
+    a1,
+    a2,
+    *,
+    pack_key_fn=_pack_key,
+    op_start=None,
+    op_end=None,
+):
     k0, k1, k2, k3, k4 = pack_key_fn(op, a1, a2)
     L_b0 = ledger.keys_b0_sorted
     L_b1 = ledger.keys_b1_sorted
@@ -215,9 +224,17 @@ def _lookup_node_id(ledger, op, a1, a2, *, pack_key_fn=_pack_key):
             ),
         )
 
+    if op_start is not None and op_end is not None:
+        op_idx = k0.astype(jnp.int32)
+        lo_init = op_start[op_idx]
+        hi_init = op_end[op_idx]
+    else:
+        lo_init = jnp.int32(0)
+        hi_init = count
+
     def _do_search(_):
-        lo = jnp.int32(0)
-        hi = count
+        lo = lo_init
+        hi = hi_init
 
         def cond(state):
             lo_i, hi_i = state
@@ -267,7 +284,7 @@ def _lookup_node_id(ledger, op, a1, a2, *, pack_key_fn=_pack_key):
         return out_id, found
 
     return lax.cond(
-        count > 0,
+        (count > 0) & (lo_init < hi_init),
         _do_search,
         lambda _: (jnp.int32(0), jnp.bool_(False)),
         operand=None,
@@ -333,6 +350,27 @@ def _intern_nodes_impl_core(
     is_coord_pair = proposed_ops == OP_COORD_PAIR
 
     has_coord = jnp.any(is_coord_pair)
+    L_b0 = ledger.keys_b0_sorted
+    count = ledger.count.astype(jnp.int32)
+    if cfg.op_buckets_full_range:
+        op_start = jnp.zeros(256, dtype=jnp.int32)
+        op_end = jnp.full((256,), count, dtype=jnp.int32)
+    else:
+        op_values = jnp.arange(256, dtype=jnp.uint8)
+        op_start = jnp.searchsorted(L_b0, op_values, side="left").astype(jnp.int32)
+        op_end = jnp.searchsorted(L_b0, op_values, side="right").astype(jnp.int32)
+        op_start = jnp.minimum(op_start, count)
+        op_end = jnp.minimum(op_end, count)
+
+    def _lookup_node_id_bucketed(ledger_in, op, a1, a2):
+        return _lookup_node_id(
+            ledger_in,
+            op,
+            a1,
+            a2,
+            op_start=op_start,
+            op_end=op_end,
+        )
     if guards_enabled_fn() and coord_norm_probe_enabled_fn():
         jax.debug.callback(
             probe_bundle.coord_norm_probe_reset_cb_fn,
@@ -349,8 +387,12 @@ def _intern_nodes_impl_core(
         def _norm_body(i, state):
             a1_arr, a2_arr = state
             idx = coord_idx[i]
-            a1_norm = coord_norm_id_jax_fn(ledger, a1_arr[idx])
-            a2_norm = coord_norm_id_jax_noprobe_fn(ledger, a2_arr[idx])
+            a1_norm = coord_norm_id_jax_fn(
+                ledger, a1_arr[idx], lookup_node_id_fn=_lookup_node_id_bucketed
+            )
+            a2_norm = coord_norm_id_jax_noprobe_fn(
+                ledger, a2_arr[idx], lookup_node_id_fn=_lookup_node_id_bucketed
+            )
             a1_arr = a1_arr.at[idx].set(a1_norm)
             a2_arr = a2_arr.at[idx].set(a2_norm)
             return a1_arr, a2_arr
@@ -409,28 +451,15 @@ def _intern_nodes_impl_core(
 
     _, leader_idx = lax.scan(scan_fn, jnp.int32(0), (is_diff, idx))
 
-    L_b0 = ledger.keys_b0_sorted
     L_b1 = ledger.keys_b1_sorted
     L_b2 = ledger.keys_b2_sorted
     L_b3 = ledger.keys_b3_sorted
     L_b4 = ledger.keys_b4_sorted
     L_ids = ledger.ids_sorted
 
-    count = ledger.count.astype(jnp.int32)
     max_count = jnp.int32(MAX_COUNT)
     available = jnp.maximum(max_count - count, 0)
     available = jnp.where(base_oom | base_corrupt, jnp.int32(0), available)
-    if cfg.op_buckets_full_range:
-        op_start = jnp.zeros(256, dtype=jnp.int32)
-        op_end = jnp.full((256,), count, dtype=jnp.int32)
-    else:
-        # Bucket existing keys by opcode byte to narrow search ranges.
-        # Use searchsorted on the sorted opcode column to avoid full scans.
-        op_values = jnp.arange(256, dtype=jnp.uint8)
-        op_start = jnp.searchsorted(L_b0, op_values, side="left").astype(jnp.int32)
-        op_end = jnp.searchsorted(L_b0, op_values, side="right").astype(jnp.int32)
-        op_start = jnp.minimum(op_start, count)
-        op_end = jnp.minimum(op_end, count)
     # NOTE: opcode buckets are a precursor to per-op merges; full-array merge
     # remains an m1 tradeoff (see IMPLEMENTATION_PLAN.md).
 
