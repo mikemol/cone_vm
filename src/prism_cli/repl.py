@@ -80,11 +80,16 @@ from prism_vm_core.facade import (
     _key_order_commutative_host,
     _normalize_bsp_mode,
     cycle_candidates,
+    derive_ledger_state,
     init_arena,
     init_ledger,
+    init_ledger_state,
     init_manifest,
     intern_nodes,
+    intern_nodes_state,
     node_batch,
+    LedgerState,
+    DEFAULT_INTERN_CONFIG,
 )
 from prism_core.modes import BspMode
 from prism_vm_core.guards import _expect_token, _pop_token
@@ -301,7 +306,8 @@ class PrismVM_BSP_Legacy:
 class PrismVM_BSP:
     def __init__(self):
         print("⚡ Prism IR: Initializing BSP Ledger...")
-        self.ledger = init_ledger()
+        self.intern_cfg = DEFAULT_INTERN_CONFIG
+        self.ledger = init_ledger_state(cfg=self.intern_cfg)
 
     def _intern(
         self, op: int, a1: LedgerId = LedgerId(0), a2: LedgerId = LedgerId(0)
@@ -310,16 +316,21 @@ class PrismVM_BSP:
         _require_ledger_id(pair.a1, "PrismVM_BSP._intern a1")
         _require_ledger_id(pair.a2, "PrismVM_BSP._intern a2")
         a1_i, a2_i = _key_order_commutative_host(op, int(pair.a1), int(pair.a2))
-        ids, self.ledger = intern_nodes(
-            self.ledger,
-            node_batch(
-                jnp.array([op], dtype=jnp.int32),
-                jnp.array([a1_i], dtype=jnp.int32),
-                jnp.array([a2_i], dtype=jnp.int32),
-            ),
+        batch = node_batch(
+            jnp.array([op], dtype=jnp.int32),
+            jnp.array([a1_i], dtype=jnp.int32),
+            jnp.array([a2_i], dtype=jnp.int32),
         )
+        if isinstance(self.ledger, LedgerState):
+            ids, self.ledger = intern_nodes_state(
+                self.ledger, batch, cfg=self.intern_cfg
+            )
+            ledger_obj = self.ledger.ledger
+        else:
+            ids, self.ledger = intern_nodes(self.ledger, batch, cfg=self.intern_cfg)
+            ledger_obj = self.ledger
         _host_raise_if_bad(
-            self.ledger,
+            ledger_obj,
             "Ledger capacity exceeded during interning",
             oom_exc=ValueError,
         )
@@ -344,21 +355,22 @@ class PrismVM_BSP:
 
     def decode(self, ptr: LedgerId) -> str:
         _require_ledger_id(ptr, "PrismVM_BSP.decode ptr")
+        ledger_obj = self.ledger.ledger if isinstance(self.ledger, LedgerState) else self.ledger
         ptr_i = int(ptr)
-        op = _host_int_value(self.ledger.opcode[ptr_i])
+        op = _host_int_value(ledger_obj.opcode[ptr_i])
         if op == OP_ZERO:
             return "zero"
         if op == OP_SUC:
-            return f"(suc {self.decode(_ledger_id(self.ledger.arg1[ptr_i]))})"
+            return f"(suc {self.decode(_ledger_id(ledger_obj.arg1[ptr_i]))})"
         if op == OP_ADD:
             return (
-                f"(add {self.decode(_ledger_id(self.ledger.arg1[ptr_i]))} "
-                f"{self.decode(_ledger_id(self.ledger.arg2[ptr_i]))})"
+                f"(add {self.decode(_ledger_id(ledger_obj.arg1[ptr_i]))} "
+                f"{self.decode(_ledger_id(ledger_obj.arg2[ptr_i]))})"
             )
         if op == OP_MUL:
             return (
-                f"(mul {self.decode(_ledger_id(self.ledger.arg1[ptr_i]))} "
-                f"{self.decode(_ledger_id(self.ledger.arg2[ptr_i]))})"
+                f"(mul {self.decode(_ledger_id(ledger_obj.arg1[ptr_i]))} "
+                f"{self.decode(_ledger_id(ledger_obj.arg2[ptr_i]))})"
             )
         return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
 
@@ -514,7 +526,19 @@ def run_program_lines_bsp(
         frontier = _committed_ids(jnp.array([int(root_ptr)], dtype=jnp.int32))
         for _ in range(max(1, cycles)):
             if bsp_mode == BspMode.INTRINSIC:
-                vm.ledger, frontier_arr = cycle_intrinsic(vm.ledger, frontier.a)
+                ledger_obj = (
+                    vm.ledger.ledger
+                    if isinstance(vm.ledger, LedgerState)
+                    else vm.ledger
+                )
+                ledger_obj, frontier_arr = cycle_intrinsic(ledger_obj, frontier.a)
+                if isinstance(vm.ledger, LedgerState):
+                    vm.ledger = derive_ledger_state(
+                        ledger_obj,
+                        op_buckets_full_range=vm.intern_cfg.op_buckets_full_range,
+                    )
+                else:
+                    vm.ledger = ledger_obj
                 frontier = _committed_ids(frontier_arr)
             else:
                 vm.ledger, frontier_prov, _, q_map = cycle_candidates(
@@ -526,13 +550,27 @@ def run_program_lines_bsp(
                     corrupt = jnp.any(
                         oob_mask(ok, policy=meta.safe_gather_policy)
                     )
-                    vm.ledger = vm.ledger._replace(
-                        corrupt=vm.ledger.corrupt | corrupt
-                    )
-            _host_raise_if_bad(vm.ledger, "Ledger capacity exceeded during cycle")
+                    if isinstance(vm.ledger, LedgerState):
+                        ledger_obj = vm.ledger.ledger._replace(
+                            corrupt=vm.ledger.ledger.corrupt | corrupt
+                        )
+                        vm.ledger = LedgerState(
+                            ledger=ledger_obj, index=vm.ledger.index
+                        )
+                    else:
+                        vm.ledger = vm.ledger._replace(
+                            corrupt=vm.ledger.corrupt | corrupt
+                        )
+            ledger_obj = (
+                vm.ledger.ledger if isinstance(vm.ledger, LedgerState) else vm.ledger
+            )
+            _host_raise_if_bad(ledger_obj, "Ledger capacity exceeded during cycle")
         root_ptr = frontier.a[0]
         root_ptr_int = _host_int_value(root_ptr)
-        print(f"   ├─ Ledger   : {_host_int_value(vm.ledger.count)} nodes")
+        ledger_obj = (
+            vm.ledger.ledger if isinstance(vm.ledger, LedgerState) else vm.ledger
+        )
+        print(f"   ├─ Ledger   : {_host_int_value(ledger_obj.count)} nodes")
         print(f"   └─ Result  : \033[92m{vm.decode(_ledger_id(root_ptr_int))}\033[0m")
     return vm
 
