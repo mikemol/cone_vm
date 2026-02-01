@@ -23,6 +23,9 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.14"
+  XLA_PYTHON_CLIENT_PREALLOCATE: "false"
+  XLA_PYTHON_CLIENT_ALLOCATOR: "platform"
+  XLA_PYTHON_CLIENT_MEM_FRACTION: "0.05"
 
 jobs:
   changes:

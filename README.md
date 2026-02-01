@@ -115,6 +115,16 @@ Run the suite:
 mise exec -- pytest
 ```
 
+GPU memory cap (optional, for tests on GPU machines):
+```
+XLA_PYTHON_CLIENT_PREALLOCATE=false \
+XLA_PYTHON_CLIENT_ALLOCATOR=platform \
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.05 \
+mise exec -- pytest
+```
+Note: JAX exposes a fractional cap, not an absolute MiB cap. Adjust the fraction
+to approximate 128MiB for your GPU size.
+
 ## Agda proofs
 Agda checks run in a pinned container image. See `agda/README.md` for the
 current digest and full instructions. Quick local run:
