@@ -30,6 +30,6 @@ n<=sucn {suc n} = N.s<=s n<=sucn
 spillway-bound : {n : Nat} {xs : V.Vec Nat n} ->
                  AllAtMost1 xs -> sum xs N.<= n
 spillway-bound {zero} all[] = N.z<=n
-spillway-bound {suc n} (all:: bound rest) with bound
+spillway-bound {suc n} (all::_ bound rest) with bound
 ... | ≤0 = N.<=-trans (spillway-bound rest) n<=sucn
 ... | ≤1 = N.s<=s (spillway-bound rest)
