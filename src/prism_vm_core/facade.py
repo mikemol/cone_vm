@@ -1092,8 +1092,12 @@ def intern_nodes(
     cfg: InternConfig | None = None,
     op_buckets_full_range: Optional[bool] = None,
     force_spawn_clip: Optional[bool] = None,
+    ledger_index: LedgerIndex | None = None,
 ):
     """Interface/Control wrapper for intern_nodes behavior flags.
+
+    If ledger_index is provided, the bound LedgerIndex path is used to avoid
+    recomputing opcode buckets for the same ledger state.
 
     Axis: Interface/Control. Commutes with q. Erased by q.
     Test: tests/test_m1_gate.py
@@ -1116,7 +1120,9 @@ def intern_nodes(
         if a1 is None or a2 is None:
             raise TypeError("intern_nodes expects both a1 and a2 arrays")
         batch = NodeBatch(batch_or_ops, a1, a2)
-    return intern_nodes_jit(cfg)(ledger, batch)
+    if ledger_index is None:
+        return intern_nodes_jit(cfg)(ledger, batch)
+    return intern_nodes_with_index_jit(cfg)(ledger, ledger_index, batch)
 
 
 def intern_nodes_with_index(
