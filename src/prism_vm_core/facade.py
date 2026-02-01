@@ -1622,6 +1622,20 @@ def cycle_candidates_static(
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation (static policy)."""
+    if isinstance(ledger, LedgerState):
+        return cycle_candidates_static_state(
+            ledger,
+            frontier_ids,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            host_raise_if_bad_fn=host_raise_if_bad_fn,
+            safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
+            cnf2_cfg=cnf2_cfg,
+            runtime_fns=runtime_fns,
+        )
     return _cycle_candidates_common(
         ledger,
         frontier_ids,
@@ -1654,6 +1668,20 @@ def cycle_candidates_value(
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation (policy as JAX value)."""
+    if isinstance(ledger, LedgerState):
+        return cycle_candidates_value_state(
+            ledger,
+            frontier_ids,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            host_raise_if_bad_fn=host_raise_if_bad_fn,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+            cnf2_cfg=cnf2_cfg,
+            runtime_fns=runtime_fns,
+        )
     return _cycle_candidates_common(
         ledger,
         frontier_ids,
@@ -1809,6 +1837,21 @@ def cycle_candidates(
     Axis: Interface/Control. Commutes with q. Erased by q.
     Test: tests/test_candidate_cycle.py
     """
+    if isinstance(ledger, LedgerState):
+        return cycle_candidates_state(
+            ledger,
+            frontier_ids,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            host_raise_if_bad_fn=host_raise_if_bad_fn,
+            safe_gather_policy=safe_gather_policy,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+            cnf2_cfg=cnf2_cfg,
+            runtime_fns=runtime_fns,
+        )
     binding = resolve_policy_binding(
         policy=safe_gather_policy,
         policy_value=safe_gather_policy_value,
@@ -1861,6 +1904,19 @@ def cycle_candidates_bound(
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation with required PolicyBinding."""
+    if isinstance(ledger, LedgerState):
+        return cycle_candidates_bound_state(
+            ledger,
+            frontier_ids,
+            cfg,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            host_raise_if_bad_fn=host_raise_if_bad_fn,
+            guard_cfg=guard_cfg,
+            runtime_fns=runtime_fns,
+        )
     if host_raise_if_bad_fn is None:
         host_raise_if_bad_fn = _host_raise_if_bad
     base_cfg = cfg.as_cfg()
