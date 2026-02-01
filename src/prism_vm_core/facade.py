@@ -1621,7 +1621,11 @@ def cycle_candidates_static(
     cnf2_cfg: Cnf2Config | None = None,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
-    """Interface/Control wrapper for CNF-2 evaluation (static policy)."""
+    """Interface/Control wrapper for CNF-2 evaluation (static policy).
+
+    If ``ledger`` is a LedgerState, returns a LedgerState to preserve the index.
+    Otherwise returns a Ledger.
+    """
     if isinstance(ledger, LedgerState):
         return cycle_candidates_static_state(
             ledger,
@@ -1667,7 +1671,11 @@ def cycle_candidates_value(
     cnf2_cfg: Cnf2Config | None = None,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
-    """Interface/Control wrapper for CNF-2 evaluation (policy as JAX value)."""
+    """Interface/Control wrapper for CNF-2 evaluation (policy as JAX value).
+
+    If ``ledger`` is a LedgerState, returns a LedgerState to preserve the index.
+    Otherwise returns a Ledger.
+    """
     if isinstance(ledger, LedgerState):
         return cycle_candidates_value_state(
             ledger,
@@ -1836,6 +1844,9 @@ def cycle_candidates(
 
     Axis: Interface/Control. Commutes with q. Erased by q.
     Test: tests/test_candidate_cycle.py
+
+    If ``ledger`` is a LedgerState, returns a LedgerState to preserve the index.
+    Otherwise returns a Ledger.
     """
     if isinstance(ledger, LedgerState):
         return cycle_candidates_state(
@@ -1903,7 +1914,11 @@ def cycle_candidates_bound(
     guard_cfg: GuardConfig | None = None,
     runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
-    """Interface/Control wrapper for CNF-2 evaluation with required PolicyBinding."""
+    """Interface/Control wrapper for CNF-2 evaluation with required PolicyBinding.
+
+    If ``ledger`` is a LedgerState, returns a LedgerState to preserve the index.
+    Otherwise returns a Ledger.
+    """
     if isinstance(ledger, LedgerState):
         return cycle_candidates_bound_state(
             ledger,
