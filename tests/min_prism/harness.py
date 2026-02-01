@@ -82,6 +82,16 @@ def cycle_candidates_static_bound(
     guard_cfg=None,
     **kwargs,
 ):
+    if cfg is not None and hasattr(cfg, "cfg"):
+        intern_cfg = cfg.cfg.intern_cfg
+    elif isinstance(cfg, pv.Cnf2Config):
+        intern_cfg = cfg.intern_cfg
+    else:
+        intern_cfg = pv.DEFAULT_INTERN_CONFIG
+    if not isinstance(ledger, pv.LedgerState):
+        ledger = pv.derive_ledger_state(
+            ledger, op_buckets_full_range=intern_cfg.op_buckets_full_range
+        )
     if cfg is None and safety_policy is None and guard_cfg is None:
         cfg = _DEFAULT_CNF2_BOUND_CFG
     elif cfg is None:
