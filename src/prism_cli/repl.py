@@ -555,7 +555,9 @@ def run_program_lines_bsp(
                             corrupt=vm.ledger.ledger.corrupt | corrupt
                         )
                         vm.ledger = LedgerState(
-                            ledger=ledger_obj, index=vm.ledger.index
+                            ledger=ledger_obj,
+                            index=vm.ledger.index,
+                            op_buckets_full_range=vm.ledger.op_buckets_full_range,
                         )
                     else:
                         vm.ledger = vm.ledger._replace(

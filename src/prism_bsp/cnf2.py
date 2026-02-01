@@ -135,7 +135,11 @@ def _resolve_intern_cfg(
 def _state_with_ledger(state: LedgerState, ledger) -> LedgerState:
     if ledger is state.ledger:
         return state
-    return LedgerState(ledger=ledger, index=state.index)
+    return LedgerState(
+        ledger=ledger,
+        index=state.index,
+        op_buckets_full_range=state.op_buckets_full_range,
+    )
 
 
 def _coord_xor_batch_state(

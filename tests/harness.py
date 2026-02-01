@@ -127,6 +127,16 @@ def cycle_candidates_static_bound(
     **kwargs,
 ):
     """Run CNF-2 candidates with static policy bound at the edge."""
+    if cfg is not None and hasattr(cfg, "cfg"):
+        intern_cfg = cfg.cfg.intern_cfg
+    elif isinstance(cfg, pv.Cnf2Config):
+        intern_cfg = cfg.intern_cfg
+    else:
+        intern_cfg = pv.DEFAULT_INTERN_CONFIG
+    if not isinstance(ledger, pv.LedgerState):
+        ledger = pv.derive_ledger_state(
+            ledger, op_buckets_full_range=intern_cfg.op_buckets_full_range
+        )
     if cfg is None and safety_policy is None and guard_cfg is None:
         cfg = _DEFAULT_CNF2_BOUND_CFG
     elif cfg is None:
@@ -155,6 +165,16 @@ def cycle_candidates_value_bound(
     **kwargs,
 ):
     """Run CNF-2 candidates with value policy bound at the edge."""
+    if cfg is not None and hasattr(cfg, "cfg"):
+        intern_cfg = cfg.cfg.intern_cfg
+    elif isinstance(cfg, pv.Cnf2Config):
+        intern_cfg = cfg.intern_cfg
+    else:
+        intern_cfg = pv.DEFAULT_INTERN_CONFIG
+    if not isinstance(ledger, pv.LedgerState):
+        ledger = pv.derive_ledger_state(
+            ledger, op_buckets_full_range=intern_cfg.op_buckets_full_range
+        )
     if cfg is None:
         cfg = make_cnf2_bound_value_cfg(
             policy_value=policy_value,

@@ -3,10 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import jax.numpy as jnp
+import jax
 
 from prism_vm_core.structures import Ledger
 
 
+@jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True, slots=True)
 class LedgerIndex:
     """Derived index data for fast ledger lookups (data-level cache)."""
@@ -14,13 +16,47 @@ class LedgerIndex:
     op_start: jnp.ndarray
     op_end: jnp.ndarray
 
+    def tree_flatten(self):
+        return (self.op_start, self.op_end), None
 
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        op_start, op_end = children
+        return cls(op_start=op_start, op_end=op_end)
+
+
+@jax.tree_util.register_pytree_node_class
 @dataclass(frozen=True, slots=True)
 class LedgerState:
     """Ledger plus derived index bundle (canonical interning state)."""
 
     ledger: Ledger
     index: LedgerIndex
+    op_buckets_full_range: bool
+
+    def tree_flatten(self):
+        return (self.ledger, self.index), self.op_buckets_full_range
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        ledger, index = children
+        return cls(ledger=ledger, index=index, op_buckets_full_range=aux_data)
+
+    def __getattr__(self, name: str):
+        return getattr(self.ledger, name)
+
+    def _replace(self, **kwargs):
+        ledger = kwargs.pop("ledger", self.ledger)
+        if kwargs:
+            ledger = ledger._replace(**kwargs)
+        return LedgerState(
+            ledger=ledger,
+            index=derive_ledger_index(
+                ledger,
+                op_buckets_full_range=self.op_buckets_full_range,
+            ),
+            op_buckets_full_range=self.op_buckets_full_range,
+        )
 
 
 def derive_ledger_index(
@@ -57,6 +93,7 @@ def derive_ledger_state(
         index=derive_ledger_index(
             ledger, op_buckets_full_range=op_buckets_full_range
         ),
+        op_buckets_full_range=op_buckets_full_range,
     )
 
 
