@@ -153,10 +153,10 @@ def backend_device(request):
 
 @pytest.fixture(autouse=True)
 def _set_default_device(request):
-    if not request.node.get_closest_marker("backend_matrix"):
-        yield
-        return
-    device = request.getfixturevalue("backend_device")
+    if request.node.get_closest_marker("backend_matrix"):
+        device = request.getfixturevalue("backend_device")
+    else:
+        device = jax.devices("cpu")[0]
     with jax.default_device(device):
         yield
 

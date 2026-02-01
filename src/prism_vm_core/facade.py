@@ -46,6 +46,7 @@ from prism_core.modes import ValidateMode, require_validate_mode, BspMode, coerc
 from prism_core.errors import PrismPolicyModeError, PrismPolicyBindingError
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
+from prism_ledger.index import LedgerIndex, derive_ledger_index
 from prism_bsp.config import (
     Cnf2Config,
     Cnf2BoundConfig,
@@ -1062,6 +1063,8 @@ GPUWatchdog = GPUWatchdog
 _gpu_watchdog_create = _gpu_watchdog_create
 InternConfig = InternConfig
 DEFAULT_INTERN_CONFIG = DEFAULT_INTERN_CONFIG
+LedgerIndex = LedgerIndex
+derive_ledger_index = derive_ledger_index
 Cnf2Config = Cnf2Config
 DEFAULT_CNF2_CONFIG = DEFAULT_CNF2_CONFIG
 CoordConfig = CoordConfig

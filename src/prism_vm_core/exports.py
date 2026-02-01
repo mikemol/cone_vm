@@ -51,6 +51,8 @@ __all__ = [
     "MAX_COORD_STEPS",
     "InternConfig",
     "DEFAULT_INTERN_CONFIG",
+    "LedgerIndex",
+    "derive_ledger_index",
     "AllocConfig",
     "DEFAULT_ALLOC_CONFIG",
     "Cnf2Config",

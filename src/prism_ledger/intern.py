@@ -48,6 +48,7 @@ from jax import lax
 from prism_core import jax_safe as _jax_safe
 from prism_core.permutation import _invert_perm
 from prism_ledger.config import DEFAULT_INTERN_CONFIG, InternConfig
+from prism_ledger.index import LedgerIndex, derive_ledger_index
 from prism_metrics.probes import (
     _coord_norm_probe_assert,
     _coord_norm_probe_enabled,
@@ -166,16 +167,17 @@ def _coord_norm_id_jax_noprobe(
     )
 
 
-def _lookup_node_id(
+def _lookup_node_id_bound(
     ledger,
     op,
     a1,
     a2,
     *,
     pack_key_fn=_pack_key,
-    op_start=None,
-    op_end=None,
+    ledger_index: LedgerIndex,
 ):
+    op_start = ledger_index.op_start
+    op_end = ledger_index.op_end
     k0, k1, k2, k3, k4 = pack_key_fn(op, a1, a2)
     L_b0 = ledger.keys_b0_sorted
     L_b1 = ledger.keys_b1_sorted
@@ -224,13 +226,9 @@ def _lookup_node_id(
             ),
         )
 
-    if op_start is not None and op_end is not None:
-        op_idx = k0.astype(jnp.int32)
-        lo_init = op_start[op_idx]
-        hi_init = op_end[op_idx]
-    else:
-        lo_init = jnp.int32(0)
-        hi_init = count
+    op_idx = k0.astype(jnp.int32)
+    lo_init = op_start[op_idx]
+    hi_init = op_end[op_idx]
 
     def _do_search(_):
         lo = lo_init
@@ -291,6 +289,25 @@ def _lookup_node_id(
     )
 
 
+def _lookup_node_id(
+    ledger,
+    op,
+    a1,
+    a2,
+    *,
+    pack_key_fn=_pack_key,
+    ledger_index: LedgerIndex | None = None,
+    cfg: InternConfig = DEFAULT_INTERN_CONFIG,
+):
+    if ledger_index is None:
+        ledger_index = derive_ledger_index(
+            ledger, op_buckets_full_range=cfg.op_buckets_full_range
+        )
+    return _lookup_node_id_bound(
+        ledger, op, a1, a2, pack_key_fn=pack_key_fn, ledger_index=ledger_index
+    )
+
+
 def _key_safe_normalize_nodes(
     ops, a1, a2, *, guard_zero_args_fn=_guard_zero_args
 ):
@@ -317,6 +334,7 @@ def _intern_nodes_impl_core(
     proposed_a2,
     *,
     cfg: InternConfig,
+    ledger_index: LedgerIndex | None = None,
     key_safe_normalize_fn=_key_safe_normalize_nodes,
     pack_key_fn=_pack_key,
     candidate_indices_fn=_candidate_indices,
@@ -352,24 +370,20 @@ def _intern_nodes_impl_core(
     has_coord = jnp.any(is_coord_pair)
     L_b0 = ledger.keys_b0_sorted
     count = ledger.count.astype(jnp.int32)
-    if cfg.op_buckets_full_range:
-        op_start = jnp.zeros(256, dtype=jnp.int32)
-        op_end = jnp.full((256,), count, dtype=jnp.int32)
-    else:
-        op_values = jnp.arange(256, dtype=jnp.uint8)
-        op_start = jnp.searchsorted(L_b0, op_values, side="left").astype(jnp.int32)
-        op_end = jnp.searchsorted(L_b0, op_values, side="right").astype(jnp.int32)
-        op_start = jnp.minimum(op_start, count)
-        op_end = jnp.minimum(op_end, count)
+    if ledger_index is None:
+        ledger_index = derive_ledger_index(
+            ledger, op_buckets_full_range=cfg.op_buckets_full_range
+        )
+    op_start = ledger_index.op_start
+    op_end = ledger_index.op_end
 
     def _lookup_node_id_bucketed(ledger_in, op, a1, a2):
-        return _lookup_node_id(
+        return _lookup_node_id_bound(
             ledger_in,
             op,
             a1,
             a2,
-            op_start=op_start,
-            op_end=op_end,
+            ledger_index=ledger_index,
         )
     if guards_enabled_fn() and coord_norm_probe_enabled_fn():
         jax.debug.callback(
@@ -960,6 +974,7 @@ def _intern_nodes_impl(
     batch: NodeBatch,
     *,
     cfg: InternConfig,
+    ledger_index: LedgerIndex | None = None,
     intern_core_fn=_intern_nodes_impl_core,
     key_safe_normalize_fn=_key_safe_normalize_nodes,
     guard_zero_args_fn=_guard_zero_args,
@@ -1006,6 +1021,7 @@ def _intern_nodes_impl(
             proposed_a1,
             proposed_a2,
             cfg=cfg,
+            ledger_index=ledger_index,
             key_safe_normalize_fn=key_safe_normalize_fn,
             pack_key_fn=pack_key_fn,
             candidate_indices_fn=candidate_indices_fn,
@@ -1031,6 +1047,7 @@ def intern_nodes(
     a2=None,
     *,
     cfg: InternConfig = DEFAULT_INTERN_CONFIG,
+    ledger_index: LedgerIndex | None = None,
     intern_impl_fn=_intern_nodes_impl,
     lookup_node_id_fn=_lookup_node_id,
     key_safe_normalize_fn=_key_safe_normalize_nodes,
@@ -1072,6 +1089,10 @@ def intern_nodes(
     proposed_ops, proposed_a1, proposed_a2 = batch
     if proposed_ops.shape[0] == 0:
         return jnp.zeros_like(proposed_ops), ledger
+    if ledger_index is None:
+        ledger_index = derive_ledger_index(
+            ledger, op_buckets_full_range=cfg.op_buckets_full_range
+        )
     stop = ledger.oom | ledger.corrupt
     # NOTE: stop path returns zeros today; read-only lookup fallback is deferred.
 
@@ -1091,8 +1112,14 @@ def intern_nodes(
         a1 = jnp.where(bad_key, jnp.int32(0), a1)
         a2 = jnp.where(bad_key, jnp.int32(0), a2)
 
-        def _lookup_one(op, a1_val, a2_val):
-            return lookup_node_id_fn(ledger, op, a1_val, a2_val)
+        if lookup_node_id_fn is _lookup_node_id:
+            def _lookup_one(op, a1_val, a2_val):
+                return _lookup_node_id(
+                    ledger, op, a1_val, a2_val, ledger_index=ledger_index
+                )
+        else:
+            def _lookup_one(op, a1_val, a2_val):
+                return lookup_node_id_fn(ledger, op, a1_val, a2_val)
 
         ids, found = jax.vmap(_lookup_one)(ops, a1, a2)
         ids = jnp.where(found & (~bad_key), ids, jnp.int32(0))
@@ -1104,6 +1131,7 @@ def intern_nodes(
             ledger,
             batch,
             cfg=cfg,
+            ledger_index=ledger_index,
             key_safe_normalize_fn=key_safe_normalize_fn,
             guard_zero_args_fn=guard_zero_args_fn,
             checked_pack_key_fn=checked_pack_key_fn,
