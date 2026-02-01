@@ -32,6 +32,11 @@ def intern1(ledger, op, a1, a2):
     return ids[0], ledger
 
 
+def init_ledger_state(*, cfg=None):
+    """Return a LedgerState seeded with an index."""
+    return pv.init_ledger_state(cfg=cfg)
+
+
 def committed_ids(*values):
     """Build CommittedIds from values or a single iterable."""
     if len(values) == 1 and isinstance(values[0], (list, tuple, jnp.ndarray)):

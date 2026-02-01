@@ -1123,9 +1123,33 @@ def intern_nodes(
     If ledger_index is provided, the bound LedgerIndex path is used to avoid
     recomputing opcode buckets for the same ledger state.
 
+    If ledger is a LedgerState, the LedgerIndex path is used implicitly and the
+    updated LedgerState is returned.
+
     Axis: Interface/Control. Commutes with q. Erased by q.
     Test: tests/test_m1_gate.py
     """
+    if isinstance(ledger, LedgerState):
+        if ledger_index is not None:
+            raise ValueError("Pass either LedgerState or ledger_index, not both.")
+        if cfg is not None and (op_buckets_full_range is not None or force_spawn_clip is not None):
+            raise ValueError("Pass either cfg or individual flags, not both.")
+        if cfg is None and op_buckets_full_range is None and force_spawn_clip is None:
+            cfg = DEFAULT_INTERN_CONFIG
+        elif cfg is None:
+            cfg = InternConfig(
+                op_buckets_full_range=bool(op_buckets_full_range or False),
+                force_spawn_clip=bool(force_spawn_clip or False),
+            )
+        if a1 is None and a2 is None:
+            if not isinstance(batch_or_ops, NodeBatch):
+                raise TypeError("intern_nodes expects a NodeBatch or (ops, a1, a2)")
+            batch = batch_or_ops
+        else:
+            if a1 is None or a2 is None:
+                raise TypeError("intern_nodes expects both a1 and a2 arrays")
+            batch = NodeBatch(batch_or_ops, a1, a2)
+        return intern_nodes_state(ledger, batch, cfg=cfg)
     if cfg is not None:
         if op_buckets_full_range is not None or force_spawn_clip is not None:
             raise ValueError("Pass either cfg or individual flags, not both.")
