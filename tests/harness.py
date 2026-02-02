@@ -1,4 +1,6 @@
+import os
 import re
+import time
 
 import jax.numpy as jnp
 
@@ -9,6 +11,12 @@ TOKEN_RE = re.compile(r"\(|\)|[a-z]+")
 STATUS_CONVERGED = "converged"
 STATUS_BUDGET_EXHAUSTED = "budget_exhausted"
 STATUS_ERROR = "error"
+_PROFILE_BSP_INTRINSIC = os.environ.get("PRISM_PROFILE_BSP_INTRINSIC", "").lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 
 def i32(values):
@@ -518,6 +526,18 @@ def pretty_bsp_intrinsic(expr, max_steps=64, vm=None, **kwargs):
 
 
 def denote_pretty_bsp_intrinsic(expr, max_steps=64, vm=None, **kwargs):
+    if _PROFILE_BSP_INTRINSIC:
+        start = time.perf_counter()
+        vm, ptr = denote_bsp_intrinsic(
+            expr, max_steps=max_steps, vm=vm, **kwargs
+        )
+        pretty = vm.decode(ptr)
+        elapsed = time.perf_counter() - start
+        print(
+            f"[profile:bsp_intrinsic] elapsed_s={elapsed:.3f} "
+            f"max_steps={max_steps} expr={expr!r}"
+        )
+        return pretty
     vm, ptr = denote_bsp_intrinsic(expr, max_steps=max_steps, vm=vm, **kwargs)
     return vm.decode(ptr)
 
