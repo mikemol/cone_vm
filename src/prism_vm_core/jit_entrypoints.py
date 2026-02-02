@@ -1197,7 +1197,21 @@ def cycle_intrinsic_jit(
             intern_state_fn = _intern_state
     if node_batch_fn is None:
         node_batch_fn = NodeBatch
-    return _cycle_intrinsic_jit_impl(intern_state_fn, node_batch_fn)
+    impl = _cycle_intrinsic_jit_impl(intern_state_fn, node_batch_fn)
+    cfg_local = intern_cfg or DEFAULT_INTERN_CONFIG
+
+    def _entry(state_or_ledger, frontier_ids):
+        if isinstance(state_or_ledger, LedgerState):
+            state_out, frontier_out = impl(state_or_ledger, frontier_ids)
+            return state_out, frontier_out
+        state = derive_ledger_state(
+            state_or_ledger,
+            op_buckets_full_range=cfg_local.op_buckets_full_range,
+        )
+        state_out, frontier_out = impl(state, frontier_ids)
+        return state_out.ledger, frontier_out
+
+    return _entry
 
 
 def cycle_intrinsic_jit_cfg(
