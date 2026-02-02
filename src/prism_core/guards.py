@@ -101,9 +101,21 @@ def safe_gather_1d_cfg(
     """Guard-configured wrapper for safe_gather_1d (shared)."""
     size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
     guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
-    return _jax_safe.safe_gather_1d(
-        arr, idx, label, guard=False, policy=policy, return_ok=return_ok
-    )
+    if policy is None:
+        policy = DEFAULT_SAFETY_POLICY
+    idx_i = jnp.asarray(idx, dtype=jnp.int32)
+    ok = (idx_i >= 0) & (idx_i < size)
+    idx_safe = jnp.clip(idx_i, 0, size - 1)
+    if policy.mode == SafetyMode.DROP:
+        idx_safe = jnp.where(ok, idx_safe, jnp.int32(0))
+    values = arr[idx_safe]
+    if policy.mode == SafetyMode.DROP:
+        values = jnp.where(ok, values, jnp.zeros_like(values))
+    if policy.mode == SafetyMode.CLAMP:
+        ok = jnp.ones_like(ok, dtype=jnp.bool_)
+    if return_ok:
+        return values, ok
+    return values
 
 
 def safe_gather_1d_ok_cfg(
@@ -116,10 +128,14 @@ def safe_gather_1d_ok_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Guard-configured wrapper for safe_gather_1d_ok (shared)."""
-    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
-    guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
-    values, ok = _jax_safe.safe_gather_1d(
-        arr, idx, label, guard=False, policy=policy, return_ok=True
+    values, ok = safe_gather_1d_cfg(
+        arr,
+        idx,
+        label,
+        guard=guard,
+        policy=policy,
+        return_ok=True,
+        cfg=cfg,
     )
     if policy is None:
         policy = DEFAULT_SAFETY_POLICY

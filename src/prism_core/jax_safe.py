@@ -17,6 +17,7 @@ from prism_core.safety import (
 # dataflow-bundle: idx, policy_value
 # dataflow-bundle: idx, policy_value, size
 # dataflow-bundle: idx, size
+# dataflow-bundle: max_allowed, max_val, min_val
 # dataflow-bundle: max_val, min_val, size_val
 
 TEST_GUARDS = os.environ.get("PRISM_TEST_GUARDS", "").strip().lower() in (
