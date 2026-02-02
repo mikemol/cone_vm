@@ -190,6 +190,21 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("backend_device", backends, ids=ids, indirect=True)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _jax_warmup_session() -> None:
+    if os.environ.get("PRISM_JAX_WARMUP", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return
+    from tests import harness
+
+    # Warm up the BSP intrinsic pipeline to populate JAX compile caches.
+    harness.denote_bsp_intrinsic("(add (suc zero) (suc zero))", max_steps=64)
+    harness.denote_bsp_intrinsic("(add zero (suc (suc zero)))", max_steps=64)
+
+
 @pytest.fixture
 def backend_device(request):
     backend = getattr(request, "param", None)

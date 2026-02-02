@@ -574,6 +574,8 @@ def _cycle_candidates_core_impl_state(
     guard_cfg = resolved.guard_cfg
     intern_cfg = resolved.intern_cfg
     commit_fns = resolved.commit_fns
+    safe_gather_ok_fn = resolved.safe_gather_ok_fn
+    safe_gather_ok_value_fn = resolved.safe_gather_ok_value_fn
     node_batch_fn = resolved.node_batch_fn
     coord_xor_batch_fn = resolved.coord_xor_batch_fn
     emit_candidates_fn = resolved.emit_candidates_fn
@@ -584,12 +586,44 @@ def _cycle_candidates_core_impl_state(
     host_bool_value_fn = resolved.host_bool_value_fn
     host_int_value_fn = resolved.host_int_value_fn
     runtime_fns = resolved.runtime_fns
+    if commit_optional:
+        commit_optional = dict(commit_optional)
+        if "safe_gather_ok_fn" in commit_optional:
+            commit_optional["safe_gather_ok_fn"] = safe_gather_ok_fn
+        if "safe_gather_ok_value_fn" in commit_optional:
+            commit_optional["safe_gather_ok_value_fn"] = safe_gather_ok_value_fn
+        if "guard_cfg" in commit_optional:
+            commit_optional["guard_cfg"] = guard_cfg
     intern_cfg = _resolve_intern_cfg(cfg, intern_cfg)
     if commit_fns.intern_fn is intern_nodes:
         commit_fns = Cnf2CommitInputs(
             intern_fn=partial(intern_nodes, cfg=intern_cfg),
             commit_stratum_fn=commit_fns.commit_stratum_fn,
         )
+    if intern_state_fn is intern_nodes_state:
+        def _intern_state_from_commit_fn(state_in, batch_or_ops, a1=None, a2=None, *, cfg=None):
+            optional = {"cfg": cfg, "ledger_index": state_in.index}
+            ids, new_ledger = call_with_optional_kwargs(
+                commit_fns.intern_fn,
+                optional,
+                state_in.ledger,
+                batch_or_ops,
+                a1,
+                a2,
+            )
+            if new_ledger is state_in.ledger:
+                return ids, state_in
+            op_buckets_full_range = (
+                cfg.op_buckets_full_range
+                if cfg is not None
+                else DEFAULT_INTERN_CONFIG.op_buckets_full_range
+            )
+            new_state = derive_ledger_state(
+                new_ledger, op_buckets_full_range=op_buckets_full_range
+            )
+            return ids, new_state
+
+        intern_state_fn = _intern_state_from_commit_fn
     cnf2_metrics_update_fn = runtime_fns.cnf2_metrics_update_fn
     ledger = state.ledger
     # BSPᵗ: temporal superstep / barrier semantics.

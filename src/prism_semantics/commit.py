@@ -477,6 +477,7 @@ def _commit_stratum_core(
     ops = ledger.opcode[ids]
     a1 = q_prev(provisional_ids_fn(ledger.arg1[ids])).a
     a2 = q_prev(provisional_ids_fn(ledger.arg2[ids])).a
+    pre_intern_count = ledger.count.astype(jnp.int32)
     if ledger_index is None:
         cfg = intern_cfg or DEFAULT_INTERN_CONFIG
         ledger_index = derive_ledger_index(
@@ -485,6 +486,22 @@ def _commit_stratum_core(
     intern_fn = _bind_ledger_index(intern_fn, ledger_index)
     canon_ids_raw, ledger = intern_fn(ledger, node_batch_fn(ops, a1, a2))
     canon_ids = committed_ids_fn(canon_ids_raw)
+    post_intern_count = ledger.count.astype(jnp.int32)
+    if mode != ValidateMode.NONE:
+        intern_delta = post_intern_count - pre_intern_count
+        if host_int_value_fn(jnp.maximum(intern_delta, 0)) > 0:
+            intern_stratum = Stratum(
+                start=pre_intern_count,
+                count=jnp.maximum(intern_delta, 0),
+            )
+            if mode == ValidateMode.STRICT:
+                ok = validate_within_fn(ledger, intern_stratum)
+            else:
+                ok = validate_future_fn(ledger, intern_stratum)
+            if not ok:
+                if mode == ValidateMode.STRICT:
+                    raise ValueError("Stratum contains within-tier references")
+                raise ValueError("Stratum contains future references")
     if (mode != ValidateMode.NONE or guards_enabled_fn()) and canon_ids.a.shape[0] != count:
         raise ValueError("Stratum count mismatch in commit_stratum")
 

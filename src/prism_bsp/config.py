@@ -341,6 +341,15 @@ def resolve_cnf2_inputs(
                     safe_gather_ok_fn = policy_bundle.safe_gather_ok_bound_fn
             if policy_bundle.safe_gather_ok_value_fn is not None:
                 safe_gather_ok_value_fn = policy_bundle.safe_gather_ok_value_fn
+        if cfg.safe_gather_ok_bound_fn is not None:
+            if safe_gather_ok_fn is safe_gather_ok_default:
+                safe_gather_ok_fn = cfg.safe_gather_ok_bound_fn
+            else:
+                raise PrismPolicyBindingError(
+                    "cycle_candidates_core received cfg.safe_gather_ok_bound_fn with safe_gather_ok_fn override",
+                    context="cycle_candidates_core",
+                    policy_mode="static",
+                )
         runtime_bundle = cfg.runtime_fns
         if runtime_fns is runtime_default:
             runtime_fns = runtime_bundle
