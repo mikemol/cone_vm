@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from functools import partial
+from typing import Callable, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -25,6 +27,17 @@ from prism_core.guards import (
     resolve_safe_gather_ok_fn,
     resolve_safe_gather_ok_value_fn,
 )
+
+# dataflow-bundle: act_val, exp_val
+
+
+@dataclass(frozen=True)
+class _ExpectedActualArgs:
+    exp_val: object
+    act_val: object
+
+from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
+from prism_ledger.index import LedgerIndex, derive_ledger_index
 from prism_ledger.intern import intern_nodes
 from prism_vm_core.constants import _PREFIX_SCAN_CHUNK
 from prism_vm_core.domains import (
@@ -35,14 +48,42 @@ from prism_vm_core.domains import (
     _host_raise_if_bad,
     _provisional_ids,
 )
+from prism_vm_core.ontology import ProvisionalIds
 from prism_vm_core.guards import _guards_enabled
-from prism_vm_core.structures import NodeBatch, Stratum
+from prism_vm_core.structures import Ledger, NodeBatch, Stratum
 from prism_core.protocols import SafeGatherOkBoundFn, SafeGatherOkFn, SafeGatherOkValueFn
 from prism_vm_core.protocols import HostRaiseFn, InternFn, NodeBatchFn
 
 safe_gather_1d = _jax_safe.safe_gather_1d
 safe_gather_1d_ok = _jax_safe.safe_gather_1d_ok
 safe_gather_1d_ok_value = _jax_safe.safe_gather_1d_ok_value
+
+T = TypeVar("T")
+
+
+def _ledger_index_is_bound(fn: Callable[..., object]) -> bool:
+    if getattr(fn, "_prism_ledger_index_bound", False):
+        return True
+    if isinstance(fn, partial):
+        keywords = fn.keywords or {}
+        return "ledger_index" in keywords
+    return False
+
+
+def _bind_ledger_index(
+    fn: Callable[..., T], ledger_index: LedgerIndex | None
+) -> Callable[..., T]:
+    if ledger_index is None or _ledger_index_is_bound(fn):
+        return fn
+
+    # dataflow-bundle: args, kwargs
+    def _wrapped(*args, **kwargs):
+        return call_with_optional_kwargs(
+            fn, {"ledger_index": ledger_index}, *args, **kwargs
+        )
+
+    setattr(_wrapped, "_prism_ledger_index_bound", True)
+    return _wrapped
 
 
 def _node_batch(op, a1, a2):
@@ -207,13 +248,29 @@ def apply_q(
     return out, ok
 
 
+def apply_q_ok(
+    q: QMap,
+    ids,
+    *,
+    provisional_ids_fn=_provisional_ids,
+):
+    """Collapseʰ: homomorphic projection q with ok mask."""
+    ids_in = provisional_ids_fn(ids)
+    out = q(ids_in)
+    meta = getattr(q, "_prism_meta", None)
+    if meta is None:
+        ok = jnp.ones_like(out.a, dtype=jnp.bool_)
+        return out, ok
+    ok = _q_map_ok(ids_in, meta)
+    return out, ok
+
+
 def _apply_stratum_q_core(
     ids,
     stratum: Stratum,
     canon_ids,
     label: str,
     *,
-    safe_gather_fn=safe_gather_1d,
     safe_gather_ok_fn: SafeGatherOkFn = safe_gather_1d_ok,
     guards_enabled_fn=_guards_enabled,
     provisional_ids_fn=_provisional_ids,
@@ -231,7 +288,8 @@ def _apply_stratum_q_core(
                     f"guard failed: {label} count={int(exp_val)} canon_ids={int(act_val)}"
                 )
 
-        jax.debug.callback(_raise, mismatch, expected, actual)
+        bundle = _ExpectedActualArgs(exp_val=expected, act_val=actual)
+        jax.debug.callback(_raise, mismatch, bundle.exp_val, bundle.act_val)
     if canon_ids.a.shape[0] == 0:
         return ids
     start = jnp.asarray(stratum.start, dtype=jnp.int32)
@@ -257,7 +315,6 @@ def _apply_stratum_q_static(
     canon_ids,
     label: str,
     *,
-    safe_gather_fn=safe_gather_1d,
     safe_gather_ok_fn: SafeGatherOkBoundFn = safe_gather_1d_ok,
     guards_enabled_fn=_guards_enabled,
     provisional_ids_fn=_provisional_ids,
@@ -270,7 +327,6 @@ def _apply_stratum_q_static(
         stratum,
         canon_ids,
         label,
-        safe_gather_fn=safe_gather_fn,
         safe_gather_ok_fn=safe_gather_ok_fn,
         guards_enabled_fn=guards_enabled_fn,
         provisional_ids_fn=provisional_ids_fn,
@@ -285,7 +341,6 @@ def _apply_stratum_q_dynamic(
     canon_ids,
     label: str,
     *,
-    safe_gather_fn=safe_gather_1d,
     safe_gather_ok_fn: SafeGatherOkFn = safe_gather_1d_ok,
     guards_enabled_fn=_guards_enabled,
     provisional_ids_fn=_provisional_ids,
@@ -304,7 +359,6 @@ def _apply_stratum_q_dynamic(
         stratum,
         canon_ids,
         label,
-        safe_gather_fn=safe_gather_fn,
         safe_gather_ok_fn=safe_gather_ok_fn,
         guards_enabled_fn=guards_enabled_fn,
         provisional_ids_fn=provisional_ids_fn,
@@ -348,7 +402,8 @@ def _apply_stratum_q_value(
                     f"guard failed: {label} count={int(exp_val)} canon_ids={int(act_val)}"
                 )
 
-        jax.debug.callback(_raise, mismatch, expected, actual)
+        bundle = _ExpectedActualArgs(exp_val=expected, act_val=actual)
+        jax.debug.callback(_raise, mismatch, bundle.exp_val, bundle.act_val)
     if canon_ids.a.shape[0] == 0:
         return ids
     start = jnp.asarray(stratum.start, dtype=jnp.int32)
@@ -371,15 +426,17 @@ def _apply_stratum_q_value(
 
 
 def _commit_stratum_core(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     intern_fn: InternFn = intern_nodes,
+    ledger_index: LedgerIndex | None = None,
+    intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -420,8 +477,31 @@ def _commit_stratum_core(
     ops = ledger.opcode[ids]
     a1 = q_prev(provisional_ids_fn(ledger.arg1[ids])).a
     a2 = q_prev(provisional_ids_fn(ledger.arg2[ids])).a
+    pre_intern_count = ledger.count.astype(jnp.int32)
+    if ledger_index is None:
+        cfg = intern_cfg or DEFAULT_INTERN_CONFIG
+        ledger_index = derive_ledger_index(
+            ledger, op_buckets_full_range=cfg.op_buckets_full_range
+        )
+    intern_fn = _bind_ledger_index(intern_fn, ledger_index)
     canon_ids_raw, ledger = intern_fn(ledger, node_batch_fn(ops, a1, a2))
     canon_ids = committed_ids_fn(canon_ids_raw)
+    post_intern_count = ledger.count.astype(jnp.int32)
+    if mode != ValidateMode.NONE:
+        intern_delta = post_intern_count - pre_intern_count
+        if host_int_value_fn(jnp.maximum(intern_delta, 0)) > 0:
+            intern_stratum = Stratum(
+                start=pre_intern_count,
+                count=jnp.maximum(intern_delta, 0),
+            )
+            if mode == ValidateMode.STRICT:
+                ok = validate_within_fn(ledger, intern_stratum)
+            else:
+                ok = validate_future_fn(ledger, intern_stratum)
+            if not ok:
+                if mode == ValidateMode.STRICT:
+                    raise ValueError("Stratum contains within-tier references")
+                raise ValueError("Stratum contains future references")
     if (mode != ValidateMode.NONE or guards_enabled_fn()) and canon_ids.a.shape[0] != count:
         raise ValueError("Stratum count mismatch in commit_stratum")
 
@@ -459,15 +539,17 @@ def _commit_stratum_core(
 
 
 def _commit_stratum_common_static(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     intern_fn: InternFn = intern_nodes,
+    ledger_index: LedgerIndex | None = None,
+    intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -499,6 +581,8 @@ def _commit_stratum_common_static(
         prior_q=prior_q,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
+        ledger_index=ledger_index,
+        intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         identity_q_fn=identity_q_fn,
         apply_stratum_q_fn=apply_stratum_q_fn,
@@ -519,15 +603,17 @@ def _commit_stratum_common_static(
 
 
 def _commit_stratum_common_value(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     intern_fn: InternFn = intern_nodes,
+    ledger_index: LedgerIndex | None = None,
+    intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -553,6 +639,8 @@ def _commit_stratum_common_value(
         prior_q=prior_q,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
+        ledger_index=ledger_index,
+        intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         identity_q_fn=identity_q_fn,
         apply_stratum_q_fn=apply_stratum_q_fn,
@@ -573,15 +661,17 @@ def _commit_stratum_common_value(
 
 
 def _commit_stratum_common_bound(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     intern_fn: InternFn = intern_nodes,
+    ledger_index: LedgerIndex | None = None,
+    intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -613,6 +703,8 @@ def _commit_stratum_common_bound(
         prior_q=prior_q,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
+        ledger_index=ledger_index,
+        intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         identity_q_fn=identity_q_fn,
         apply_stratum_q_fn=apply_stratum_q_fn,
@@ -633,15 +725,17 @@ def _commit_stratum_common_bound(
 
 
 def commit_stratum_static(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     intern_fn: InternFn = intern_nodes,
+    ledger_index: LedgerIndex | None = None,
+    intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -679,6 +773,8 @@ def commit_stratum_static(
         prior_q=prior_q,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
+        ledger_index=ledger_index,
+        intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         identity_q_fn=identity_q_fn,
         apply_stratum_q_fn=apply_stratum_q_fn,
@@ -698,15 +794,17 @@ def commit_stratum_static(
 
 
 def commit_stratum_bound(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     intern_fn: InternFn = intern_nodes,
+    ledger_index: LedgerIndex | None = None,
+    intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -735,6 +833,8 @@ def commit_stratum_bound(
         prior_q=prior_q,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
+        ledger_index=ledger_index,
+        intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         identity_q_fn=identity_q_fn,
         apply_stratum_q_fn=apply_stratum_q_fn,
@@ -751,15 +851,17 @@ def commit_stratum_bound(
 
 
 def commit_stratum_value(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     intern_fn: InternFn = intern_nodes,
+    ledger_index: LedgerIndex | None = None,
+    intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -789,6 +891,8 @@ def commit_stratum_value(
         prior_q=prior_q,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
+        ledger_index=ledger_index,
+        intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         identity_q_fn=identity_q_fn,
         apply_stratum_q_fn=apply_stratum_q_fn,
@@ -806,15 +910,17 @@ def commit_stratum_value(
 
 
 def commit_stratum(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
     intern_fn: InternFn = intern_nodes,
+    ledger_index: LedgerIndex | None = None,
+    intern_cfg: InternConfig | None = None,
     node_batch_fn: NodeBatchFn = _node_batch,
     identity_q_fn=_identity_q,
-    apply_stratum_q_fn=_apply_stratum_q_static,
+    apply_stratum_q_fn: Callable[..., ProvisionalIds] = _apply_stratum_q_static,
     validate_within_fn=validate_stratum_no_within_refs,
     validate_future_fn=validate_stratum_no_future_refs,
     guards_enabled_fn=_guards_enabled,
@@ -854,6 +960,8 @@ def commit_stratum(
                 prior_q=prior_q,
                 validate_mode=validate_mode,
                 intern_fn=intern_fn,
+                ledger_index=ledger_index,
+                intern_cfg=intern_cfg,
                 node_batch_fn=node_batch_fn,
                 identity_q_fn=identity_q_fn,
                 apply_stratum_q_fn=apply_stratum_q_fn,
@@ -874,6 +982,8 @@ def commit_stratum(
             prior_q=prior_q,
             validate_mode=validate_mode,
             intern_fn=intern_fn,
+            ledger_index=ledger_index,
+            intern_cfg=intern_cfg,
             node_batch_fn=node_batch_fn,
             identity_q_fn=identity_q_fn,
             apply_stratum_q_fn=apply_stratum_q_fn,
@@ -895,6 +1005,8 @@ def commit_stratum(
             prior_q=prior_q,
             validate_mode=validate_mode,
             intern_fn=intern_fn,
+            ledger_index=ledger_index,
+            intern_cfg=intern_cfg,
             node_batch_fn=node_batch_fn,
             identity_q_fn=identity_q_fn,
             apply_stratum_q_fn=apply_stratum_q_fn,
@@ -915,6 +1027,8 @@ def commit_stratum(
         prior_q=prior_q,
         validate_mode=validate_mode,
         intern_fn=intern_fn,
+        ledger_index=ledger_index,
+        intern_cfg=intern_cfg,
         node_batch_fn=node_batch_fn,
         identity_q_fn=identity_q_fn,
         apply_stratum_q_fn=apply_stratum_q_fn,
@@ -934,6 +1048,7 @@ def commit_stratum(
 
 __all__ = [
     "apply_q",
+    "apply_q_ok",
     "commit_stratum",
     "commit_stratum_static",
     "commit_stratum_bound",

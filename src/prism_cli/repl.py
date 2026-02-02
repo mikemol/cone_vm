@@ -1,5 +1,36 @@
 import re
 import time
+from dataclasses import dataclass
+
+# dataflow-bundle: block_size, do_global, do_sort, l1_block_size, l2_block_size, use_morton
+# CLI sort/schedule bundle intentionally kept at the host interface.
+# dataflow-bundle: block_size, use_morton
+# Minimal CLI sort bundle for BSP entrypoints.
+# dataflow-bundle: a1, a2
+# Host-side pointer pair bundle in baseline/arena allocators.
+
+
+@dataclass(frozen=True)
+class CliSortBundle:
+    block_size: int | None
+    do_global: bool
+    do_sort: bool
+    l1_block_size: int | None
+    l2_block_size: int | None
+    use_morton: bool
+
+
+@dataclass(frozen=True)
+class CliSortMiniBundle:
+    block_size: int | None
+    use_morton: bool
+
+
+@dataclass(frozen=True)
+class HostPtrPair:
+    a1: object
+    a2: object
+
 from typing import Dict, Tuple
 
 import jax
@@ -10,6 +41,7 @@ from prism_core.modes import ValidateMode, coerce_validate_mode
 from prism_core.safety import oob_mask
 from prism_baseline.kernels import dispatch_kernel, kernel_add, kernel_mul, optimize_ptr
 from prism_bsp.arena_step import cycle
+from prism_bsp.config import ArenaSortConfig, DEFAULT_ARENA_SORT_CONFIG
 from prism_bsp.intrinsic import cycle_intrinsic
 from prism_metrics.gpu import _gpu_watchdog_create
 from prism_metrics.metrics import (
@@ -21,7 +53,7 @@ from prism_metrics.metrics import (
     damage_metrics_get,
     damage_metrics_reset,
 )
-from prism_semantics.commit import apply_q
+from prism_semantics.commit import apply_q_ok
 from prism_vm_core.types import (
     _arena_ptr,
     _committed_ids,
@@ -46,17 +78,20 @@ from prism_vm_core.types import (
 )
 from prism_vm_core.facade import (
     _key_order_commutative_host,
-    _cnf2_enabled,
     _normalize_bsp_mode,
     cycle_candidates,
+    derive_ledger_state,
     init_arena,
     init_ledger,
+    init_ledger_state,
     init_manifest,
-    intern_nodes,
+    intern_nodes_state,
     node_batch,
+    LedgerState,
+    DEFAULT_INTERN_CONFIG,
 )
 from prism_core.modes import BspMode
-from prism_vm_core.guards import _expect_token, _pop_token
+from prism_vm_core.guards import _expect_rparen, _pop_token
 
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
 
@@ -78,9 +113,10 @@ class PrismVM:
         self.kernels = {OP_ADD: kernel_add, OP_MUL: kernel_mul}
 
     def _cons_raw(self, op: int, a1: ManifestPtr, a2: ManifestPtr) -> ManifestPtr:
-        _require_manifest_ptr(a1, "PrismVM._cons_raw a1")
-        _require_manifest_ptr(a2, "PrismVM._cons_raw a2")
-        a1_i, a2_i = _key_order_commutative_host(op, int(a1), int(a2))
+        pair = HostPtrPair(a1=a1, a2=a2)
+        _require_manifest_ptr(pair.a1, "PrismVM._cons_raw a1")
+        _require_manifest_ptr(pair.a2, "PrismVM._cons_raw a2")
+        a1_i, a2_i = _key_order_commutative_host(op, int(pair.a1), int(pair.a2))
         cap = int(self.manifest.opcode.shape[0])
         if self.active_count_host >= cap:
             self.manifest = self.manifest._replace(
@@ -123,10 +159,11 @@ class PrismVM:
         a1: ManifestPtr = ManifestPtr(0),
         a2: ManifestPtr = ManifestPtr(0),
     ) -> ManifestPtr:
-        _require_manifest_ptr(a1, "PrismVM.cons a1")
-        _require_manifest_ptr(a2, "PrismVM.cons a2")
-        a1_i = int(self._canonical_ptr(a1))
-        a2_i = int(self._canonical_ptr(a2))
+        pair = HostPtrPair(a1=a1, a2=a2)
+        _require_manifest_ptr(pair.a1, "PrismVM.cons a1")
+        _require_manifest_ptr(pair.a2, "PrismVM.cons a2")
+        a1_i = int(self._canonical_ptr(pair.a1))
+        a2_i = int(self._canonical_ptr(pair.a2))
         a1_i, a2_i = _key_order_commutative_host(op, a1_i, a2_i)
         signature = (op, _manifest_ptr(a1_i), _manifest_ptr(a2_i))
         if signature in self.trace_cache:
@@ -182,7 +219,7 @@ class PrismVM:
             return self.cons(op, a1, a2)
         if token == "(":
             val = self.parse(tokens)
-            _expect_token(tokens, ")")
+            _expect_rparen(tokens)
             return val
         raise ValueError(f"Unknown: {token}")
 
@@ -215,14 +252,15 @@ class PrismVM_BSP_Legacy:
     def _alloc(
         self, op: int, a1: ArenaPtr = ArenaPtr(0), a2: ArenaPtr = ArenaPtr(0)
     ) -> ArenaPtr:
+        pair = HostPtrPair(a1=a1, a2=a2)
         cap = int(self.arena.opcode.shape[0])
         idx = _host_int_value(self.arena.count)
         if idx >= cap:
             self.arena = self.arena._replace(oom=jnp.array(True, dtype=jnp.bool_))
             raise ValueError("Arena capacity exceeded")
-        _require_arena_ptr(a1, "PrismVM_BSP_Legacy._alloc a1")
-        _require_arena_ptr(a2, "PrismVM_BSP_Legacy._alloc a2")
-        a1_i, a2_i = _key_order_commutative_host(op, int(a1), int(a2))
+        _require_arena_ptr(pair.a1, "PrismVM_BSP_Legacy._alloc a1")
+        _require_arena_ptr(pair.a2, "PrismVM_BSP_Legacy._alloc a2")
+        a1_i, a2_i = _key_order_commutative_host(op, int(pair.a1), int(pair.a2))
         self.arena = self.arena._replace(
             opcode=self.arena.opcode.at[idx].set(op),
             arg1=self.arena.arg1.at[idx].set(a1_i),
@@ -244,7 +282,7 @@ class PrismVM_BSP_Legacy:
             return self._alloc(op, a1, a2)
         if token == "(":
             val = self.parse(tokens)
-            _expect_token(tokens, ")")
+            _expect_rparen(tokens)
             return val
         raise ValueError(f"Unknown: {token}")
 
@@ -267,24 +305,37 @@ class PrismVM_BSP_Legacy:
 class PrismVM_BSP:
     def __init__(self):
         print("⚡ Prism IR: Initializing BSP Ledger...")
-        self.ledger = init_ledger()
+        self.intern_cfg = DEFAULT_INTERN_CONFIG
+        self.ledger = init_ledger_state(cfg=self.intern_cfg)
 
     def _intern(
         self, op: int, a1: LedgerId = LedgerId(0), a2: LedgerId = LedgerId(0)
     ) -> LedgerId:
-        _require_ledger_id(a1, "PrismVM_BSP._intern a1")
-        _require_ledger_id(a2, "PrismVM_BSP._intern a2")
-        a1_i, a2_i = _key_order_commutative_host(op, int(a1), int(a2))
-        ids, self.ledger = intern_nodes(
-            self.ledger,
-            node_batch(
-                jnp.array([op], dtype=jnp.int32),
-                jnp.array([a1_i], dtype=jnp.int32),
-                jnp.array([a2_i], dtype=jnp.int32),
-            ),
+        pair = HostPtrPair(a1=a1, a2=a2)
+        _require_ledger_id(pair.a1, "PrismVM_BSP._intern a1")
+        _require_ledger_id(pair.a2, "PrismVM_BSP._intern a2")
+        a1_i, a2_i = _key_order_commutative_host(op, int(pair.a1), int(pair.a2))
+        batch = node_batch(
+            jnp.array([op], dtype=jnp.int32),
+            jnp.array([a1_i], dtype=jnp.int32),
+            jnp.array([a2_i], dtype=jnp.int32),
         )
+        if isinstance(self.ledger, LedgerState):
+            ids, self.ledger = intern_nodes_state(
+                self.ledger, batch, cfg=self.intern_cfg
+            )
+            ledger_obj = self.ledger.ledger
+        else:
+            self.ledger = derive_ledger_state(
+                self.ledger,
+                op_buckets_full_range=self.intern_cfg.op_buckets_full_range,
+            )
+            ids, self.ledger = intern_nodes_state(
+                self.ledger, batch, cfg=self.intern_cfg
+            )
+            ledger_obj = self.ledger.ledger
         _host_raise_if_bad(
-            self.ledger,
+            ledger_obj,
             "Ledger capacity exceeded during interning",
             oom_exc=ValueError,
         )
@@ -303,27 +354,28 @@ class PrismVM_BSP:
             return self._intern(op, a1, a2)
         if token == "(":
             val = self.parse(tokens)
-            _expect_token(tokens, ")")
+            _expect_rparen(tokens)
             return val
         raise ValueError(f"Unknown: {token}")
 
     def decode(self, ptr: LedgerId) -> str:
         _require_ledger_id(ptr, "PrismVM_BSP.decode ptr")
+        ledger_obj = self.ledger.ledger if isinstance(self.ledger, LedgerState) else self.ledger
         ptr_i = int(ptr)
-        op = _host_int_value(self.ledger.opcode[ptr_i])
+        op = _host_int_value(ledger_obj.opcode[ptr_i])
         if op == OP_ZERO:
             return "zero"
         if op == OP_SUC:
-            return f"(suc {self.decode(_ledger_id(self.ledger.arg1[ptr_i]))})"
+            return f"(suc {self.decode(_ledger_id(ledger_obj.arg1[ptr_i]))})"
         if op == OP_ADD:
             return (
-                f"(add {self.decode(_ledger_id(self.ledger.arg1[ptr_i]))} "
-                f"{self.decode(_ledger_id(self.ledger.arg2[ptr_i]))})"
+                f"(add {self.decode(_ledger_id(ledger_obj.arg1[ptr_i]))} "
+                f"{self.decode(_ledger_id(ledger_obj.arg2[ptr_i]))})"
             )
         if op == OP_MUL:
             return (
-                f"(mul {self.decode(_ledger_id(self.ledger.arg1[ptr_i]))} "
-                f"{self.decode(_ledger_id(self.ledger.arg2[ptr_i]))})"
+                f"(mul {self.decode(_ledger_id(ledger_obj.arg1[ptr_i]))} "
+                f"{self.decode(_ledger_id(ledger_obj.arg2[ptr_i]))})"
             )
         return f"<{OP_NAMES.get(op, '?')}:{ptr}>"
 
@@ -376,16 +428,14 @@ def run_program_lines_arena(
     lines,
     vm=None,
     cycles=1,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
+    *,
+    sort_cfg: ArenaSortConfig = DEFAULT_ARENA_SORT_CONFIG,
 ):
     if vm is None:
         vm = PrismVM_BSP_Legacy()
-    tile_size = _damage_tile_size(block_size, l2_block_size, l1_block_size)
+    tile_size = _damage_tile_size(
+        sort_cfg.block_size, sort_cfg.l2_block_size, sort_cfg.l1_block_size
+    )
     watchdog = _gpu_watchdog_create()
     try:
         for inp in lines:
@@ -400,12 +450,7 @@ def run_program_lines_arena(
                 vm.arena, root_ptr = cycle(
                     vm.arena,
                     root_ptr,
-                    do_sort=do_sort,
-                    use_morton=use_morton,
-                    block_size=block_size,
-                    l2_block_size=l2_block_size,
-                    l1_block_size=l1_block_size,
-                    do_global=do_global,
+                    sort_cfg=sort_cfg,
                 )
                 root_ptr = _arena_ptr(_host_int_value(root_ptr))
                 if _host_bool_value(vm.arena.oom):
@@ -459,17 +504,24 @@ def run_program_lines_bsp(
     l2_block_size=None,
     l1_block_size=None,
     do_global=False,
-    bsp_mode=BspMode.AUTO,
+    bsp_mode: BspMode | str | None = BspMode.AUTO,
     validate_mode: ValidateMode = ValidateMode.NONE,
 ):
+    sort_bundle = CliSortBundle(
+        block_size=block_size,
+        do_global=do_global,
+        do_sort=do_sort,
+        l1_block_size=l1_block_size,
+        l2_block_size=l2_block_size,
+        use_morton=use_morton,
+    )
+    sort_kwargs = sort_bundle.__dict__
     validate_mode = coerce_validate_mode(
         validate_mode, context="run_program_lines_bsp"
     )
     if vm is None:
         vm = PrismVM_BSP()
     bsp_mode = _normalize_bsp_mode(bsp_mode)
-    if bsp_mode == BspMode.CNF2 and not _cnf2_enabled():
-        raise ValueError("bsp_mode='cnf2' disabled until m2")
     for inp in lines:
         inp = inp.strip()
         if not inp or inp.startswith("#"):
@@ -479,25 +531,53 @@ def run_program_lines_bsp(
         frontier = _committed_ids(jnp.array([int(root_ptr)], dtype=jnp.int32))
         for _ in range(max(1, cycles)):
             if bsp_mode == BspMode.INTRINSIC:
-                vm.ledger, frontier_arr = cycle_intrinsic(vm.ledger, frontier.a)
+                ledger_obj = (
+                    vm.ledger.ledger
+                    if isinstance(vm.ledger, LedgerState)
+                    else vm.ledger
+                )
+                ledger_obj, frontier_arr = cycle_intrinsic(ledger_obj, frontier.a)
+                if isinstance(vm.ledger, LedgerState):
+                    vm.ledger = derive_ledger_state(
+                        ledger_obj,
+                        op_buckets_full_range=vm.intern_cfg.op_buckets_full_range,
+                    )
+                else:
+                    vm.ledger = ledger_obj
                 frontier = _committed_ids(frontier_arr)
             else:
                 vm.ledger, frontier_prov, _, q_map = cycle_candidates(
                     vm.ledger, frontier, validate_mode=validate_mode
                 )
-                frontier, ok = apply_q(q_map, frontier_prov, return_ok=True)
+                frontier, ok = apply_q_ok(q_map, frontier_prov)
                 meta = getattr(q_map, "_prism_meta", None)
                 if meta is not None and meta.safe_gather_policy is not None:
                     corrupt = jnp.any(
                         oob_mask(ok, policy=meta.safe_gather_policy)
                     )
-                    vm.ledger = vm.ledger._replace(
-                        corrupt=vm.ledger.corrupt | corrupt
-                    )
-            _host_raise_if_bad(vm.ledger, "Ledger capacity exceeded during cycle")
+                    if isinstance(vm.ledger, LedgerState):
+                        ledger_obj = vm.ledger.ledger._replace(
+                            corrupt=vm.ledger.ledger.corrupt | corrupt
+                        )
+                        vm.ledger = LedgerState(
+                            ledger=ledger_obj,
+                            index=vm.ledger.index,
+                            op_buckets_full_range=vm.ledger.op_buckets_full_range,
+                        )
+                    else:
+                        vm.ledger = vm.ledger._replace(
+                            corrupt=vm.ledger.corrupt | corrupt
+                        )
+            ledger_obj = (
+                vm.ledger.ledger if isinstance(vm.ledger, LedgerState) else vm.ledger
+            )
+            _host_raise_if_bad(ledger_obj, "Ledger capacity exceeded during cycle")
         root_ptr = frontier.a[0]
         root_ptr_int = _host_int_value(root_ptr)
-        print(f"   ├─ Ledger   : {_host_int_value(vm.ledger.count)} nodes")
+        ledger_obj = (
+            vm.ledger.ledger if isinstance(vm.ledger, LedgerState) else vm.ledger
+        )
+        print(f"   ├─ Ledger   : {_host_int_value(ledger_obj.count)} nodes")
         print(f"   └─ Result  : \033[92m{vm.decode(_ledger_id(root_ptr_int))}\033[0m")
     return vm
 
@@ -506,9 +586,10 @@ def repl(
     mode="baseline",
     use_morton=False,
     block_size=None,
-    bsp_mode=BspMode.AUTO,
+    bsp_mode: BspMode | str | None = BspMode.AUTO,
     validate_mode: ValidateMode = ValidateMode.NONE,
 ):
+    cli_bundle = CliSortMiniBundle(block_size=block_size, use_morton=use_morton)
     validate_mode = coerce_validate_mode(validate_mode, context="repl")
     if mode == "bsp":
         vm = PrismVM_BSP()
@@ -536,17 +617,23 @@ def repl(
                 run_program_lines_bsp(
                     [inp],
                     vm,
-                    use_morton=use_morton,
-                    block_size=block_size,
+                    **cli_bundle.__dict__,
                     bsp_mode=bsp_mode,
                     validate_mode=validate_mode,
                 )
             elif mode == "arena":
+                sort_cfg = ArenaSortConfig(
+                    do_sort=do_sort,
+                    use_morton=use_morton,
+                    block_size=block_size,
+                    l2_block_size=l2_block_size,
+                    l1_block_size=l1_block_size,
+                    do_global=do_global,
+                )
                 run_program_lines_arena(
                     [inp],
                     vm,
-                    use_morton=use_morton,
-                    block_size=block_size,
+                    sort_cfg=sort_cfg,
                 )
             else:
                 run_program_lines([inp], vm)
@@ -565,6 +652,9 @@ def main():
     do_sort = True
     use_morton = False
     block_size = None
+    l2_block_size = None
+    l1_block_size = None
+    do_global = False
     path = None
     i = 0
     while i < len(args):
@@ -650,12 +740,18 @@ def main():
                 validate_mode=validate_mode,
             )
         elif mode == "arena":
-            run_program_lines_arena(
-                lines,
-                cycles=cycles,
+            sort_cfg = ArenaSortConfig(
                 do_sort=do_sort,
                 use_morton=use_morton,
                 block_size=block_size,
+                l2_block_size=l2_block_size,
+                l1_block_size=l1_block_size,
+                do_global=do_global,
+            )
+            run_program_lines_arena(
+                lines,
+                cycles=cycles,
+                sort_cfg=sort_cfg,
             )
         else:
             run_program_lines(lines)

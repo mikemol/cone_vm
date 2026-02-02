@@ -1,11 +1,19 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # Milestones
 
-## m1 (2026-01-23)
+## m1 (2026-01-23) — completed
 Tag: `m1`
-Gate command:
-- `mise exec -- pytest -c pytest.m1.ini`
+Baseline gate (m1 suite, runs under the current baseline milestone):
+- `mise exec -- pytest -c pytest.baseline.ini`
 
-Expected xfails (gated above m1):
+m1-only mode is deprecated. The m1 suite should run as baseline coverage, not
+under m1-restricted semantics.
+
+Expected xfails (in later milestones):
 - `tests/test_coord_batch.py::test_coord_xor_batch_uses_single_intern_call` - m4: no batched coord_xor_batch / coord_norm_batch yet.
 - `tests/test_coord_batch.py::test_coord_norm_batch_matches_host` - m4: no batched coord_norm_batch yet.
 

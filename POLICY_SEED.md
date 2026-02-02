@@ -1,3 +1,8 @@
+---
+doc_revision: 2
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 Excellent. What you’re asking for is not “documentation” in the usual sense. You’re asking for a **self-stabilizing policy nucleus**: a document that is simultaneously
 
 * **normative** (it constrains behavior),
@@ -44,6 +49,12 @@ commutation, and test obligations for polysemous terms: `in/glossary.md`.
 **Relationship:** This policy governs *where/when/how* code may execute (security and
 execution safety). The glossary governs *what the code means* and *what must commute*
 (semantic correctness). Both contracts must be satisfied for any change to be valid.
+
+**Dataflow grammar invariant:** The repository enforces a dataflow grammar audit
+that treats recurring parameter bundles as type-level obligations. Any bundle that
+crosses function boundaries must be promoted to a dataclass (config or local bundle),
+or explicitly documented with a `# dataflow-bundle:` marker. This is enforced in CI
+as part of semantic correctness.
 
 ---
 
@@ -157,6 +168,20 @@ permissions:
 Additional **read-only** permissions are allowed when required for enforcement
 (e.g. `actions: read` for posture checks), but write scopes are forbidden by
 default.
+
+**Narrow exception (PR discourse enrichment):**
+
+Workflows running on **GitHub-hosted runners** may request minimal write
+permissions to post PR comments **only** for the purpose of enriching PR
+discussion (e.g. attaching rendered graphs or diagnostics). This exception
+applies only to:
+
+* `pull-requests: write` (no other write scopes),
+* actions pinned to full commit SHAs and allow-listed,
+* jobs that do **not** run on self-hosted runners,
+* comments that are purely informational (no code execution side effects).
+
+Self-hosted workflows MUST NOT request any write scopes.
 
 ### 4.5 Action Supply Chain
 

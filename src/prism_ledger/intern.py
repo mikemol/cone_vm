@@ -1,3 +1,46 @@
+from dataclasses import dataclass
+
+# dataflow-bundle: a0, a1, a2, a3, b0, b1, b2, b3
+# dataflow-bundle: a4, b4
+# dataflow-bundle: coord_norm_probe_assert_fn, coord_norm_probe_reset_cb_fn
+# dataflow-bundle: new_ids, new_keys
+# dataflow-bundle: t_b0, t_b1, t_b2, t_b3
+
+
+@dataclass(frozen=True)
+class _LexLessArgs:
+    a0: object
+    a1: object
+    a2: object
+    a3: object
+    a4: object
+    b0: object
+    b1: object
+    b2: object
+    b3: object
+    b4: object
+
+
+@dataclass(frozen=True)
+class _SearchKeyArgs:
+    t_b0: object
+    t_b1: object
+    t_b2: object
+    t_b3: object
+    t_b4: object
+
+
+@dataclass(frozen=True)
+class _NewKeysIds:
+    new_keys: object
+    new_ids: object
+
+
+@dataclass(frozen=True)
+class _CoordNormProbeFns:
+    coord_norm_probe_assert_fn: object
+    coord_norm_probe_reset_cb_fn: object
+
 import jax
 import jax.numpy as jnp
 from jax import lax
@@ -5,6 +48,12 @@ from jax import lax
 from prism_core import jax_safe as _jax_safe
 from prism_core.permutation import _invert_perm
 from prism_ledger.config import DEFAULT_INTERN_CONFIG, InternConfig
+from prism_ledger.index import (
+    LedgerIndex,
+    LedgerState,
+    derive_ledger_index,
+    derive_ledger_state,
+)
 from prism_metrics.probes import (
     _coord_norm_probe_assert,
     _coord_norm_probe_enabled,
@@ -31,6 +80,17 @@ from prism_vm_core.ontology import (
 from prism_vm_core.structures import Ledger, NodeBatch
 
 _scatter_drop = _jax_safe.scatter_drop
+
+
+@dataclass(frozen=True, slots=True)
+class KeyColumns:
+    """Bundle of sorted key columns."""
+
+    b0: jnp.ndarray
+    b1: jnp.ndarray
+    b2: jnp.ndarray
+    b3: jnp.ndarray
+    b4: jnp.ndarray
 
 def _coord_norm_id_jax_core(ledger, coord_id, *, lookup_node_id_fn=None):
     # CDᵣ + Normalize𝚌 (core, no probe)
@@ -112,7 +172,17 @@ def _coord_norm_id_jax_noprobe(
     )
 
 
-def _lookup_node_id(ledger, op, a1, a2, *, pack_key_fn=_pack_key):
+def _lookup_node_id_bound(
+    ledger: Ledger,
+    op,
+    a1,
+    a2,
+    *,
+    pack_key_fn=_pack_key,
+    ledger_index: LedgerIndex,
+):
+    op_start = ledger_index.op_start
+    op_end = ledger_index.op_end
     k0, k1, k2, k3, k4 = pack_key_fn(op, a1, a2)
     L_b0 = ledger.keys_b0_sorted
     L_b1 = ledger.keys_b1_sorted
@@ -123,20 +193,36 @@ def _lookup_node_id(ledger, op, a1, a2, *, pack_key_fn=_pack_key):
     count = ledger.count.astype(jnp.int32)
 
     def _lex_less(a0, a1, a2, a3, a4, b0, b1, b2, b3, b4):
+        bundle = _LexLessArgs(
+            a0=a0,
+            a1=a1,
+            a2=a2,
+            a3=a3,
+            a4=a4,
+            b0=b0,
+            b1=b1,
+            b2=b2,
+            b3=b3,
+            b4=b4,
+        )
         return jnp.logical_or(
-            a0 < b0,
+            bundle.a0 < bundle.b0,
             jnp.logical_and(
-                a0 == b0,
+                bundle.a0 == bundle.b0,
                 jnp.logical_or(
-                    a1 < b1,
+                    bundle.a1 < bundle.b1,
                     jnp.logical_and(
-                        a1 == b1,
+                        bundle.a1 == bundle.b1,
                         jnp.logical_or(
-                            a2 < b2,
+                            bundle.a2 < bundle.b2,
                             jnp.logical_and(
-                                a2 == b2,
+                                bundle.a2 == bundle.b2,
                                 jnp.logical_or(
-                                    a3 < b3, jnp.logical_and(a3 == b3, a4 < b4)
+                                    bundle.a3 < bundle.b3,
+                                    jnp.logical_and(
+                                        bundle.a3 == bundle.b3,
+                                        bundle.a4 < bundle.b4,
+                                    ),
                                 ),
                             ),
                         ),
@@ -145,9 +231,13 @@ def _lookup_node_id(ledger, op, a1, a2, *, pack_key_fn=_pack_key):
             ),
         )
 
+    op_idx = k0.astype(jnp.int32)
+    lo_init = op_start[op_idx]
+    hi_init = op_end[op_idx]
+
     def _do_search(_):
-        lo = jnp.int32(0)
-        hi = count
+        lo = lo_init
+        hi = hi_init
 
         def cond(state):
             lo_i, hi_i = state
@@ -197,10 +287,29 @@ def _lookup_node_id(ledger, op, a1, a2, *, pack_key_fn=_pack_key):
         return out_id, found
 
     return lax.cond(
-        count > 0,
+        (count > 0) & (lo_init < hi_init),
         _do_search,
         lambda _: (jnp.int32(0), jnp.bool_(False)),
         operand=None,
+    )
+
+
+def _lookup_node_id(
+    ledger: Ledger,
+    op,
+    a1,
+    a2,
+    *,
+    pack_key_fn=_pack_key,
+    ledger_index: LedgerIndex | None = None,
+    cfg: InternConfig = DEFAULT_INTERN_CONFIG,
+):
+    if ledger_index is None:
+        ledger_index = derive_ledger_index(
+            ledger, op_buckets_full_range=cfg.op_buckets_full_range
+        )
+    return _lookup_node_id_bound(
+        ledger, op, a1, a2, pack_key_fn=pack_key_fn, ledger_index=ledger_index
     )
 
 
@@ -224,12 +333,13 @@ def _key_safe_normalize_nodes(
 
 
 def _intern_nodes_impl_core(
-    ledger,
+    ledger: Ledger,
     proposed_ops,
     proposed_a1,
     proposed_a2,
     *,
     cfg: InternConfig,
+    ledger_index: LedgerIndex | None = None,
     key_safe_normalize_fn=_key_safe_normalize_nodes,
     pack_key_fn=_pack_key,
     candidate_indices_fn=_candidate_indices,
@@ -242,6 +352,10 @@ def _intern_nodes_impl_core(
     coord_norm_probe_assert_fn=_coord_norm_probe_assert,
     scatter_drop_fn=_scatter_drop,
 ):
+    probe_bundle = _CoordNormProbeFns(
+        coord_norm_probe_assert_fn=coord_norm_probe_assert_fn,
+        coord_norm_probe_reset_cb_fn=coord_norm_probe_reset_cb_fn,
+    )
     max_key = jnp.uint8(0xFF)
     # Interning pipeline (vectorized):
     # - Key-safe normalization only (coord pairs); no semantic rewrites.
@@ -259,8 +373,29 @@ def _intern_nodes_impl_core(
     is_coord_pair = proposed_ops == OP_COORD_PAIR
 
     has_coord = jnp.any(is_coord_pair)
+    L_b0 = ledger.keys_b0_sorted
+    count = ledger.count.astype(jnp.int32)
+    if ledger_index is None:
+        ledger_index = derive_ledger_index(
+            ledger, op_buckets_full_range=cfg.op_buckets_full_range
+        )
+    op_start = ledger_index.op_start
+    op_end = ledger_index.op_end
+
+    def _lookup_node_id_bucketed(ledger_in, op, a1, a2):
+        return _lookup_node_id_bound(
+            ledger_in,
+            op,
+            a1,
+            a2,
+            ledger_index=ledger_index,
+        )
     if guards_enabled_fn() and coord_norm_probe_enabled_fn():
-        jax.debug.callback(coord_norm_probe_reset_cb_fn, jnp.int32(0), ordered=True)
+        jax.debug.callback(
+            probe_bundle.coord_norm_probe_reset_cb_fn,
+            jnp.int32(0),
+            ordered=True,
+        )
     # CD_r/CD_a: normalize coord pairs before packing keys for stable lookup.
 
     def _norm(args):
@@ -271,8 +406,12 @@ def _intern_nodes_impl_core(
         def _norm_body(i, state):
             a1_arr, a2_arr = state
             idx = coord_idx[i]
-            a1_norm = coord_norm_id_jax_fn(ledger, a1_arr[idx])
-            a2_norm = coord_norm_id_jax_noprobe_fn(ledger, a2_arr[idx])
+            a1_norm = coord_norm_id_jax_fn(
+                ledger, a1_arr[idx], lookup_node_id_fn=_lookup_node_id_bucketed
+            )
+            a2_norm = coord_norm_id_jax_noprobe_fn(
+                ledger, a2_arr[idx], lookup_node_id_fn=_lookup_node_id_bucketed
+            )
             a1_arr = a1_arr.at[idx].set(a1_norm)
             a2_arr = a2_arr.at[idx].set(a2_norm)
             return a1_arr, a2_arr
@@ -289,7 +428,9 @@ def _intern_nodes_impl_core(
         has_coord, _norm, _no_norm, (proposed_a1, proposed_a2)
     )
     if guards_enabled_fn() and coord_norm_probe_enabled_fn():
-        jax.debug.callback(coord_norm_probe_assert_fn, has_coord, ordered=True)
+        jax.debug.callback(
+            probe_bundle.coord_norm_probe_assert_fn, has_coord, ordered=True
+        )
 
     # Key-safety: Normalize𝚌 before packing.
     # Sort proposals by packed key so duplicates collapse deterministically.
@@ -329,46 +470,49 @@ def _intern_nodes_impl_core(
 
     _, leader_idx = lax.scan(scan_fn, jnp.int32(0), (is_diff, idx))
 
-    L_b0 = ledger.keys_b0_sorted
     L_b1 = ledger.keys_b1_sorted
     L_b2 = ledger.keys_b2_sorted
     L_b3 = ledger.keys_b3_sorted
     L_b4 = ledger.keys_b4_sorted
     L_ids = ledger.ids_sorted
 
-    count = ledger.count.astype(jnp.int32)
     max_count = jnp.int32(MAX_COUNT)
     available = jnp.maximum(max_count - count, 0)
     available = jnp.where(base_oom | base_corrupt, jnp.int32(0), available)
-    if cfg.op_buckets_full_range:
-        op_start = jnp.zeros(256, dtype=jnp.int32)
-        op_end = jnp.full((256,), count, dtype=jnp.int32)
-    else:
-        # Bucket existing keys by opcode byte to narrow search ranges.
-        # Use searchsorted on the sorted opcode column to avoid full scans.
-        op_values = jnp.arange(256, dtype=jnp.uint8)
-        op_start = jnp.searchsorted(L_b0, op_values, side="left").astype(jnp.int32)
-        op_end = jnp.searchsorted(L_b0, op_values, side="right").astype(jnp.int32)
-        op_start = jnp.minimum(op_start, count)
-        op_end = jnp.minimum(op_end, count)
     # NOTE: opcode buckets are a precursor to per-op merges; full-array merge
     # remains an m1 tradeoff (see IMPLEMENTATION_PLAN.md).
 
     def _lex_less(a0, a1, a2, a3, a4, b0, b1, b2, b3, b4):
+        bundle = _LexLessArgs(
+            a0=a0,
+            a1=a1,
+            a2=a2,
+            a3=a3,
+            a4=a4,
+            b0=b0,
+            b1=b1,
+            b2=b2,
+            b3=b3,
+            b4=b4,
+        )
         return jnp.logical_or(
-            a0 < b0,
+            bundle.a0 < bundle.b0,
             jnp.logical_and(
-                a0 == b0,
+                bundle.a0 == bundle.b0,
                 jnp.logical_or(
-                    a1 < b1,
+                    bundle.a1 < bundle.b1,
                     jnp.logical_and(
-                        a1 == b1,
+                        bundle.a1 == bundle.b1,
                         jnp.logical_or(
-                            a2 < b2,
+                            bundle.a2 < bundle.b2,
                             jnp.logical_and(
-                                a2 == b2,
+                                bundle.a2 == bundle.b2,
                                 jnp.logical_or(
-                                    a3 < b3, jnp.logical_and(a3 == b3, a4 < b4)
+                                    bundle.a3 < bundle.b3,
+                                    jnp.logical_and(
+                                        bundle.a3 == bundle.b3,
+                                        bundle.a4 < bundle.b4,
+                                    ),
                                 ),
                             ),
                         ),
@@ -378,6 +522,9 @@ def _intern_nodes_impl_core(
         )
 
     def _search_one(t_b0, t_b1, t_b2, t_b3, t_b4, start, end):
+        bundle = _SearchKeyArgs(
+            t_b0=t_b0, t_b1=t_b1, t_b2=t_b2, t_b3=t_b3, t_b4=t_b4
+        )
         lo = start
         hi = end
 
@@ -399,11 +546,11 @@ def _intern_nodes_impl_core(
                 mid_b2,
                 mid_b3,
                 mid_b4,
-                t_b0,
-                t_b1,
-                t_b2,
-                t_b3,
-                t_b4,
+                bundle.t_b0,
+                bundle.t_b1,
+                bundle.t_b2,
+                bundle.t_b3,
+                bundle.t_b4,
             )
             lo_i = jnp.where(go_right, mid + 1, lo_i)
             hi_i = jnp.where(go_right, hi_i, mid)
@@ -452,29 +599,24 @@ def _intern_nodes_impl_core(
     # NOTE: global merge is an m1 tradeoff; performance roadmap is tracked in
     # IMPLEMENTATION_PLAN.md.
     def _merge_sorted_keys(
-        old_b0,
-        old_b1,
-        old_b2,
-        old_b3,
-        old_b4,
+        old_keys: KeyColumns,
         old_ids,
         old_count,
-        new_b0,
-        new_b1,
-        new_b2,
-        new_b3,
-        new_b4,
+        new_keys: KeyColumns,
         new_ids,
         new_items,
     ):
-        out_b0 = jnp.full_like(old_b0, max_key)
-        out_b1 = jnp.full_like(old_b1, max_key)
-        out_b2 = jnp.full_like(old_b2, max_key)
-        out_b3 = jnp.full_like(old_b3, max_key)
-        out_b4 = jnp.full_like(old_b4, max_key)
+        bundle = _NewKeysIds(new_keys=new_keys, new_ids=new_ids)
+        new_keys = bundle.new_keys
+        new_ids = bundle.new_ids
+        out_b0 = jnp.full_like(old_keys.b0, max_key)
+        out_b1 = jnp.full_like(old_keys.b1, max_key)
+        out_b2 = jnp.full_like(old_keys.b2, max_key)
+        out_b3 = jnp.full_like(old_keys.b3, max_key)
+        out_b4 = jnp.full_like(old_keys.b4, max_key)
         out_ids = jnp.zeros_like(old_ids)
         total = old_count + new_items
-        guard_max_fn(total, jnp.int32(old_b0.shape[0]), "merge.total")
+        guard_max_fn(total, jnp.int32(old_keys.b0.shape[0]), "merge.total")
 
         def body(k, state):
             i, j, b0, b1, b2, b3, b4, ids = state
@@ -483,17 +625,17 @@ def _intern_nodes_impl_core(
             safe_i = jnp.where(old_valid, i, 0)
             safe_j = jnp.where(new_valid, j, 0)
 
-            old0 = jnp.where(old_valid, old_b0[safe_i], max_key)
-            old1 = jnp.where(old_valid, old_b1[safe_i], max_key)
-            old2 = jnp.where(old_valid, old_b2[safe_i], max_key)
-            old3 = jnp.where(old_valid, old_b3[safe_i], max_key)
-            old4 = jnp.where(old_valid, old_b4[safe_i], max_key)
+            old0 = jnp.where(old_valid, old_keys.b0[safe_i], max_key)
+            old1 = jnp.where(old_valid, old_keys.b1[safe_i], max_key)
+            old2 = jnp.where(old_valid, old_keys.b2[safe_i], max_key)
+            old3 = jnp.where(old_valid, old_keys.b3[safe_i], max_key)
+            old4 = jnp.where(old_valid, old_keys.b4[safe_i], max_key)
 
-            new0 = jnp.where(new_valid, new_b0[safe_j], max_key)
-            new1 = jnp.where(new_valid, new_b1[safe_j], max_key)
-            new2 = jnp.where(new_valid, new_b2[safe_j], max_key)
-            new3 = jnp.where(new_valid, new_b3[safe_j], max_key)
-            new4 = jnp.where(new_valid, new_b4[safe_j], max_key)
+            new0 = jnp.where(new_valid, new_keys.b0[safe_j], max_key)
+            new1 = jnp.where(new_valid, new_keys.b1[safe_j], max_key)
+            new2 = jnp.where(new_valid, new_keys.b2[safe_j], max_key)
+            new3 = jnp.where(new_valid, new_keys.b3[safe_j], max_key)
+            new4 = jnp.where(new_valid, new_keys.b4[safe_j], max_key)
 
             new_less = _lex_less(
                 new0,
@@ -546,37 +688,32 @@ def _intern_nodes_impl_core(
         return out_b0, out_b1, out_b2, out_b3, out_b4, out_ids
 
     def _merge_sorted_keys_bucketed(
-        old_b0,
-        old_b1,
-        old_b2,
-        old_b3,
-        old_b4,
+        old_keys: KeyColumns,
         old_ids,
         old_count,
-        new_b0,
-        new_b1,
-        new_b2,
-        new_b3,
-        new_b4,
+        new_keys: KeyColumns,
         new_ids,
         new_items,
         op_start,
         op_end,
     ):
-        out_b0 = jnp.full_like(old_b0, max_key)
-        out_b1 = jnp.full_like(old_b1, max_key)
-        out_b2 = jnp.full_like(old_b2, max_key)
-        out_b3 = jnp.full_like(old_b3, max_key)
-        out_b4 = jnp.full_like(old_b4, max_key)
+        bundle = _NewKeysIds(new_keys=new_keys, new_ids=new_ids)
+        new_keys = bundle.new_keys
+        new_ids = bundle.new_ids
+        out_b0 = jnp.full_like(old_keys.b0, max_key)
+        out_b1 = jnp.full_like(old_keys.b1, max_key)
+        out_b2 = jnp.full_like(old_keys.b2, max_key)
+        out_b3 = jnp.full_like(old_keys.b3, max_key)
+        out_b4 = jnp.full_like(old_keys.b4, max_key)
         out_ids = jnp.zeros_like(old_ids)
         total = old_count + new_items
-        guard_max_fn(total, jnp.int32(old_b0.shape[0]), "merge.total")
+        guard_max_fn(total, jnp.int32(old_keys.b0.shape[0]), "merge.total")
 
         op_values = jnp.arange(256, dtype=jnp.uint8)
-        new_op_start = jnp.searchsorted(new_b0, op_values, side="left").astype(
+        new_op_start = jnp.searchsorted(new_keys.b0, op_values, side="left").astype(
             jnp.int32
         )
-        new_op_end = jnp.searchsorted(new_b0, op_values, side="right").astype(
+        new_op_end = jnp.searchsorted(new_keys.b0, op_values, side="right").astype(
             jnp.int32
         )
         new_op_start = jnp.minimum(new_op_start, new_items)
@@ -602,17 +739,17 @@ def _intern_nodes_impl_core(
                 old_idx = old_lo + i
                 new_idx = new_lo + j
 
-                old0 = jnp.where(old_valid, old_b0[old_idx], max_key)
-                old1 = jnp.where(old_valid, old_b1[old_idx], max_key)
-                old2 = jnp.where(old_valid, old_b2[old_idx], max_key)
-                old3 = jnp.where(old_valid, old_b3[old_idx], max_key)
-                old4 = jnp.where(old_valid, old_b4[old_idx], max_key)
+                old0 = jnp.where(old_valid, old_keys.b0[old_idx], max_key)
+                old1 = jnp.where(old_valid, old_keys.b1[old_idx], max_key)
+                old2 = jnp.where(old_valid, old_keys.b2[old_idx], max_key)
+                old3 = jnp.where(old_valid, old_keys.b3[old_idx], max_key)
+                old4 = jnp.where(old_valid, old_keys.b4[old_idx], max_key)
 
-                new0 = jnp.where(new_valid, new_b0[new_idx], max_key)
-                new1 = jnp.where(new_valid, new_b1[new_idx], max_key)
-                new2 = jnp.where(new_valid, new_b2[new_idx], max_key)
-                new3 = jnp.where(new_valid, new_b3[new_idx], max_key)
-                new4 = jnp.where(new_valid, new_b4[new_idx], max_key)
+                new0 = jnp.where(new_valid, new_keys.b0[new_idx], max_key)
+                new1 = jnp.where(new_valid, new_keys.b1[new_idx], max_key)
+                new2 = jnp.where(new_valid, new_keys.b2[new_idx], max_key)
+                new3 = jnp.where(new_valid, new_keys.b3[new_idx], max_key)
+                new4 = jnp.where(new_valid, new_keys.b4[new_idx], max_key)
 
                 new_less = _lex_less(
                     new0,
@@ -790,6 +927,14 @@ def _intern_nodes_impl_core(
             )
 
             # Merge sorted new keys into the ledger's sorted key arrays.
+            old_keys = KeyColumns(L_b0, L_b1, L_b2, L_b3, L_b4)
+            new_keys = KeyColumns(
+                new_entry_b0_sorted,
+                new_entry_b1_sorted,
+                new_entry_b2_sorted,
+                new_entry_b3_sorted,
+                new_entry_b4_sorted,
+            )
             (
                 new_keys_b0_sorted,
                 new_keys_b1_sorted,
@@ -798,18 +943,10 @@ def _intern_nodes_impl_core(
                 new_keys_b4_sorted,
                 new_ids_sorted,
             ) = _merge_sorted_keys_bucketed(
-                L_b0,
-                L_b1,
-                L_b2,
-                L_b3,
-                L_b4,
+                old_keys,
                 L_ids,
                 count,
-                new_entry_b0_sorted,
-                new_entry_b1_sorted,
-                new_entry_b2_sorted,
-                new_entry_b3_sorted,
-                new_entry_b4_sorted,
+                new_keys,
                 new_entry_ids_sorted,
                 num_new,
                 op_start,
@@ -842,6 +979,7 @@ def _intern_nodes_impl(
     batch: NodeBatch,
     *,
     cfg: InternConfig,
+    ledger_index: LedgerIndex | None = None,
     intern_core_fn=_intern_nodes_impl_core,
     key_safe_normalize_fn=_key_safe_normalize_nodes,
     guard_zero_args_fn=_guard_zero_args,
@@ -888,6 +1026,7 @@ def _intern_nodes_impl(
             proposed_a1,
             proposed_a2,
             cfg=cfg,
+            ledger_index=ledger_index,
             key_safe_normalize_fn=key_safe_normalize_fn,
             pack_key_fn=pack_key_fn,
             candidate_indices_fn=candidate_indices_fn,
@@ -907,12 +1046,13 @@ def _intern_nodes_impl(
 
 
 def intern_nodes(
-    ledger,
+    ledger: Ledger,
     batch_or_ops,
     a1=None,
     a2=None,
     *,
     cfg: InternConfig = DEFAULT_INTERN_CONFIG,
+    ledger_index: LedgerIndex,
     intern_impl_fn=_intern_nodes_impl,
     lookup_node_id_fn=_lookup_node_id,
     key_safe_normalize_fn=_key_safe_normalize_nodes,
@@ -954,6 +1094,8 @@ def intern_nodes(
     proposed_ops, proposed_a1, proposed_a2 = batch
     if proposed_ops.shape[0] == 0:
         return jnp.zeros_like(proposed_ops), ledger
+    if ledger_index is None:
+        raise ValueError("intern_nodes requires a bound ledger_index")
     stop = ledger.oom | ledger.corrupt
     # NOTE: stop path returns zeros today; read-only lookup fallback is deferred.
 
@@ -973,8 +1115,14 @@ def intern_nodes(
         a1 = jnp.where(bad_key, jnp.int32(0), a1)
         a2 = jnp.where(bad_key, jnp.int32(0), a2)
 
-        def _lookup_one(op, a1_val, a2_val):
-            return lookup_node_id_fn(ledger, op, a1_val, a2_val)
+        if lookup_node_id_fn is _lookup_node_id:
+            def _lookup_one(op, a1_val, a2_val):
+                return _lookup_node_id(
+                    ledger, op, a1_val, a2_val, ledger_index=ledger_index
+                )
+        else:
+            def _lookup_one(op, a1_val, a2_val):
+                return lookup_node_id_fn(ledger, op, a1_val, a2_val)
 
         ids, found = jax.vmap(_lookup_one)(ops, a1, a2)
         ids = jnp.where(found & (~bad_key), ids, jnp.int32(0))
@@ -986,6 +1134,7 @@ def intern_nodes(
             ledger,
             batch,
             cfg=cfg,
+            ledger_index=ledger_index,
             key_safe_normalize_fn=key_safe_normalize_fn,
             guard_zero_args_fn=guard_zero_args_fn,
             checked_pack_key_fn=checked_pack_key_fn,
@@ -1008,11 +1157,68 @@ def intern_nodes(
     return ids, new_ledger
 
 
+def intern_nodes_state(
+    state: LedgerState,
+    batch_or_ops,
+    a1=None,
+    a2=None,
+    *,
+    cfg: InternConfig = DEFAULT_INTERN_CONFIG,
+    intern_impl_fn=_intern_nodes_impl,
+    lookup_node_id_fn=_lookup_node_id,
+    key_safe_normalize_fn=_key_safe_normalize_nodes,
+    guard_zero_args_fn=_guard_zero_args,
+    checked_pack_key_fn=_checked_pack_key,
+    guard_zero_row_fn=_guard_zero_row,
+    pack_key_fn=_pack_key,
+    candidate_indices_fn=_candidate_indices,
+    guard_max_fn=_guard_max,
+    guards_enabled_fn=_guards_enabled,
+    coord_norm_id_jax_fn=_coord_norm_id_jax,
+    coord_norm_id_jax_noprobe_fn=_coord_norm_id_jax_noprobe,
+    coord_norm_probe_enabled_fn=_coord_norm_probe_enabled,
+    coord_norm_probe_reset_cb_fn=_coord_norm_probe_reset_cb,
+    coord_norm_probe_assert_fn=_coord_norm_probe_assert,
+    scatter_drop_fn=_scatter_drop,
+):
+    """Intern nodes against a LedgerState, returning updated state."""
+    ids, new_ledger = intern_nodes(
+        state.ledger,
+        batch_or_ops,
+        a1,
+        a2,
+        cfg=cfg,
+        ledger_index=state.index,
+        intern_impl_fn=intern_impl_fn,
+        lookup_node_id_fn=lookup_node_id_fn,
+        key_safe_normalize_fn=key_safe_normalize_fn,
+        guard_zero_args_fn=guard_zero_args_fn,
+        checked_pack_key_fn=checked_pack_key_fn,
+        guard_zero_row_fn=guard_zero_row_fn,
+        pack_key_fn=pack_key_fn,
+        candidate_indices_fn=candidate_indices_fn,
+        guard_max_fn=guard_max_fn,
+        guards_enabled_fn=guards_enabled_fn,
+        coord_norm_id_jax_fn=coord_norm_id_jax_fn,
+        coord_norm_id_jax_noprobe_fn=coord_norm_id_jax_noprobe_fn,
+        coord_norm_probe_enabled_fn=coord_norm_probe_enabled_fn,
+        coord_norm_probe_reset_cb_fn=coord_norm_probe_reset_cb_fn,
+        coord_norm_probe_assert_fn=coord_norm_probe_assert_fn,
+        scatter_drop_fn=scatter_drop_fn,
+    )
+    new_state = derive_ledger_state(
+        new_ledger, op_buckets_full_range=cfg.op_buckets_full_range
+    )
+    return ids, new_state
+
+
 __all__ = [
     "_coord_norm_id_jax",
     "_coord_norm_id_jax_noprobe",
     "_lookup_node_id",
+    "KeyColumns",
     "InternConfig",
     "DEFAULT_INTERN_CONFIG",
     "intern_nodes",
+    "intern_nodes_state",
 ]

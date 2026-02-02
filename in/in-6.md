@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # Evaluation of the 2:1 Alternating BSP Architecture in JAX
 
 NOTE: REFINED by in-14.md to treat BSP/morton as a performance-only path; ledger/CNF-2 is the semantic spine.

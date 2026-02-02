@@ -18,11 +18,11 @@ def test_servo_denotation_invariance(monkeypatch):
     for expr in exprs:
         monkeypatch.setenv("PRISM_ENABLE_SERVO", "0")
         base = harness.denote_pretty_arena(
-            expr, steps=4, do_sort=True, use_morton=True
+            expr, steps=4, sort_cfg=pv.ArenaSortConfig(do_sort=True, use_morton=True)
         )
         monkeypatch.setenv("PRISM_ENABLE_SERVO", "1")
         servo = harness.denote_pretty_arena(
-            expr, steps=4, do_sort=True, use_morton=True
+            expr, steps=4, sort_cfg=pv.ArenaSortConfig(do_sort=True, use_morton=True)
         )
         assert base == servo
 

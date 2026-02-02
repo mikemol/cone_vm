@@ -14,7 +14,9 @@ def test_harness_jit_cfg_smoke():
     arena_out = op_interact(arena)
     assert arena_out is not None
 
-    cycle = harness.make_cycle_jit_cfg(do_sort=False)
+    cycle = harness.make_cycle_jit_cfg(
+        sort_cfg=pv.ArenaSortConfig(do_sort=False)
+    )
     arena_out, root_out = cycle(arena, root)
     assert arena_out is not None
     assert root_out is not None

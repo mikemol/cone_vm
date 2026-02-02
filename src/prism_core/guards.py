@@ -9,9 +9,18 @@ from prism_core.di import call_with_optional_kwargs, wrap_index_policy, wrap_pol
 from prism_core.errors import PrismPolicyBindingError
 from prism_core import jax_safe as _jax_safe
 from prism_core.protocols import (
+    SafeGatherFn,
+    SafeGatherOkFn,
     SafeGatherOkValueFn,
     SafeGatherValueFn,
+    SafeIndexFn,
     SafeIndexValueFn,
+)
+from prism_core.safety import (
+    DEFAULT_SAFETY_POLICY,
+    SafetyMode,
+    SafetyPolicy,
+    oob_mask,
 )
 
 
@@ -22,7 +31,7 @@ class GuardConfig:
     guards_enabled_fn: Optional[Callable[[], bool]] = None
     guard_max_fn: Optional[Callable[..., None]] = None
     guard_gather_index_fn: Optional[Callable[..., None]] = None
-    safe_index_fn: Optional[Callable[..., tuple]] = None
+    safe_index_fn: SafeIndexFn | None = None
     guard_slot0_perm_fn: Optional[Callable[..., None]] = None
     guard_null_row_fn: Optional[Callable[..., None]] = None
     guard_zero_row_fn: Optional[Callable[..., None]] = None
@@ -53,7 +62,7 @@ def safe_index_1d_cfg(
     label="safe_index_1d",
     *,
     guard=None,
-    policy=None,
+    policy: SafetyPolicy | None = None,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Guard-configured wrapper for safe_index_1d (shared)."""
@@ -66,7 +75,17 @@ def safe_index_1d_cfg(
             label,
         )
     guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
-    return _jax_safe.safe_index_1d(idx, size, label, guard=False, policy=policy)
+    if policy is None:
+        policy = DEFAULT_SAFETY_POLICY
+    size_i = jnp.asarray(size, dtype=jnp.int32)
+    idx_i = jnp.asarray(idx, dtype=jnp.int32)
+    ok = (idx_i >= 0) & (idx_i < size_i)
+    idx_safe = jnp.clip(idx_i, 0, size_i - 1)
+    if policy.mode == SafetyMode.DROP:
+        idx_safe = jnp.where(ok, idx_safe, jnp.int32(0))
+    if policy.mode == SafetyMode.CLAMP:
+        ok = jnp.ones_like(ok, dtype=jnp.bool_)
+    return idx_safe, ok
 
 
 def safe_gather_1d_cfg(
@@ -75,16 +94,28 @@ def safe_gather_1d_cfg(
     label="safe_gather_1d",
     *,
     guard=None,
-    policy=None,
+    policy: SafetyPolicy | None = None,
     return_ok: bool = False,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Guard-configured wrapper for safe_gather_1d (shared)."""
     size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
     guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
-    return _jax_safe.safe_gather_1d(
-        arr, idx, label, guard=False, policy=policy, return_ok=return_ok
-    )
+    if policy is None:
+        policy = DEFAULT_SAFETY_POLICY
+    idx_i = jnp.asarray(idx, dtype=jnp.int32)
+    ok = (idx_i >= 0) & (idx_i < size)
+    idx_safe = jnp.clip(idx_i, 0, size - 1)
+    if policy.mode == SafetyMode.DROP:
+        idx_safe = jnp.where(ok, idx_safe, jnp.int32(0))
+    values = arr[idx_safe]
+    if policy.mode == SafetyMode.DROP:
+        values = jnp.where(ok, values, jnp.zeros_like(values))
+    if policy.mode == SafetyMode.CLAMP:
+        ok = jnp.ones_like(ok, dtype=jnp.bool_)
+    if return_ok:
+        return values, ok
+    return values
 
 
 def safe_gather_1d_ok_cfg(
@@ -93,22 +124,30 @@ def safe_gather_1d_ok_cfg(
     label="safe_gather_1d_ok",
     *,
     guard=None,
-    policy=None,
+    policy: SafetyPolicy | None = None,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Guard-configured wrapper for safe_gather_1d_ok (shared)."""
-    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
-    guard_gather_index_cfg(idx, size, label, guard=guard, cfg=cfg)
-    return _jax_safe.safe_gather_1d_ok(
-        arr, idx, label, guard=False, policy=policy
+    values, ok = safe_gather_1d_cfg(
+        arr,
+        idx,
+        label,
+        guard=guard,
+        policy=policy,
+        return_ok=True,
+        cfg=cfg,
     )
+    if policy is None:
+        policy = DEFAULT_SAFETY_POLICY
+    corrupt = oob_mask(ok, policy=policy)
+    return values, ok, corrupt
 
 
 def make_safe_gather_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
-    policy=None,
-    safe_gather_fn=None,
+    policy: SafetyPolicy | None = None,
+    safe_gather_fn: SafeGatherFn | None = None,
 ):
     """Return a SafeGatherFn wired to the provided GuardConfig."""
     if safe_gather_fn is None:
@@ -131,8 +170,8 @@ def make_safe_gather_fn(
 def make_safe_gather_ok_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
-    policy=None,
-    safe_gather_ok_fn=None,
+    policy: SafetyPolicy | None = None,
+    safe_gather_ok_fn: SafeGatherOkFn | None = None,
 ):
     """Return a SafeGatherOkFn wired to the provided GuardConfig."""
     if safe_gather_ok_fn is None:
@@ -155,8 +194,8 @@ def make_safe_gather_ok_fn(
 def make_safe_index_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
-    policy=None,
-    safe_index_fn=None,
+    policy: SafetyPolicy | None = None,
+    safe_index_fn: SafeIndexFn | None = None,
 ):
     """Return a SafeIndexFn wired to the provided GuardConfig."""
     if safe_index_fn is None:
@@ -248,8 +287,8 @@ def make_safe_index_value_fn(
 
 def resolve_safe_gather_fn(
     *,
-    safe_gather_fn=None,
-    policy=None,
+    safe_gather_fn: SafeGatherFn | None = None,
+    policy: SafetyPolicy | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     """Return a SafeGatherFn with optional SafetyPolicy + GuardConfig wiring."""
@@ -283,8 +322,8 @@ def resolve_safe_gather_fn(
 
 def resolve_safe_gather_ok_fn(
     *,
-    safe_gather_ok_fn=None,
-    policy=None,
+    safe_gather_ok_fn: SafeGatherOkFn | None = None,
+    policy: SafetyPolicy | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     """Return a SafeGatherOkFn with optional SafetyPolicy + GuardConfig wiring."""
@@ -318,8 +357,8 @@ def resolve_safe_gather_ok_fn(
 
 def resolve_safe_index_fn(
     *,
-    safe_index_fn=None,
-    policy=None,
+    safe_index_fn: SafeIndexFn | None = None,
+    policy: SafetyPolicy | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     """Return a SafeIndexFn with optional SafetyPolicy + GuardConfig wiring."""

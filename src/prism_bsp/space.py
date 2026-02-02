@@ -181,16 +181,13 @@ def _apply_perm_and_swizzle(
     # IMPLEMENTATION_PLAN.md.
     # Swizzle is renormalization only; denotation must not change (plan).
     # See IMPLEMENTATION_PLAN.md (m3 denotation invariance).
-    guard_slot0_perm_cfg(perm, inv_perm, "swizzle.perm", cfg=guard_cfg)
-    guard_null_row_cfg(
-        new_ops, swizzled_arg1, swizzled_arg2, "swizzle.row0", cfg=guard_cfg
-    )
+    guard_slot0_perm_cfg(perm, inv_perm, cfg=guard_cfg)
+    guard_null_row_cfg(new_ops, swizzled_arg1, swizzled_arg2, cfg=guard_cfg)
     guard_swizzle_args_cfg(
         swizzled_arg1,
         swizzled_arg2,
         live,
         arena.count,
-        "swizzle.args",
         cfg=guard_cfg,
     )
     return (
@@ -235,16 +232,13 @@ def _apply_perm_and_swizzle_value(
     g2 = safe_gather_value_fn(inv_perm, idx2, "swizzle.arg2", policy_value=policy_value)
     swizzled_arg1 = jnp.where(live & (new_arg1 != 0), g1, 0)
     swizzled_arg2 = jnp.where(live & (new_arg2 != 0), g2, 0)
-    guard_slot0_perm_cfg(perm, inv_perm, "swizzle.perm", cfg=guard_cfg)
-    guard_null_row_cfg(
-        new_ops, swizzled_arg1, swizzled_arg2, "swizzle.row0", cfg=guard_cfg
-    )
+    guard_slot0_perm_cfg(perm, inv_perm, cfg=guard_cfg)
+    guard_null_row_cfg(new_ops, swizzled_arg1, swizzled_arg2, cfg=guard_cfg)
     guard_swizzle_args_cfg(
         swizzled_arg1,
         swizzled_arg2,
         live,
         arena.count,
-        "swizzle.args",
         cfg=guard_cfg,
     )
     return (

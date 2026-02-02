@@ -55,6 +55,7 @@ def make_cnf2_bound_static_cfg(
     guard_cfg=None,
     cfg=None,
 ):
+    """Return a Cnf2BoundConfig with a static policy bound at the edge."""
     if cfg is None:
         cfg = pv.DEFAULT_CNF2_CONFIG
     if guard_cfg is not None:
@@ -66,11 +67,10 @@ def make_cnf2_bound_static_cfg(
         policy_value=None,
         context="tests.min_prism.harness.make_cnf2_bound_static_cfg",
     )
-    bound = pv.cnf2_config_bound(binding, cfg=cfg)
-    return bound.bind_cfg()
+    return pv.cnf2_config_bound(binding, cfg=cfg)
 
 
-_DEFAULT_CNF2_BOUND_CFG, _DEFAULT_CNF2_BOUND_POLICY = make_cnf2_bound_static_cfg()
+_DEFAULT_CNF2_BOUND_CFG = make_cnf2_bound_static_cfg()
 
 
 def cycle_candidates_static_bound(
@@ -82,20 +82,28 @@ def cycle_candidates_static_bound(
     guard_cfg=None,
     **kwargs,
 ):
+    if cfg is not None and hasattr(cfg, "cfg"):
+        intern_cfg = cfg.cfg.intern_cfg
+    elif isinstance(cfg, pv.Cnf2Config):
+        intern_cfg = cfg.intern_cfg
+    else:
+        intern_cfg = pv.DEFAULT_INTERN_CONFIG
+    if not isinstance(ledger, pv.LedgerState):
+        ledger = pv.derive_ledger_state(
+            ledger, op_buckets_full_range=intern_cfg.op_buckets_full_range
+        )
     if cfg is None and safety_policy is None and guard_cfg is None:
         cfg = _DEFAULT_CNF2_BOUND_CFG
-        safety_policy = _DEFAULT_CNF2_BOUND_POLICY
-    elif cfg is None or safety_policy is None:
-        cfg, safety_policy = make_cnf2_bound_static_cfg(
+    elif cfg is None:
+        cfg = make_cnf2_bound_static_cfg(
             safety_policy=safety_policy,
             guard_cfg=guard_cfg,
             cfg=cfg,
         )
-    return pv.cycle_candidates_static(
+    return pv.cycle_candidates_bound(
         ledger,
         frontier_ids,
-        cnf2_cfg=cfg,
-        safe_gather_policy=safety_policy,
+        cfg=cfg,
         **kwargs,
     )
 

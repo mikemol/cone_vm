@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 Manual semantic analysis based on `in/in-*.md`, `in/glossary.md`, `prism_vm.py`, and `IMPLEMENTATION_PLAN.md`.
 
 ## Definitions

@@ -4,11 +4,17 @@ from functools import partial
 from typing import NamedTuple, Tuple
 
 from prism_core import alloc as _alloc
-from prism_core.jax_safe import safe_index_1d
 from prism_core.di import call_with_optional_kwargs
 from prism_core.compact import CompactConfig, CompactResult, compact_mask_cfg
-from prism_core.safety import DEFAULT_SAFETY_POLICY, SafetyPolicy, oob_mask
+from prism_core.safety import oob_mask
 from ic_core.domains import _node_id, _port_id
+from ic_core.bundles import WireEndpoints, WirePtrPair, WireStarEndpoints
+from ic_core.config import (
+    ICWireConfig,
+    ICScanConfig,
+    DEFAULT_WIRE_CONFIG,
+    DEFAULT_SCAN_CONFIG,
+)
 
 # Interaction-combinator (IC) graph + safety helpers.
 
@@ -127,22 +133,19 @@ def _connect_ptrs(ports: jnp.ndarray, ptr_a: jnp.ndarray, ptr_b: jnp.ndarray) ->
     return jax.lax.cond(do, _do, lambda p: p, ports)
 
 
-@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
+@partial(jax.jit, static_argnames=("cfg",))
 def ic_wire_jax(
     state: ICState,
-    node_a: jnp.ndarray,
-    port_a: jnp.ndarray,
-    node_b: jnp.ndarray,
-    port_b: jnp.ndarray,
+    endpoints: WireEndpoints,
     *,
-    safety_policy: SafetyPolicy | None = None,
-    safe_index_fn=safe_index_1d,
+    cfg: ICWireConfig = DEFAULT_WIRE_CONFIG,
 ) -> ICState:
     """Device-only wire: connect (node, port) <-> (node, port)."""
 
     def _do(s):
-        policy = safety_policy or DEFAULT_SAFETY_POLICY
-        index_fn = safe_index_fn
+        policy = cfg.safety_policy
+        index_fn = cfg.safe_index_fn
+        node_a, port_a, node_b, port_b = endpoints
         node_a_u = jnp.asarray(node_a, dtype=jnp.uint32)
         port_a_u = jnp.asarray(port_a, dtype=jnp.uint32)
         node_b_u = jnp.asarray(node_b, dtype=jnp.uint32)
@@ -174,20 +177,19 @@ def ic_wire_jax(
     return jax.lax.cond(_halted(state), lambda s: s, _do, state)
 
 
-@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
+@partial(jax.jit, static_argnames=("cfg",))
 def ic_wire_ptrs_jax(
     state: ICState,
-    ptr_a: jnp.ndarray,
-    ptr_b: jnp.ndarray,
+    ptrs: WirePtrPair,
     *,
-    safety_policy: SafetyPolicy | None = None,
-    safe_index_fn=safe_index_1d,
+    cfg: ICWireConfig = DEFAULT_WIRE_CONFIG,
 ) -> ICState:
     """Device-only wire given two encoded pointers (NULL-safe)."""
 
     def _do(s):
-        policy = safety_policy or DEFAULT_SAFETY_POLICY
-        index_fn = safe_index_fn
+        policy = cfg.safety_policy
+        index_fn = cfg.safe_index_fn
+        ptr_a, ptr_b = ptrs
         ptr_a_u = jnp.asarray(ptr_a, dtype=jnp.uint32)
         ptr_b_u = jnp.asarray(ptr_b, dtype=jnp.uint32)
         do = (ptr_a_u != jnp.uint32(0)) & (ptr_b_u != jnp.uint32(0))
@@ -226,41 +228,37 @@ def ic_wire_ptrs_jax(
     return jax.lax.cond(_halted(state), lambda s: s, _do, state)
 
 
-@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
+@partial(jax.jit, static_argnames=("cfg",))
 def ic_wire_jax_safe(
     state: ICState,
-    node_a: jnp.ndarray,
-    port_a: jnp.ndarray,
-    node_b: jnp.ndarray,
-    port_b: jnp.ndarray,
+    endpoints: WireEndpoints,
     *,
-    safety_policy: SafetyPolicy | None = None,
-    safe_index_fn=safe_index_1d,
+    cfg: ICWireConfig = DEFAULT_WIRE_CONFIG,
 ) -> ICState:
     """Device-only wire that no-ops on NULL endpoints."""
+    node_a, port_a, node_b, port_b = endpoints
     ptr_a = encode_port(jnp.asarray(node_a, jnp.uint32), jnp.asarray(port_a, jnp.uint32))
     ptr_b = encode_port(jnp.asarray(node_b, jnp.uint32), jnp.asarray(port_b, jnp.uint32))
     return ic_wire_ptrs_jax(
-        state, ptr_a, ptr_b, safety_policy=safety_policy, safe_index_fn=safe_index_fn
+        state,
+        WirePtrPair(ptr_a, ptr_b),
+        cfg=cfg,
     )
 
 
-@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
+@partial(jax.jit, static_argnames=("cfg",))
 def ic_wire_pairs_jax(
     state: ICState,
-    node_a: jnp.ndarray,
-    port_a: jnp.ndarray,
-    node_b: jnp.ndarray,
-    port_b: jnp.ndarray,
+    endpoints: WireEndpoints,
     *,
-    safety_policy: SafetyPolicy | None = None,
-    safe_index_fn=safe_index_1d,
+    cfg: ICWireConfig = DEFAULT_WIRE_CONFIG,
 ) -> ICState:
     """Batch wire: connect (node_a[i], port_a[i]) <-> (node_b[i], port_b[i])."""
 
     def _do(s):
-        policy = safety_policy or DEFAULT_SAFETY_POLICY
-        index_fn = safe_index_fn
+        policy = cfg.safety_policy
+        index_fn = cfg.safe_index_fn
+        node_a, port_a, node_b, port_b = endpoints
         node_a_u = jnp.asarray(node_a, dtype=jnp.uint32)
         port_a_u = jnp.asarray(port_a, dtype=jnp.uint32)
         node_b_u = jnp.asarray(node_b, dtype=jnp.uint32)
@@ -304,20 +302,19 @@ def ic_wire_pairs_jax(
     return jax.lax.cond(_halted(state), lambda s: s, _do, state)
 
 
-@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
+@partial(jax.jit, static_argnames=("cfg",))
 def ic_wire_ptr_pairs_jax(
     state: ICState,
-    ptr_a: jnp.ndarray,
-    ptr_b: jnp.ndarray,
+    ptrs: WirePtrPair,
     *,
-    safety_policy: SafetyPolicy | None = None,
-    safe_index_fn=safe_index_1d,
+    cfg: ICWireConfig = DEFAULT_WIRE_CONFIG,
 ) -> ICState:
     """Batch wire given encoded pointers (NULL-safe)."""
 
     def _do(s):
-        policy = safety_policy or DEFAULT_SAFETY_POLICY
-        index_fn = safe_index_fn
+        policy = cfg.safety_policy
+        index_fn = cfg.safe_index_fn
+        ptr_a, ptr_b = ptrs
         ptr_a_u = jnp.asarray(ptr_a, dtype=jnp.uint32)
         ptr_b_u = jnp.asarray(ptr_b, dtype=jnp.uint32)
         do = (ptr_a_u != jnp.uint32(0)) & (ptr_b_u != jnp.uint32(0))
@@ -360,18 +357,15 @@ def ic_wire_ptr_pairs_jax(
     return jax.lax.cond(_halted(state), lambda s: s, _do, state)
 
 
-@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn"))
+@partial(jax.jit, static_argnames=("cfg",))
 def ic_wire_star_jax(
     state: ICState,
-    center_node: jnp.ndarray,
-    center_port: jnp.ndarray,
-    leaf_nodes: jnp.ndarray,
-    leaf_ports: jnp.ndarray,
+    endpoints: WireStarEndpoints,
     *,
-    safety_policy: SafetyPolicy | None = None,
-    safe_index_fn=safe_index_1d,
+    cfg: ICWireConfig = DEFAULT_WIRE_CONFIG,
 ) -> ICState:
     """Wire a single center endpoint to many leaf endpoints (device-only)."""
+    center_node, center_port, leaf_nodes, leaf_ports = endpoints
     center_node = jnp.asarray(center_node, dtype=jnp.uint32)
     center_port = jnp.asarray(center_port, dtype=jnp.uint32)
     leaf_nodes = jnp.asarray(leaf_nodes, dtype=jnp.uint32)
@@ -381,26 +375,18 @@ def ic_wire_star_jax(
     port_a = jnp.full((k,), center_port, dtype=jnp.uint32)
     return ic_wire_pairs_jax(
         state,
-        node_a,
-        port_a,
-        leaf_nodes,
-        leaf_ports,
-        safety_policy=safety_policy,
-        safe_index_fn=safe_index_fn,
+        WireEndpoints(node_a, port_a, leaf_nodes, leaf_ports),
+        cfg=cfg,
     )
 
 
-@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn", "compact_cfg"))
+@partial(jax.jit, static_argnames=("cfg",))
 def ic_find_active_pairs(
     state: ICState,
     *,
-    safety_policy: SafetyPolicy | None = None,
-    safe_index_fn=safe_index_1d,
-    compact_cfg: CompactConfig | None = None,
+    cfg: ICScanConfig = DEFAULT_SCAN_CONFIG,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """Return indices of nodes in active principal-principal pairs."""
-    if safety_policy is None:
-        safety_policy = DEFAULT_SAFETY_POLICY
     ports = state.ports
     n = ports.shape[0]
     n_u = jnp.uint32(n)
@@ -410,8 +396,8 @@ def ic_find_active_pairs(
     tgt_node, tgt_port = decode_port(ptr)
     is_principal = tgt_port == PORT_PRINCIPAL
     tgt_safe, ok = call_with_optional_kwargs(
-        safe_index_fn,
-        {"policy": safety_policy},
+        cfg.safe_index_fn,
+        {"policy": cfg.safety_policy},
         tgt_node,
         n_u,
         "ic_find_active_pairs.tgt",
@@ -423,55 +409,43 @@ def ic_find_active_pairs(
     back_node, back_port = decode_port(back)
     mutual = (back_node == idx) & (back_port == PORT_PRINCIPAL)
     active = is_connected & is_principal & ok & mutual & (idx < tgt_node)
-    pairs = _compact_mask(active, compact_cfg=compact_cfg).idx
+    pairs = _compact_mask(active, compact_cfg=cfg.compact_cfg).idx
     return pairs, active
 
 
 def _compact_mask(
-    mask: jnp.ndarray, *, compact_cfg: CompactConfig | None = None
+    mask: jnp.ndarray, *, compact_cfg: CompactConfig
 ) -> CompactResult:
-    if compact_cfg is None:
-        compact_cfg = CompactConfig(
-            index_dtype=jnp.uint32, count_dtype=jnp.uint32
-        )
     return compact_mask_cfg(mask, cfg=compact_cfg)
 
 
-@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn", "compact_cfg"))
+@partial(jax.jit, static_argnames=("cfg",))
 def ic_compact_active_pairs(
     state: ICState,
     *,
-    safety_policy: SafetyPolicy | None = None,
-    safe_index_fn=safe_index_1d,
-    compact_cfg: CompactConfig | None = None,
+    cfg: ICScanConfig = DEFAULT_SCAN_CONFIG,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Return compacted active pair indices and a count."""
     result, active = ic_compact_active_pairs_result(
         state,
-        safety_policy=safety_policy,
-        safe_index_fn=safe_index_fn,
-        compact_cfg=compact_cfg,
+        cfg=cfg,
     )
     compacted = jnp.where(result.valid, result.idx, jnp.uint32(0))
     return compacted, result.count, active
 
 
-@partial(jax.jit, static_argnames=("safety_policy", "safe_index_fn", "compact_cfg"))
+@partial(jax.jit, static_argnames=("cfg",))
 def ic_compact_active_pairs_result(
     state: ICState,
     *,
-    safety_policy: SafetyPolicy | None = None,
-    safe_index_fn=safe_index_1d,
-    compact_cfg: CompactConfig | None = None,
+    cfg: ICScanConfig = DEFAULT_SCAN_CONFIG,
 ) -> Tuple[CompactResult, jnp.ndarray]:
     """Return CompactResult for active pairs and the active mask."""
     _, active = ic_find_active_pairs(
         state,
-        safety_policy=safety_policy,
-        safe_index_fn=safe_index_fn,
-        compact_cfg=compact_cfg,
+        cfg=cfg,
     )
-    result = _compact_mask(active, compact_cfg=compact_cfg)
+    result = _compact_mask(active, compact_cfg=cfg.compact_cfg)
     return result, active
 
 

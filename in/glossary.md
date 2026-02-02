@@ -1,3 +1,8 @@
+---
+doc_revision: 2
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # Commuting Acronyms & Polysemous Terms (Normative)
 
 > **Glossary Contract (Normative):**
@@ -899,6 +904,17 @@ q ∘ Arena_step = Ledger_step ∘ q
 > Its contents are globally coherent semantic objects.
 
 Canonical IDs are global elements of the Ledger sheaf.
+
+### Ledger (Settlement / Root Arena)
+
+The Ledger is the **terminal (“settled”)** level of the hierarchical BSP arena model.
+
+- Arenas: locality envelopes + spillways bound expansion within a microstratum.
+- Ledger: expansion is forbidden; identity is canonical and globally stable.
+- Operationally: arena work is provisional; ledger identities are univalent and globally visible.
+
+**Implementation note:** the Ledger is an append-only canonical store + index (CQRS / event-sourced read model),
+not a spillway arena buffer.
 
 ### Erasure by `q`
 

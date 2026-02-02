@@ -74,14 +74,6 @@ def _assert_ledger_snapshot(ledger, snapshot):
         assert (field == expected).all()
 
 
-def test_cycle_candidates_rejects_when_cnf2_disabled(monkeypatch):
-    _require_cycle_candidates()
-    ledger = pv.init_ledger()
-    frontier = committed_ids(pv.ZERO_PTR)
-    with pytest.raises(RuntimeError, match="cycle_candidates disabled until m2"):
-        cycle_candidates(ledger, frontier, cnf2_enabled_fn=lambda: False)
-
-
 def test_cycle_candidates_empty_frontier_no_mutation():
     _require_cycle_candidates()
     ledger = pv.init_ledger()

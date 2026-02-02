@@ -1,9 +1,13 @@
 from typing import Callable, Optional
+from dataclasses import dataclass
 
 import jax
 import jax.numpy as jnp
 
 from prism_core import jax_safe as _jax_safe
+
+# dataflow-bundle: arg1, arg2
+
 from prism_core.guards import (
     GuardConfig,
     guard_gather_index_cfg as _guard_gather_index_cfg,
@@ -23,7 +27,21 @@ from prism_core.guards import (
     resolve_safe_gather_ok_value_fn as _resolve_safe_gather_ok_value_fn,
     resolve_safe_index_value_fn as _resolve_safe_index_value_fn,
 )
+from prism_core.protocols import (
+    SafeGatherFn,
+    SafeGatherOkFn,
+    SafeGatherOkValueFn,
+    SafeGatherValueFn,
+    SafeIndexFn,
+    SafeIndexValueFn,
+)
+from prism_core.safety import SafetyPolicy
 from prism_vm_core.ontology import OP_NULL, OP_ZERO
+
+@dataclass(frozen=True)
+class _BinaryArgs:
+    arg1: object
+    arg2: object
 
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
 _HAS_DEBUG_CALLBACK = _jax_safe.HAS_DEBUG_CALLBACK
@@ -77,7 +95,7 @@ def safe_gather_1d_cfg(
     label="safe_gather_1d",
     *,
     guard=None,
-    policy=None,
+    policy: SafetyPolicy | None = None,
     return_ok: bool = False,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
@@ -92,7 +110,7 @@ def safe_gather_1d_ok_cfg(
     label="safe_gather_1d_ok",
     *,
     guard=None,
-    policy=None,
+    policy: SafetyPolicy | None = None,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     return _safe_gather_1d_ok_cfg(
@@ -106,22 +124,27 @@ def safe_index_1d_cfg(
     label="safe_index_1d",
     *,
     guard=None,
-    policy=None,
+    policy: SafetyPolicy | None = None,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     return _safe_index_1d_cfg(
         idx, size, label, guard=guard, policy=policy, cfg=cfg
     )
 
-def make_safe_gather_fn(*, cfg: GuardConfig = DEFAULT_GUARD_CONFIG, policy=None, safe_gather_fn=None):
+def make_safe_gather_fn(
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+    policy: SafetyPolicy | None = None,
+    safe_gather_fn: SafeGatherFn | None = None,
+):
     return _make_safe_gather_fn(cfg=cfg, policy=policy, safe_gather_fn=safe_gather_fn)
 
 
 def make_safe_gather_ok_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
-    policy=None,
-    safe_gather_ok_fn=None,
+    policy: SafetyPolicy | None = None,
+    safe_gather_ok_fn: SafeGatherOkFn | None = None,
 ):
     return _make_safe_gather_ok_fn(
         cfg=cfg, policy=policy, safe_gather_ok_fn=safe_gather_ok_fn
@@ -131,8 +154,8 @@ def make_safe_gather_ok_fn(
 def make_safe_index_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
-    policy=None,
-    safe_index_fn=None,
+    policy: SafetyPolicy | None = None,
+    safe_index_fn: SafeIndexFn | None = None,
 ):
     return _make_safe_index_fn(
         cfg=cfg, policy=policy, safe_index_fn=safe_index_fn
@@ -142,7 +165,7 @@ def make_safe_index_fn(
 def make_safe_gather_value_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
-    safe_gather_value_fn=None,
+    safe_gather_value_fn: SafeGatherValueFn | None = None,
 ):
     return _make_safe_gather_value_fn(
         cfg=cfg, safe_gather_value_fn=safe_gather_value_fn
@@ -152,7 +175,7 @@ def make_safe_gather_value_fn(
 def make_safe_gather_ok_value_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
-    safe_gather_ok_value_fn=None,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn | None = None,
 ):
     return _make_safe_gather_ok_value_fn(
         cfg=cfg, safe_gather_ok_value_fn=safe_gather_ok_value_fn
@@ -162,7 +185,7 @@ def make_safe_gather_ok_value_fn(
 def make_safe_index_value_fn(
     *,
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
-    safe_index_value_fn=None,
+    safe_index_value_fn: SafeIndexValueFn | None = None,
 ):
     return _make_safe_index_value_fn(
         cfg=cfg, safe_index_value_fn=safe_index_value_fn
@@ -171,8 +194,8 @@ def make_safe_index_value_fn(
 
 def resolve_safe_gather_fn(
     *,
-    safe_gather_fn=None,
-    policy=None,
+    safe_gather_fn: SafeGatherFn | None = None,
+    policy: SafetyPolicy | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     return _resolve_safe_gather_fn(
@@ -182,8 +205,8 @@ def resolve_safe_gather_fn(
 
 def resolve_safe_gather_ok_fn(
     *,
-    safe_gather_ok_fn=None,
-    policy=None,
+    safe_gather_ok_fn: SafeGatherOkFn | None = None,
+    policy: SafetyPolicy | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     return _resolve_safe_gather_ok_fn(
@@ -195,8 +218,8 @@ def resolve_safe_gather_ok_fn(
 
 def resolve_safe_index_fn(
     *,
-    safe_index_fn=None,
-    policy=None,
+    safe_index_fn: SafeIndexFn | None = None,
+    policy: SafetyPolicy | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     return _resolve_safe_index_fn(
@@ -206,7 +229,7 @@ def resolve_safe_index_fn(
 
 def resolve_safe_gather_value_fn(
     *,
-    safe_gather_value_fn=None,
+    safe_gather_value_fn: SafeGatherValueFn | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     return _resolve_safe_gather_value_fn(
@@ -216,7 +239,7 @@ def resolve_safe_gather_value_fn(
 
 def resolve_safe_gather_ok_value_fn(
     *,
-    safe_gather_ok_value_fn=None,
+    safe_gather_ok_value_fn: SafeGatherOkValueFn | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     return _resolve_safe_gather_ok_value_fn(
@@ -226,7 +249,7 @@ def resolve_safe_gather_ok_value_fn(
 
 def resolve_safe_index_value_fn(
     *,
-    safe_index_value_fn=None,
+    safe_index_value_fn: SafeIndexValueFn | None = None,
     guard_cfg: GuardConfig | None = None,
 ):
     return _resolve_safe_index_value_fn(
@@ -247,6 +270,13 @@ def _expect_token(tokens, expected):
     return token
 
 
+def _expect_rparen(tokens):
+    token = _pop_token(tokens)
+    if token != ")":
+        raise ValueError(f"Expected ')', got {token!r}")
+    return token
+
+
 def _guard_slot0_perm(perm, inv_perm, label):
     if not _guards_enabled():
         return
@@ -263,7 +293,13 @@ def _guard_slot0_perm(perm, inv_perm, label):
     jax.debug.callback(_raise, ok, p0, i0)
 
 
-def guard_slot0_perm_cfg(perm, inv_perm, label, *, cfg: GuardConfig = DEFAULT_GUARD_CONFIG):
+def guard_slot0_perm_cfg(
+    perm,
+    inv_perm,
+    label="swizzle.perm",
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+):
     fn = cfg.guard_slot0_perm_fn or _guard_slot0_perm
     return fn(perm, inv_perm, label)
 
@@ -285,7 +321,14 @@ def _guard_null_row(opcode, arg1, arg2, label):
     jax.debug.callback(_raise, ok, op0, a10, a20)
 
 
-def guard_null_row_cfg(opcode, arg1, arg2, label, *, cfg: GuardConfig = DEFAULT_GUARD_CONFIG):
+def guard_null_row_cfg(
+    opcode,
+    arg1,
+    arg2,
+    label="swizzle.row0",
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
+):
     fn = cfg.guard_null_row_fn or _guard_null_row
     return fn(opcode, arg1, arg2, label)
 
@@ -317,7 +360,8 @@ def _guard_zero_args(mask, arg1, arg2, label):
         return
     if mask.size == 0:
         return
-    bad = jnp.any(mask & ((arg1 != 0) | (arg2 != 0)))
+    bundle = _BinaryArgs(arg1=arg1, arg2=arg2)
+    bad = jnp.any(mask & ((bundle.arg1 != 0) | (bundle.arg2 != 0)))
 
     def _raise(bad_val):
         if bad_val:
@@ -351,7 +395,13 @@ def _guard_swizzle_args(arg1, arg2, live, count, label):
 
 
 def guard_swizzle_args_cfg(
-    arg1, arg2, live, count, label, *, cfg: GuardConfig = DEFAULT_GUARD_CONFIG
+    arg1,
+    arg2,
+    live,
+    count,
+    label="swizzle.args",
+    *,
+    cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     fn = cfg.guard_swizzle_args_fn or _guard_swizzle_args
     return fn(arg1, arg2, live, count, label)
@@ -364,6 +414,7 @@ __all__ = [
     "_guard_max",
     "_pop_token",
     "_expect_token",
+    "_expect_rparen",
     "_guard_slot0_perm",
     "_guard_null_row",
     "_guard_zero_row",

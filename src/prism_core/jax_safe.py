@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 
@@ -12,6 +13,12 @@ from prism_core.safety import (
     SafetyMode,
     oob_mask,
 )
+
+# dataflow-bundle: idx, policy_value
+# dataflow-bundle: idx, policy_value, size
+# dataflow-bundle: idx, size
+# dataflow-bundle: max_allowed, max_val, min_val
+# dataflow-bundle: max_val, min_val, size_val
 
 TEST_GUARDS = os.environ.get("PRISM_TEST_GUARDS", "").strip().lower() in (
     "1",
@@ -36,6 +43,32 @@ GATHER_GUARD = TEST_GUARDS or os.environ.get(
     "on",
 )
 HAS_DEBUG_CALLBACK = hasattr(jax, "debug") and hasattr(jax.debug, "callback")
+
+
+@dataclass(frozen=True)
+class _IndexPolicyValue:
+    idx: object
+    policy_value: PolicyValue
+
+
+@dataclass(frozen=True)
+class _IndexPolicyValueSize:
+    idx: object
+    policy_value: PolicyValue
+    size: object
+
+
+@dataclass(frozen=True)
+class _IndexSizeArgs:
+    idx: object
+    size: object
+
+
+@dataclass(frozen=True)
+class _BoundsArgs:
+    max_val: object
+    min_val: object
+    size_val: object
 
 
 def scatter_guard(indices, max_index, label):
@@ -108,9 +141,13 @@ def guard_gather_index(idx, size, label, guard=None):
                 f"{label} (min={int(min_val)}, max={int(max_val)}, size={int(size_val)})"
             )
 
-    jax.debug.callback(_raise, bad, min_idx, max_idx, size)
+    bounds = _BoundsArgs(max_val=max_idx, min_val=min_idx, size_val=size)
+    jax.debug.callback(
+        _raise, bad, bounds.min_val, bounds.max_val, bounds.size_val
+    )
 
 
+# dataflow-bundle: arr, idx, label, policy, return_ok
 def safe_gather_1d(
     arr,
     idx,
@@ -140,6 +177,7 @@ def safe_gather_1d(
     return values
 
 
+# dataflow-bundle: arr, idx, label, policy
 def safe_gather_1d_ok(
     arr,
     idx,
@@ -173,18 +211,13 @@ def safe_gather_1d_value(
     return_ok: bool = False,
 ):
     """Guarded gather that accepts policy as a JAX value."""
-    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
-    idx_i = jnp.asarray(idx, dtype=jnp.int32)
-    policy_val = jnp.asarray(policy_value, dtype=jnp.int32)
-    guard_gather_index(idx_i, size, label, guard=guard)
-    ok = (idx_i >= 0) & (idx_i < size)
-    idx_safe = jnp.clip(idx_i, 0, size - 1)
-    drop_mask = policy_val == POLICY_VALUE_DROP
-    clamp_mask = policy_val == POLICY_VALUE_CLAMP
-    idx_safe = jnp.where(drop_mask, jnp.where(ok, idx_safe, jnp.int32(0)), idx_safe)
-    values = arr[idx_safe]
-    values = jnp.where(drop_mask & (~ok), jnp.zeros_like(values), values)
-    ok = jnp.where(clamp_mask, jnp.ones_like(ok, dtype=jnp.bool_), ok)
+    values, ok = _safe_gather_1d_value_ok(
+        arr,
+        idx,
+        label,
+        guard=guard,
+        policy_value=policy_value,
+    )
     if return_ok:
         return values, ok
     return values
@@ -199,17 +232,41 @@ def safe_gather_1d_ok_value(
     policy_value: PolicyValue,
 ):
     """Guarded gather that returns ok + corruption flag using policy value."""
-    values, ok = safe_gather_1d_value(
+    values, ok = _safe_gather_1d_value_ok(
         arr,
         idx,
         label,
         guard=guard,
         policy_value=policy_value,
-        return_ok=True,
     )
-    policy_val = jnp.asarray(policy_value, dtype=jnp.int32)
+    bundle = _IndexPolicyValue(idx=idx, policy_value=policy_value)
+    policy_val = jnp.asarray(bundle.policy_value, dtype=jnp.int32)
     corrupt = jnp.where(policy_val == POLICY_VALUE_CORRUPT, ~ok, False)
     return values, ok, corrupt
+
+
+def _safe_gather_1d_value_ok(
+    arr,
+    idx,
+    label,
+    *,
+    guard=None,
+    policy_value: PolicyValue,
+):
+    bundle = _IndexPolicyValue(idx=idx, policy_value=policy_value)
+    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
+    idx_i = jnp.asarray(bundle.idx, dtype=jnp.int32)
+    policy_val = jnp.asarray(bundle.policy_value, dtype=jnp.int32)
+    guard_gather_index(idx_i, size, label, guard=guard)
+    ok = (idx_i >= 0) & (idx_i < size)
+    idx_safe = jnp.clip(idx_i, 0, size - 1)
+    drop_mask = policy_val == POLICY_VALUE_DROP
+    clamp_mask = policy_val == POLICY_VALUE_CLAMP
+    idx_safe = jnp.where(drop_mask, jnp.where(ok, idx_safe, jnp.int32(0)), idx_safe)
+    values = arr[idx_safe]
+    values = jnp.where(drop_mask & (~ok), jnp.zeros_like(values), values)
+    ok = jnp.where(clamp_mask, jnp.ones_like(ok, dtype=jnp.bool_), ok)
+    return values, ok
 
 
 def safe_index_1d(
@@ -223,8 +280,9 @@ def safe_index_1d(
     """Return a policy-aware safe index and in-bounds mask."""
     if policy is None:
         policy = DEFAULT_SAFETY_POLICY
-    size_i = jnp.asarray(size, dtype=jnp.int32)
-    idx_i = jnp.asarray(idx, dtype=jnp.int32)
+    bundle = _IndexSizeArgs(idx=idx, size=size)
+    size_i = jnp.asarray(bundle.size, dtype=jnp.int32)
+    idx_i = jnp.asarray(bundle.idx, dtype=jnp.int32)
     guard_gather_index(idx_i, size_i, label, guard=guard)
     ok = (idx_i >= 0) & (idx_i < size_i)
     idx_safe = jnp.clip(idx_i, 0, size_i - 1)
@@ -244,9 +302,10 @@ def safe_index_1d_value(
     policy_value: PolicyValue,
 ):
     """Return a policy-aware safe index using policy value."""
-    size_i = jnp.asarray(size, dtype=jnp.int32)
-    idx_i = jnp.asarray(idx, dtype=jnp.int32)
-    policy_val = jnp.asarray(policy_value, dtype=jnp.int32)
+    bundle = _IndexPolicyValueSize(idx=idx, policy_value=policy_value, size=size)
+    size_i = jnp.asarray(bundle.size, dtype=jnp.int32)
+    idx_i = jnp.asarray(bundle.idx, dtype=jnp.int32)
+    policy_val = jnp.asarray(bundle.policy_value, dtype=jnp.int32)
     guard_gather_index(idx_i, size_i, label, guard=guard)
     ok = (idx_i >= 0) & (idx_i < size_i)
     idx_safe = jnp.clip(idx_i, 0, size_i - 1)

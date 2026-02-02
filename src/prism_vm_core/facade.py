@@ -7,9 +7,14 @@ erased by q. This module centralizes wrapper behavior to avoid accidental
 shadowing or monkeypatching drift.
 """
 
+# dataflow-bundle: cfg, guard, policy
+# dataflow-bundle: cfg, guard, policy, return_ok
+# dataflow-bundle: emit_candidates_fn, intern_fn
+# dataflow-bundle: guard_cfg, safe_gather_value_fn
+
 from typing import Optional
 from functools import partial
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 import jax
 import jax.numpy as jnp
@@ -37,34 +42,34 @@ from prism_core.safety import (
     require_static_policy,
     require_value_policy,
 )
-from prism_core.modes import (
-    ValidateMode,
-    require_validate_mode,
-    BspMode,
-    coerce_bsp_mode,
-    Cnf2Mode,
-    coerce_cnf2_mode,
-)
-from prism_core.errors import (
-    PrismPolicyModeError,
-    PrismPolicyBindingError,
-    PrismCnf2ModeError,
-    PrismCnf2ModeConflictError,
-)
+from prism_core.modes import ValidateMode, require_validate_mode, BspMode, coerce_bsp_mode
+from prism_core.errors import PrismPolicyModeError, PrismPolicyBindingError
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
+from prism_ledger.index import (
+    LedgerIndex,
+    LedgerState,
+    derive_ledger_index,
+    derive_ledger_state,
+)
 from prism_bsp.config import (
     Cnf2Config,
     Cnf2BoundConfig,
     Cnf2StaticBoundConfig,
     Cnf2ValueBoundConfig,
-    Cnf2Flags,
     DEFAULT_CNF2_CONFIG,
-    DEFAULT_CNF2_FLAGS,
+    Cnf2RuntimeFns,
+    DEFAULT_CNF2_RUNTIME_FNS,
+    Cnf2CandidateFns,
+    Cnf2PolicyFns,
     ArenaInteractConfig,
     DEFAULT_ARENA_INTERACT_CONFIG,
+    SwizzleWithPermFns,
+    SwizzleWithPermFnsBound,
     ArenaCycleConfig,
     DEFAULT_ARENA_CYCLE_CONFIG,
+    ArenaSortConfig,
+    DEFAULT_ARENA_SORT_CONFIG,
     IntrinsicConfig,
     DEFAULT_INTRINSIC_CONFIG,
 )
@@ -84,8 +89,8 @@ from prism_vm_core.hashes import _ledger_root_hash_host, _ledger_roots_hash_host
 from prism_vm_core.candidates import _candidate_indices, candidate_indices_cfg
 from prism_bsp.cnf2 import _scatter_compacted_ids
 from prism_vm_core.ontology import OP_ADD, OP_MUL, OP_NULL, OP_ZERO, HostBool
-from prism_vm_core.domains import _host_bool, _host_raise_if_bad
-from prism_vm_core.structures import NodeBatch
+from prism_vm_core.domains import QMap, _host_bool, _host_raise_if_bad
+from prism_vm_core.structures import Ledger, NodeBatch, Stratum
 from prism_bsp.space import RANK_FREE
 from prism_bsp.cnf2 import (
     emit_candidates as _emit_candidates_default,
@@ -204,7 +209,7 @@ def arena_interact_config_with_policy(
 
 
 def arena_interact_config_with_policy_value(
-    policy_value,
+    policy_value: PolicyValue | None,
     *,
     cfg: ArenaInteractConfig = DEFAULT_ARENA_INTERACT_CONFIG,
 ) -> ArenaInteractConfig:
@@ -263,7 +268,7 @@ def arena_cycle_config_with_policy(
 
 
 def arena_cycle_config_with_policy_value(
-    policy_value,
+    policy_value: PolicyValue | None,
     *,
     cfg: ArenaCycleConfig = DEFAULT_ARENA_CYCLE_CONFIG,
     include_interact: bool = True,
@@ -318,10 +323,16 @@ def op_sort_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_with_perm with guard cfg."""
+    bundle = _GuardSafeGatherValueBundle(
+        guard_cfg=guard_cfg, safe_gather_value_fn=safe_gather_value_fn
+    )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_with_perm_value,
-            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            {
+                "guard_cfg": bundle.guard_cfg,
+                "safe_gather_value_fn": bundle.safe_gather_value_fn,
+            },
             arena,
             safe_gather_policy_value,
         )
@@ -361,10 +372,16 @@ def op_sort_blocked_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_blocked_with_perm with guard cfg."""
+    bundle = _GuardSafeGatherValueBundle(
+        guard_cfg=guard_cfg, safe_gather_value_fn=safe_gather_value_fn
+    )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_blocked_with_perm_value,
-            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            {
+                "guard_cfg": bundle.guard_cfg,
+                "safe_gather_value_fn": bundle.safe_gather_value_fn,
+            },
             arena,
             block_size,
             safe_gather_policy_value,
@@ -412,10 +429,16 @@ def op_sort_hierarchical_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_hierarchical_with_perm with guard cfg."""
+    bundle = _GuardSafeGatherValueBundle(
+        guard_cfg=guard_cfg, safe_gather_value_fn=safe_gather_value_fn
+    )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_hierarchical_with_perm_value,
-            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            {
+                "guard_cfg": bundle.guard_cfg,
+                "safe_gather_value_fn": bundle.safe_gather_value_fn,
+            },
             arena,
             l2_block_size,
             l1_block_size,
@@ -466,10 +489,16 @@ def op_sort_morton_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_morton_with_perm with guard cfg."""
+    bundle = _GuardSafeGatherValueBundle(
+        guard_cfg=guard_cfg, safe_gather_value_fn=safe_gather_value_fn
+    )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_morton_with_perm_value,
-            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            {
+                "guard_cfg": bundle.guard_cfg,
+                "safe_gather_value_fn": bundle.safe_gather_value_fn,
+            },
             arena,
             morton,
             safe_gather_policy_value,
@@ -512,10 +541,16 @@ def op_sort_servo_with_perm_cfg(
     guard_cfg: GuardConfig | None = None,
 ):
     """Interface/Control wrapper for op_sort_and_swizzle_servo_with_perm with guard cfg."""
+    bundle = _GuardSafeGatherValueBundle(
+        guard_cfg=guard_cfg, safe_gather_value_fn=safe_gather_value_fn
+    )
     if safe_gather_policy_value is not None:
         return call_with_optional_kwargs(
             op_sort_and_swizzle_servo_with_perm_value,
-            {"guard_cfg": guard_cfg, "safe_gather_value_fn": safe_gather_value_fn},
+            {
+                "guard_cfg": bundle.guard_cfg,
+                "safe_gather_value_fn": bundle.safe_gather_value_fn,
+            },
             arena,
             morton,
             servo_mask,
@@ -580,7 +615,7 @@ def cnf2_config_bound(
 
 
 def cnf2_config_with_policy_value(
-    policy_value,
+    policy_value: PolicyValue | None,
     *,
     cfg: Cnf2Config = DEFAULT_CNF2_CONFIG,
 ) -> Cnf2Config:
@@ -606,8 +641,6 @@ def cnf2_config_with_guard(
     """Return a Cnf2Config with guard_cfg set."""
     return replace(cfg, guard_cfg=guard_cfg)
 from prism_vm_core.gating import (
-    _cnf2_enabled as _cnf2_enabled_default,
-    _cnf2_slot1_enabled as _cnf2_slot1_enabled_default,
     _default_bsp_mode,
     _gpu_metrics_device_index,
     _gpu_metrics_enabled,
@@ -643,6 +676,33 @@ from prism_vm_core.guards import (
     guard_zero_args_cfg,
     guard_swizzle_args_cfg,
 )
+
+
+@dataclass(frozen=True)
+class _SafeGatherCfgArgs:
+    cfg: GuardConfig
+    guard: object
+    policy: SafetyPolicy | None
+
+
+@dataclass(frozen=True)
+class _SafeGatherCfgReturnOkArgs:
+    cfg: GuardConfig
+    guard: object
+    policy: SafetyPolicy | None
+    return_ok: bool
+
+
+@dataclass(frozen=True)
+class _EmitInternFns:
+    emit_candidates_fn: object
+    intern_fn: object
+
+
+@dataclass(frozen=True)
+class _GuardSafeGatherValueBundle:
+    guard_cfg: GuardConfig
+    safe_gather_value_fn: object
 from prism_semantics.commit import (
     commit_stratum as _commit_stratum_impl,
     commit_stratum_static as _commit_stratum_static_impl,
@@ -650,14 +710,22 @@ from prism_semantics.commit import (
 )
 from prism_bsp.cnf2 import (
     cycle_candidates as _cycle_candidates_impl,
+    cycle_candidates_bound as _cycle_candidates_bound,
+    cycle_candidates_bound_state as _cycle_candidates_bound_state,
+    cycle_candidates_state as _cycle_candidates_state,
     cycle_candidates_static as _cycle_candidates_static,
+    cycle_candidates_static_state as _cycle_candidates_static_state,
     cycle_candidates_value as _cycle_candidates_value,
+    cycle_candidates_value_state as _cycle_candidates_value_state,
 )
 from prism_vm_core.jit_entrypoints import (
     coord_norm_batch_jit,
     cycle_candidates_jit,
+    cycle_candidates_state_jit,
     cycle_candidates_static_jit,
+    cycle_candidates_static_state_jit,
     cycle_candidates_value_jit,
+    cycle_candidates_value_state_jit,
     cycle_intrinsic_jit,
     cycle_intrinsic_jit_cfg,
     cycle_jit as _cycle_jit_factory,
@@ -676,6 +744,7 @@ from prism_vm_core.jit_entrypoints import (
     intern_candidates_jit,
     intern_candidates_jit_cfg,
     intern_nodes_jit,
+    intern_nodes_with_index_jit,
     op_interact_jit,
     op_interact_jit_cfg,
     op_interact_jit_bound_cfg,
@@ -702,8 +771,6 @@ ValidateMode = ValidateMode
 require_validate_mode = require_validate_mode
 BspMode = BspMode
 coerce_bsp_mode = coerce_bsp_mode
-Cnf2Mode = Cnf2Mode
-coerce_cnf2_mode = coerce_cnf2_mode
 PolicyValue = PolicyValue
 POLICY_VALUE_CORRUPT = POLICY_VALUE_CORRUPT
 POLICY_VALUE_CLAMP = POLICY_VALUE_CLAMP
@@ -808,9 +875,17 @@ def safe_gather_1d_cfg(
     return_ok: bool = False,
 ):
     """Interface/Control wrapper for safe_gather_1d with guard config."""
+    bundle = _SafeGatherCfgReturnOkArgs(
+        cfg=cfg, guard=guard, policy=policy, return_ok=return_ok
+    )
     return call_with_optional_kwargs(
         _safe_gather_1d_cfg,
-        {"guard": guard, "policy": policy, "cfg": cfg, "return_ok": return_ok},
+        {
+            "guard": bundle.guard,
+            "policy": bundle.policy,
+            "cfg": bundle.cfg,
+            "return_ok": bundle.return_ok,
+        },
         arr,
         idx,
         label,
@@ -827,9 +902,10 @@ def safe_gather_1d_ok_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Interface/Control wrapper for safe_gather_1d_ok with guard config."""
+    bundle = _SafeGatherCfgArgs(cfg=cfg, guard=guard, policy=policy)
     return call_with_optional_kwargs(
         _safe_gather_1d_ok_cfg,
-        {"guard": guard, "policy": policy, "cfg": cfg},
+        {"guard": bundle.guard, "policy": bundle.policy, "cfg": bundle.cfg},
         arr,
         idx,
         label,
@@ -869,9 +945,10 @@ def safe_index_1d_cfg(
     cfg: GuardConfig = DEFAULT_GUARD_CONFIG,
 ):
     """Interface/Control wrapper for safe_index_1d with guard config."""
+    bundle = _SafeGatherCfgArgs(cfg=cfg, guard=guard, policy=policy)
     return call_with_optional_kwargs(
         _safe_index_1d_cfg,
-        {"guard": guard, "policy": policy, "cfg": cfg},
+        {"guard": bundle.guard, "policy": bundle.policy, "cfg": bundle.cfg},
         idx,
         size,
         label,
@@ -903,6 +980,16 @@ def init_ledger():
     return _init_ledger(_pack_key, LEDGER_CAPACITY, OP_NULL, OP_ZERO)
 
 
+def init_ledger_state(*, cfg: InternConfig | None = None):
+    """Initialize a LedgerState with a derived index."""
+    ledger = init_ledger()
+    if cfg is None:
+        cfg = DEFAULT_INTERN_CONFIG
+    return derive_ledger_state(
+        ledger, op_buckets_full_range=cfg.op_buckets_full_range
+    )
+
+
 def ledger_has_corrupt(ledger) -> HostBool:
     """Interface/Control wrapper for host-visible corrupt checks.
 
@@ -923,8 +1010,6 @@ _candidate_indices = _candidate_indices
 candidate_indices_cfg = candidate_indices_cfg
 _scatter_compacted_ids = _scatter_compacted_ids
 scatter_compacted_ids_cfg = _scatter_compacted_ids_cfg
-_cnf2_enabled = _cnf2_enabled_default
-_cnf2_slot1_enabled = _cnf2_slot1_enabled_default
 emit_candidates = _emit_candidates
 emit_candidates_cfg = _emit_candidates_cfg
 compact_candidates = _compact_candidates
@@ -1001,10 +1086,12 @@ GPUWatchdog = GPUWatchdog
 _gpu_watchdog_create = _gpu_watchdog_create
 InternConfig = InternConfig
 DEFAULT_INTERN_CONFIG = DEFAULT_INTERN_CONFIG
+LedgerIndex = LedgerIndex
+derive_ledger_index = derive_ledger_index
+LedgerState = LedgerState
+derive_ledger_state = derive_ledger_state
 Cnf2Config = Cnf2Config
-Cnf2Flags = Cnf2Flags
 DEFAULT_CNF2_CONFIG = DEFAULT_CNF2_CONFIG
-DEFAULT_CNF2_FLAGS = DEFAULT_CNF2_FLAGS
 CoordConfig = CoordConfig
 DEFAULT_COORD_CONFIG = DEFAULT_COORD_CONFIG
 dispatch_kernel = dispatch_kernel
@@ -1021,7 +1108,7 @@ def _key_order_commutative_host(op, a1, a2):
 
 
 def intern_nodes(
-    ledger,
+    ledger: Ledger | LedgerState,
     batch_or_ops,
     a1=None,
     a2=None,
@@ -1029,12 +1116,40 @@ def intern_nodes(
     cfg: InternConfig | None = None,
     op_buckets_full_range: Optional[bool] = None,
     force_spawn_clip: Optional[bool] = None,
+    ledger_index: LedgerIndex | None = None,
 ):
     """Interface/Control wrapper for intern_nodes behavior flags.
+
+    If ledger_index is provided, the bound LedgerIndex path is used to avoid
+    recomputing opcode buckets for the same ledger state.
+
+    If ledger is a LedgerState, the LedgerIndex path is used implicitly and the
+    updated LedgerState is returned.
 
     Axis: Interface/Control. Commutes with q. Erased by q.
     Test: tests/test_m1_gate.py
     """
+    if isinstance(ledger, LedgerState):
+        if ledger_index is not None:
+            raise ValueError("Pass either LedgerState or ledger_index, not both.")
+        if cfg is not None and (op_buckets_full_range is not None or force_spawn_clip is not None):
+            raise ValueError("Pass either cfg or individual flags, not both.")
+        if cfg is None and op_buckets_full_range is None and force_spawn_clip is None:
+            cfg = DEFAULT_INTERN_CONFIG
+        elif cfg is None:
+            cfg = InternConfig(
+                op_buckets_full_range=bool(op_buckets_full_range or False),
+                force_spawn_clip=bool(force_spawn_clip or False),
+            )
+        if a1 is None and a2 is None:
+            if not isinstance(batch_or_ops, NodeBatch):
+                raise TypeError("intern_nodes expects a NodeBatch or (ops, a1, a2)")
+            batch = batch_or_ops
+        else:
+            if a1 is None or a2 is None:
+                raise TypeError("intern_nodes expects both a1 and a2 arrays")
+            batch = NodeBatch(batch_or_ops, a1, a2)
+        return intern_nodes_state(ledger, batch, cfg=cfg)
     if cfg is not None:
         if op_buckets_full_range is not None or force_spawn_clip is not None:
             raise ValueError("Pass either cfg or individual flags, not both.")
@@ -1053,46 +1168,90 @@ def intern_nodes(
         if a1 is None or a2 is None:
             raise TypeError("intern_nodes expects both a1 and a2 arrays")
         batch = NodeBatch(batch_or_ops, a1, a2)
-    return intern_nodes_jit(cfg)(ledger, batch)
+    if ledger_index is None:
+        ledger_index = derive_ledger_index(
+            ledger, op_buckets_full_range=cfg.op_buckets_full_range
+        )
+    return intern_nodes_jit(cfg)(ledger, ledger_index, batch)
+
+
+def intern_nodes_with_index(
+    ledger: Ledger,
+    ledger_index: LedgerIndex,
+    batch_or_ops,
+    a1=None,
+    a2=None,
+    *,
+    cfg: InternConfig | None = None,
+):
+    """Interface/Control wrapper for intern_nodes with a bound LedgerIndex."""
+    if cfg is None:
+        cfg = DEFAULT_INTERN_CONFIG
+    if a1 is None and a2 is None:
+        if not isinstance(batch_or_ops, NodeBatch):
+            raise TypeError("intern_nodes_with_index expects a NodeBatch or (ops, a1, a2)")
+        batch = batch_or_ops
+    else:
+        if a1 is None or a2 is None:
+            raise TypeError("intern_nodes_with_index expects both a1 and a2 arrays")
+        batch = NodeBatch(batch_or_ops, a1, a2)
+    return intern_nodes_with_index_jit(cfg)(ledger, ledger_index, batch)
+
+
+def intern_nodes_state(
+    state: LedgerState,
+    batch_or_ops,
+    a1=None,
+    a2=None,
+    *,
+    cfg: InternConfig | None = None,
+):
+    """Interface/Control wrapper for intern_nodes on LedgerState."""
+    if cfg is None:
+        cfg = DEFAULT_INTERN_CONFIG
+    if a1 is None and a2 is None:
+        if not isinstance(batch_or_ops, NodeBatch):
+            raise TypeError("intern_nodes_state expects a NodeBatch or (ops, a1, a2)")
+        batch = batch_or_ops
+    else:
+        if a1 is None or a2 is None:
+            raise TypeError("intern_nodes_state expects both a1 and a2 arrays")
+        batch = NodeBatch(batch_or_ops, a1, a2)
+    ids, new_state = _ledger_intern.intern_nodes_state(
+        state,
+        batch,
+        cfg=cfg,
+    )
+    return ids, new_state
 
 
 def cycle_jit(
     *,
-    do_sort=True,
-    use_morton=False,
-    block_size=None,
-    l2_block_size=None,
-    l1_block_size=None,
-    do_global=False,
+    sort_cfg: ArenaSortConfig = DEFAULT_ARENA_SORT_CONFIG,
     op_rank_fn=op_rank,
     servo_enabled_fn=_servo_enabled,
     servo_update_fn=_servo_update,
     op_morton_fn=op_morton,
-    op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm,
-    op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm,
-    op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm,
-    op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm,
-    op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm,
+    swizzle_with_perm_fns: SwizzleWithPermFnsBound | None = None,
     safe_gather_fn=_jax_safe.safe_gather_1d,
     op_interact_fn=_op_interact,
 ):
     """Return a jitted cycle entrypoint for fixed DI."""
+    if swizzle_with_perm_fns is None:
+        swizzle_with_perm_fns = SwizzleWithPermFnsBound(
+            with_perm=op_sort_and_swizzle_with_perm,
+            morton_with_perm=op_sort_and_swizzle_morton_with_perm,
+            blocked_with_perm=op_sort_and_swizzle_blocked_with_perm,
+            hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm,
+            servo_with_perm=op_sort_and_swizzle_servo_with_perm,
+        )
     return _cycle_jit_factory(
-        do_sort=do_sort,
-        use_morton=use_morton,
-        block_size=block_size,
-        l2_block_size=l2_block_size,
-        l1_block_size=l1_block_size,
-        do_global=do_global,
+        sort_cfg=sort_cfg,
         op_rank_fn=op_rank_fn,
         servo_enabled_fn=servo_enabled_fn,
         servo_update_fn=servo_update_fn,
         op_morton_fn=op_morton_fn,
-        op_sort_and_swizzle_with_perm_fn=op_sort_and_swizzle_with_perm_fn,
-        op_sort_and_swizzle_morton_with_perm_fn=op_sort_and_swizzle_morton_with_perm_fn,
-        op_sort_and_swizzle_blocked_with_perm_fn=op_sort_and_swizzle_blocked_with_perm_fn,
-        op_sort_and_swizzle_hierarchical_with_perm_fn=op_sort_and_swizzle_hierarchical_with_perm_fn,
-        op_sort_and_swizzle_servo_with_perm_fn=op_sort_and_swizzle_servo_with_perm_fn,
+        swizzle_with_perm_fns=swizzle_with_perm_fns,
         safe_gather_fn=safe_gather_fn,
         op_interact_fn=op_interact_fn,
         test_guards=_TEST_GUARDS,
@@ -1100,9 +1259,9 @@ def cycle_jit(
 
 
 def commit_stratum_static(
-    ledger,
-    stratum,
-    prior_q=None,
+    ledger: Ledger,
+    stratum: Stratum,
+    prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     *,
@@ -1113,12 +1272,28 @@ def commit_stratum_static(
     """Static-policy wrapper for commit_stratum injection."""
     if intern_fn is None:
         intern_fn = intern_nodes
+    ledger_index = derive_ledger_index(
+        ledger, op_buckets_full_range=DEFAULT_INTERN_CONFIG.op_buckets_full_range
+    )
+    def _intern_with_index(ledger_in, batch_or_ops, a1=None, a2=None):
+        return call_with_optional_kwargs(
+            intern_fn,
+            {"ledger_index": ledger_index},
+            ledger_in,
+            batch_or_ops,
+            a1,
+            a2,
+        )
+
+    setattr(_intern_with_index, "_prism_ledger_index_bound", True)
     return _commit_stratum_static_impl(
         ledger,
         stratum,
         prior_q=prior_q,
         validate_mode=validate_mode,
-        intern_fn=intern_fn,
+        intern_fn=_intern_with_index,
+        ledger_index=ledger_index,
+        intern_cfg=DEFAULT_INTERN_CONFIG,
         safe_gather_policy=safe_gather_policy,
         guard_cfg=guard_cfg,
         policy_binding=policy_binding,
@@ -1126,9 +1301,9 @@ def commit_stratum_static(
 
 
 def commit_stratum_value(
-    ledger,
-    stratum,
-    prior_q=None,
+    ledger: Ledger,
+    stratum: Stratum,
+    prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     *,
@@ -1139,12 +1314,28 @@ def commit_stratum_value(
     """Policy-value wrapper for commit_stratum injection."""
     if intern_fn is None:
         intern_fn = intern_nodes
+    ledger_index = derive_ledger_index(
+        ledger, op_buckets_full_range=DEFAULT_INTERN_CONFIG.op_buckets_full_range
+    )
+    def _intern_with_index(ledger_in, batch_or_ops, a1=None, a2=None):
+        return call_with_optional_kwargs(
+            intern_fn,
+            {"ledger_index": ledger_index},
+            ledger_in,
+            batch_or_ops,
+            a1,
+            a2,
+        )
+
+    setattr(_intern_with_index, "_prism_ledger_index_bound", True)
     return _commit_stratum_value_impl(
         ledger,
         stratum,
         prior_q=prior_q,
         validate_mode=validate_mode,
-        intern_fn=intern_fn,
+        intern_fn=_intern_with_index,
+        ledger_index=ledger_index,
+        intern_cfg=DEFAULT_INTERN_CONFIG,
         safe_gather_policy_value=safe_gather_policy_value,
         guard_cfg=guard_cfg,
         policy_binding=policy_binding,
@@ -1152,9 +1343,9 @@ def commit_stratum_value(
 
 
 def commit_stratum(
-    ledger,
-    stratum,
-    prior_q=None,
+    ledger: Ledger,
+    stratum: Stratum,
+    prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     *,
@@ -1183,6 +1374,8 @@ def commit_stratum(
             policy_value=safe_gather_policy_value,
             context="commit_stratum",
         )
+    if intern_fn is None:
+        intern_fn = intern_nodes
     if binding.mode == PolicyMode.VALUE:
         return commit_stratum_value(
             ledger,
@@ -1218,33 +1411,14 @@ def _cycle_candidates_common(
     safe_gather_policy_value: PolicyValue | None,
     guard_cfg: GuardConfig | None,
     cnf2_cfg: Cnf2Config | None,
-    cnf2_flags: Cnf2Flags | None,
-    cnf2_mode: Cnf2Mode | None,
-    cnf2_enabled_fn,
-    cnf2_slot1_enabled_fn,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Shared wrapper for CNF-2 entrypoints with explicit policy mode."""
     if not isinstance(policy_mode, PolicyMode):
         raise PrismPolicyModeError(mode=policy_mode, context="cycle_candidates")
-    if cnf2_mode is not None and not isinstance(cnf2_mode, Cnf2Mode):
-        raise PrismCnf2ModeError(mode=cnf2_mode)
     if intern_fn is None:
         intern_fn = intern_nodes
-    if cnf2_cfg is not None and cnf2_flags is not None:
-        cnf2_cfg = replace(cnf2_cfg, flags=cnf2_flags)
-    elif cnf2_cfg is None and cnf2_flags is not None:
-        cnf2_cfg = Cnf2Config(flags=cnf2_flags)
     if cnf2_cfg is not None:
-        if cnf2_mode is None and cnf2_cfg.cnf2_mode is not None:
-            cnf2_mode = cnf2_cfg.cnf2_mode
-        elif cnf2_mode is not None and cnf2_cfg.cnf2_mode is not None:
-            mode_a = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates")
-            mode_b = coerce_cnf2_mode(cnf2_cfg.cnf2_mode, context="cycle_candidates")
-            if mode_a != mode_b:
-                raise PrismCnf2ModeConflictError(
-                    "cycle_candidates received both cnf2_mode and cfg.cnf2_mode",
-                    context="cycle_candidates",
-                )
         if intern_cfg is None:
             intern_cfg = cnf2_cfg.intern_cfg
         if guard_cfg is None and cnf2_cfg.guard_cfg is not None:
@@ -1253,11 +1427,8 @@ def _cycle_candidates_common(
             intern_fn = cnf2_cfg.intern_fn
         if emit_candidates_fn is None and cnf2_cfg.emit_candidates_fn is not None:
             emit_candidates_fn = cnf2_cfg.emit_candidates_fn
-        if cnf2_enabled_fn is None and cnf2_cfg.cnf2_enabled_fn is not None:
-            cnf2_enabled_fn = cnf2_cfg.cnf2_enabled_fn
-        if cnf2_slot1_enabled_fn is None and cnf2_cfg.cnf2_slot1_enabled_fn is not None:
-            cnf2_slot1_enabled_fn = cnf2_cfg.cnf2_slot1_enabled_fn
-        cnf2_flags = cnf2_cfg.flags if cnf2_flags is None else cnf2_flags
+        if runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
+            runtime_fns = cnf2_cfg.runtime_fns
         if policy_mode == PolicyMode.STATIC:
             if cnf2_cfg.policy_binding is not None:
                 if cnf2_cfg.policy_binding.mode == PolicyMode.VALUE:
@@ -1321,53 +1492,10 @@ def _cycle_candidates_common(
                 context="cycle_candidates_value",
                 policy_mode=PolicyMode.VALUE,
             )
-    def _resolve_gate(flag_value, fn_value, default_fn):
-        if flag_value is not None:
-            return bool(flag_value)
-        if fn_value is not None:
-            return bool(fn_value())
-        return bool(default_fn())
-
-    if cnf2_mode is not None:
-        mode = coerce_cnf2_mode(cnf2_mode, context="cycle_candidates")
-        if mode != Cnf2Mode.AUTO:
-            if cnf2_flags is not None or cnf2_enabled_fn is not None or cnf2_slot1_enabled_fn is not None:
-                raise PrismCnf2ModeConflictError(
-                    "cycle_candidates received cnf2_mode alongside cnf2_flags or cnf2_*_enabled_fn",
-                    context="cycle_candidates",
-                )
-            enabled_value = mode in (Cnf2Mode.BASE, Cnf2Mode.SLOT1)
-            slot1_value = mode == Cnf2Mode.SLOT1
-            cnf2_enabled_fn = lambda: enabled_value
-            cnf2_slot1_enabled_fn = lambda: slot1_value
-            cnf2_flags = None
-    if cnf2_flags is not None:
-        if cnf2_enabled_fn is not None or cnf2_slot1_enabled_fn is not None:
-            raise PrismPolicyBindingError(
-                "Pass either cnf2_flags or cnf2_*_enabled_fn, not both.",
-                context="cycle_candidates",
-            )
-        enabled_value = _resolve_gate(
-            cnf2_flags.enabled, None, _cnf2_enabled_default
-        )
-        slot1_value = _resolve_gate(
-            cnf2_flags.slot1_enabled, None, _cnf2_slot1_enabled_default
-        )
-        cnf2_enabled_fn = lambda: enabled_value
-        cnf2_slot1_enabled_fn = lambda: slot1_value
     if emit_candidates_fn is None:
         emit_candidates_fn = _emit_candidates_default
-    if cnf2_flags is None:
-        enabled_value = _resolve_gate(None, cnf2_enabled_fn, _cnf2_enabled_default)
-        slot1_value = _resolve_gate(
-            None, cnf2_slot1_enabled_fn, _cnf2_slot1_enabled_default
-        )
-        cnf2_enabled_fn = lambda: enabled_value
-        cnf2_slot1_enabled_fn = lambda: slot1_value
     if host_raise_if_bad_fn is None:
         host_raise_if_bad_fn = _host_raise_if_bad
-    if not cnf2_enabled_fn():
-        raise RuntimeError("cycle_candidates disabled until m2 (set PRISM_ENABLE_CNF2=1)")
     if policy_mode == PolicyMode.STATIC:
         if safe_gather_policy is None:
             safe_gather_policy = DEFAULT_SAFETY_POLICY
@@ -1381,8 +1509,7 @@ def _cycle_candidates_common(
             intern_fn=intern_fn,
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
-            cnf2_enabled_fn=cnf2_enabled_fn,
-            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+            runtime_fns=runtime_fns,
         )
     else:
         if safe_gather_policy_value is None:
@@ -1397,16 +1524,151 @@ def _cycle_candidates_common(
             intern_fn=intern_fn,
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
-            cnf2_enabled_fn=cnf2_enabled_fn,
-            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+            runtime_fns=runtime_fns,
         )
     if not bool(jax.device_get(ledger.corrupt)):
         host_raise_if_bad_fn(ledger, "Ledger capacity exceeded during cycle")
     return ledger, frontier_ids, strata, q_map
 
 
+def _cycle_candidates_common_state(
+    state: LedgerState,
+    frontier_ids,
+    validate_mode: ValidateMode,
+    *,
+    policy_mode: PolicyMode,
+    intern_fn: InternFn | None,
+    intern_cfg: InternConfig | None,
+    emit_candidates_fn: EmitCandidatesFn | None,
+    host_raise_if_bad_fn: HostRaiseFn | None,
+    safe_gather_policy: SafetyPolicy | None,
+    safe_gather_policy_value: PolicyValue | None,
+    guard_cfg: GuardConfig | None,
+    cnf2_cfg: Cnf2Config | None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
+):
+    """Shared wrapper for CNF-2 entrypoints returning LedgerState."""
+    if not isinstance(policy_mode, PolicyMode):
+        raise PrismPolicyModeError(mode=policy_mode, context="cycle_candidates_state")
+    if intern_fn is None:
+        intern_fn = intern_nodes
+    if cnf2_cfg is not None:
+        if intern_cfg is None:
+            intern_cfg = cnf2_cfg.intern_cfg
+        if guard_cfg is None and cnf2_cfg.guard_cfg is not None:
+            guard_cfg = cnf2_cfg.guard_cfg
+        if intern_fn is None and cnf2_cfg.intern_fn is not None:
+            intern_fn = cnf2_cfg.intern_fn
+        if emit_candidates_fn is None and cnf2_cfg.emit_candidates_fn is not None:
+            emit_candidates_fn = cnf2_cfg.emit_candidates_fn
+        if runtime_fns is DEFAULT_CNF2_RUNTIME_FNS:
+            runtime_fns = cnf2_cfg.runtime_fns
+        if policy_mode == PolicyMode.STATIC:
+            if cnf2_cfg.policy_binding is not None:
+                if cnf2_cfg.policy_binding.mode == PolicyMode.VALUE:
+                    raise PrismPolicyBindingError(
+                        "cycle_candidates_static_state received cfg.policy_binding value-mode; "
+                        "use cycle_candidates_value_state",
+                        context="cycle_candidates_static_state",
+                        policy_mode=PolicyMode.STATIC,
+                    )
+                if safe_gather_policy is None:
+                    safe_gather_policy = require_static_policy(
+                        cnf2_cfg.policy_binding,
+                        context="cycle_candidates_static_state",
+                    )
+            if cnf2_cfg.safe_gather_policy_value is not None:
+                raise PrismPolicyBindingError(
+                    "cycle_candidates_static_state received cfg.safe_gather_policy_value; "
+                    "use cycle_candidates_value_state",
+                    context="cycle_candidates_static_state",
+                    policy_mode=PolicyMode.STATIC,
+                )
+            if safe_gather_policy is None and cnf2_cfg.safe_gather_policy is not None:
+                safe_gather_policy = cnf2_cfg.safe_gather_policy
+        else:
+            if cnf2_cfg.policy_binding is not None:
+                if cnf2_cfg.policy_binding.mode == PolicyMode.STATIC:
+                    raise PrismPolicyBindingError(
+                        "cycle_candidates_value_state received cfg.policy_binding static-mode; "
+                        "use cycle_candidates_static_state",
+                        context="cycle_candidates_value_state",
+                        policy_mode=PolicyMode.VALUE,
+                    )
+                if safe_gather_policy_value is None:
+                    safe_gather_policy_value = require_value_policy(
+                        cnf2_cfg.policy_binding,
+                        context="cycle_candidates_value_state",
+                    )
+            if cnf2_cfg.safe_gather_policy is not None:
+                raise PrismPolicyBindingError(
+                    "cycle_candidates_value_state received cfg.safe_gather_policy; "
+                    "use cycle_candidates_static_state",
+                    context="cycle_candidates_value_state",
+                    policy_mode=PolicyMode.VALUE,
+                )
+            if (
+                safe_gather_policy_value is None
+                and cnf2_cfg.safe_gather_policy_value is not None
+            ):
+                safe_gather_policy_value = cnf2_cfg.safe_gather_policy_value
+    if policy_mode == PolicyMode.STATIC:
+        if safe_gather_policy_value is not None:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_static_state received safe_gather_policy_value; "
+                "use cycle_candidates_value_state",
+                context="cycle_candidates_static_state",
+                policy_mode=PolicyMode.STATIC,
+            )
+    else:
+        if safe_gather_policy is not None:
+            raise PrismPolicyBindingError(
+                "cycle_candidates_value_state received safe_gather_policy; "
+                "use cycle_candidates_static_state",
+                context="cycle_candidates_value_state",
+                policy_mode=PolicyMode.VALUE,
+            )
+    if emit_candidates_fn is None:
+        emit_candidates_fn = _emit_candidates_default
+    if host_raise_if_bad_fn is None:
+        host_raise_if_bad_fn = _host_raise_if_bad
+    if policy_mode == PolicyMode.STATIC:
+        if safe_gather_policy is None:
+            safe_gather_policy = DEFAULT_SAFETY_POLICY
+        state, frontier_ids, strata, q_map = _cycle_candidates_static_state(
+            state,
+            frontier_ids,
+            validate_mode=validate_mode,
+            cfg=cnf2_cfg,
+            safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            runtime_fns=runtime_fns,
+        )
+    else:
+        if safe_gather_policy_value is None:
+            safe_gather_policy_value = POLICY_VALUE_DEFAULT
+        state, frontier_ids, strata, q_map = _cycle_candidates_value_state(
+            state,
+            frontier_ids,
+            validate_mode=validate_mode,
+            cfg=cnf2_cfg,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            runtime_fns=runtime_fns,
+        )
+    if not bool(jax.device_get(state.ledger.corrupt)):
+        host_raise_if_bad_fn(state.ledger, "Ledger capacity exceeded during cycle")
+    return state, frontier_ids, strata, q_map
+
+
 def cycle_candidates_static(
-    ledger,
+    ledger: Ledger | LedgerState,
     frontier_ids,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
@@ -1417,12 +1679,27 @@ def cycle_candidates_static(
     safe_gather_policy: SafetyPolicy | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | None = None,
-    cnf2_enabled_fn=None,
-    cnf2_slot1_enabled_fn=None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
-    """Interface/Control wrapper for CNF-2 evaluation (static policy)."""
+    """Interface/Control wrapper for CNF-2 evaluation (static policy).
+
+    If ``ledger`` is a LedgerState, returns a LedgerState to preserve the index.
+    Otherwise returns a Ledger.
+    """
+    if isinstance(ledger, LedgerState):
+        return cycle_candidates_static_state(
+            ledger,
+            frontier_ids,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            host_raise_if_bad_fn=host_raise_if_bad_fn,
+            safe_gather_policy=safe_gather_policy,
+            guard_cfg=guard_cfg,
+            cnf2_cfg=cnf2_cfg,
+            runtime_fns=runtime_fns,
+        )
     return _cycle_candidates_common(
         ledger,
         frontier_ids,
@@ -1436,15 +1713,12 @@ def cycle_candidates_static(
         safe_gather_policy_value=None,
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
-        cnf2_flags=cnf2_flags,
-        cnf2_mode=cnf2_mode,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        runtime_fns=runtime_fns,
     )
 
 
 def cycle_candidates_value(
-    ledger,
+    ledger: Ledger | LedgerState,
     frontier_ids,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
@@ -1455,12 +1729,27 @@ def cycle_candidates_value(
     safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | None = None,
-    cnf2_enabled_fn=None,
-    cnf2_slot1_enabled_fn=None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
-    """Interface/Control wrapper for CNF-2 evaluation (policy as JAX value)."""
+    """Interface/Control wrapper for CNF-2 evaluation (policy as JAX value).
+
+    If ``ledger`` is a LedgerState, returns a LedgerState to preserve the index.
+    Otherwise returns a Ledger.
+    """
+    if isinstance(ledger, LedgerState):
+        return cycle_candidates_value_state(
+            ledger,
+            frontier_ids,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            host_raise_if_bad_fn=host_raise_if_bad_fn,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+            cnf2_cfg=cnf2_cfg,
+            runtime_fns=runtime_fns,
+        )
     return _cycle_candidates_common(
         ledger,
         frontier_ids,
@@ -1474,15 +1763,76 @@ def cycle_candidates_value(
         safe_gather_policy_value=safe_gather_policy_value,
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
-        cnf2_flags=cnf2_flags,
-        cnf2_mode=cnf2_mode,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        runtime_fns=runtime_fns,
     )
 
 
-def cycle_candidates(
-    ledger,
+def cycle_candidates_static_state(
+    state: LedgerState,
+    frontier_ids,
+    validate_mode: ValidateMode = ValidateMode.NONE,
+    *,
+    intern_fn: InternFn | None = None,
+    intern_cfg: InternConfig | None = None,
+    emit_candidates_fn: EmitCandidatesFn | None = None,
+    host_raise_if_bad_fn: HostRaiseFn | None = None,
+    safe_gather_policy: SafetyPolicy | None = None,
+    guard_cfg: GuardConfig | None = None,
+    cnf2_cfg: Cnf2Config | None = None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
+):
+    """Interface/Control wrapper for CNF-2 evaluation (static policy, state)."""
+    return _cycle_candidates_common_state(
+        state,
+        frontier_ids,
+        validate_mode,
+        policy_mode=PolicyMode.STATIC,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        emit_candidates_fn=emit_candidates_fn,
+        host_raise_if_bad_fn=host_raise_if_bad_fn,
+        safe_gather_policy=safe_gather_policy,
+        safe_gather_policy_value=None,
+        guard_cfg=guard_cfg,
+        cnf2_cfg=cnf2_cfg,
+        runtime_fns=runtime_fns,
+    )
+
+
+def cycle_candidates_value_state(
+    state: LedgerState,
+    frontier_ids,
+    validate_mode: ValidateMode = ValidateMode.NONE,
+    *,
+    intern_fn: InternFn | None = None,
+    intern_cfg: InternConfig | None = None,
+    emit_candidates_fn: EmitCandidatesFn | None = None,
+    host_raise_if_bad_fn: HostRaiseFn | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
+    guard_cfg: GuardConfig | None = None,
+    cnf2_cfg: Cnf2Config | None = None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
+):
+    """Interface/Control wrapper for CNF-2 evaluation (policy value, state)."""
+    return _cycle_candidates_common_state(
+        state,
+        frontier_ids,
+        validate_mode,
+        policy_mode=PolicyMode.VALUE,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        emit_candidates_fn=emit_candidates_fn,
+        host_raise_if_bad_fn=host_raise_if_bad_fn,
+        safe_gather_policy=None,
+        safe_gather_policy_value=safe_gather_policy_value,
+        guard_cfg=guard_cfg,
+        cnf2_cfg=cnf2_cfg,
+        runtime_fns=runtime_fns,
+    )
+
+
+def cycle_candidates_state(
+    state: LedgerState,
     frontier_ids,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
@@ -1494,16 +1844,85 @@ def cycle_candidates(
     safe_gather_policy_value: PolicyValue | None = None,
     guard_cfg: GuardConfig | None = None,
     cnf2_cfg: Cnf2Config | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | None = None,
-    cnf2_enabled_fn=None,
-    cnf2_slot1_enabled_fn=None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
+):
+    """Interface/Control wrapper for CNF-2 evaluation on LedgerState."""
+    binding = resolve_policy_binding(
+        policy=safe_gather_policy,
+        policy_value=safe_gather_policy_value,
+        context="cycle_candidates_state",
+    )
+    if binding.mode == PolicyMode.VALUE:
+        return cycle_candidates_value_state(
+            state,
+            frontier_ids,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            host_raise_if_bad_fn=host_raise_if_bad_fn,
+            safe_gather_policy_value=require_value_policy(
+                binding, context="cycle_candidates_state"
+            ),
+            guard_cfg=guard_cfg,
+            cnf2_cfg=cnf2_cfg,
+            runtime_fns=runtime_fns,
+        )
+    return cycle_candidates_static_state(
+        state,
+        frontier_ids,
+        validate_mode=validate_mode,
+        intern_fn=intern_fn,
+        intern_cfg=intern_cfg,
+        emit_candidates_fn=emit_candidates_fn,
+        host_raise_if_bad_fn=host_raise_if_bad_fn,
+        safe_gather_policy=require_static_policy(
+            binding, context="cycle_candidates_state"
+        ),
+        guard_cfg=guard_cfg,
+        cnf2_cfg=cnf2_cfg,
+        runtime_fns=runtime_fns,
+    )
+
+
+def cycle_candidates(
+    ledger: Ledger | LedgerState,
+    frontier_ids,
+    validate_mode: ValidateMode = ValidateMode.NONE,
+    *,
+    intern_fn: InternFn | None = None,
+    intern_cfg: InternConfig | None = None,
+    emit_candidates_fn: EmitCandidatesFn | None = None,
+    host_raise_if_bad_fn: HostRaiseFn | None = None,
+    safe_gather_policy: SafetyPolicy | None = None,
+    safe_gather_policy_value: PolicyValue | None = None,
+    guard_cfg: GuardConfig | None = None,
+    cnf2_cfg: Cnf2Config | None = None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
     """Interface/Control wrapper for CNF-2 evaluation with DI hooks.
 
     Axis: Interface/Control. Commutes with q. Erased by q.
     Test: tests/test_candidate_cycle.py
+
+    If ``ledger`` is a LedgerState, returns a LedgerState to preserve the index.
+    Otherwise returns a Ledger.
     """
+    if isinstance(ledger, LedgerState):
+        return cycle_candidates_state(
+            ledger,
+            frontier_ids,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            host_raise_if_bad_fn=host_raise_if_bad_fn,
+            safe_gather_policy=safe_gather_policy,
+            safe_gather_policy_value=safe_gather_policy_value,
+            guard_cfg=guard_cfg,
+            cnf2_cfg=cnf2_cfg,
+            runtime_fns=runtime_fns,
+        )
     binding = resolve_policy_binding(
         policy=safe_gather_policy,
         policy_value=safe_gather_policy_value,
@@ -1518,15 +1937,12 @@ def cycle_candidates(
             intern_cfg=intern_cfg,
             emit_candidates_fn=emit_candidates_fn,
             host_raise_if_bad_fn=host_raise_if_bad_fn,
-        safe_gather_policy_value=require_value_policy(
-            binding, context="cycle_candidates"
-        ),
+            safe_gather_policy_value=require_value_policy(
+                binding, context="cycle_candidates"
+            ),
             guard_cfg=guard_cfg,
             cnf2_cfg=cnf2_cfg,
-            cnf2_flags=cnf2_flags,
-            cnf2_mode=cnf2_mode,
-            cnf2_enabled_fn=cnf2_enabled_fn,
-            cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+            runtime_fns=runtime_fns,
         )
     return cycle_candidates_static(
         ledger,
@@ -1541,15 +1957,12 @@ def cycle_candidates(
         ),
         guard_cfg=guard_cfg,
         cnf2_cfg=cnf2_cfg,
-        cnf2_flags=cnf2_flags,
-        cnf2_mode=cnf2_mode,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        runtime_fns=runtime_fns,
     )
 
 
 def cycle_candidates_bound(
-    ledger,
+    ledger: Ledger | LedgerState,
     frontier_ids,
     cfg: Cnf2BoundConfig,
     *,
@@ -1559,33 +1972,95 @@ def cycle_candidates_bound(
     emit_candidates_fn: EmitCandidatesFn | None = None,
     host_raise_if_bad_fn: HostRaiseFn | None = None,
     guard_cfg: GuardConfig | None = None,
-    cnf2_flags: Cnf2Flags | None = None,
-    cnf2_mode: Cnf2Mode | None = None,
-    cnf2_enabled_fn=None,
-    cnf2_slot1_enabled_fn=None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
 ):
-    """Interface/Control wrapper for CNF-2 evaluation with required PolicyBinding."""
-    policy_binding = cfg.policy_binding
-    cnf2_cfg = cfg.as_cfg()
-    return _cycle_candidates_common(
+    """Interface/Control wrapper for CNF-2 evaluation with required PolicyBinding.
+
+    If ``ledger`` is a LedgerState, returns a LedgerState to preserve the index.
+    Otherwise returns a Ledger.
+    """
+    if isinstance(ledger, LedgerState):
+        return cycle_candidates_bound_state(
+            ledger,
+            frontier_ids,
+            cfg,
+            validate_mode=validate_mode,
+            intern_fn=intern_fn,
+            intern_cfg=intern_cfg,
+            emit_candidates_fn=emit_candidates_fn,
+            host_raise_if_bad_fn=host_raise_if_bad_fn,
+            guard_cfg=guard_cfg,
+            runtime_fns=runtime_fns,
+        )
+    if host_raise_if_bad_fn is None:
+        host_raise_if_bad_fn = _host_raise_if_bad
+    base_cfg = cfg.as_cfg()
+    if base_cfg.policy_binding is not None or base_cfg.safe_gather_policy is not None or base_cfg.safe_gather_policy_value is not None:
+        base_cfg = replace(
+            base_cfg,
+            policy_binding=None,
+            safe_gather_policy=None,
+            safe_gather_policy_value=None,
+        )
+    cfg = cnf2_config_bound(cfg.policy_binding, cfg=base_cfg)
+    bundle = _EmitInternFns(emit_candidates_fn=emit_candidates_fn, intern_fn=intern_fn)
+    ledger, frontier_ids, strata, q_map = _cycle_candidates_bound(
         ledger,
         frontier_ids,
-        validate_mode,
-        policy_mode=policy_binding.mode,
-        intern_fn=intern_fn,
-        intern_cfg=intern_cfg,
-        emit_candidates_fn=emit_candidates_fn,
-        host_raise_if_bad_fn=host_raise_if_bad_fn,
-        safe_gather_policy=require_static_policy(
-            policy_binding, context="cycle_candidates_bound"
-        ) if policy_binding.mode == PolicyMode.STATIC else None,
-        safe_gather_policy_value=require_value_policy(
-            policy_binding, context="cycle_candidates_bound"
-        ) if policy_binding.mode == PolicyMode.VALUE else None,
+        cfg,
+        validate_mode=validate_mode,
         guard_cfg=guard_cfg,
-        cnf2_cfg=cnf2_cfg,
-        cnf2_flags=cnf2_flags,
-        cnf2_mode=cnf2_mode,
-        cnf2_enabled_fn=cnf2_enabled_fn,
-        cnf2_slot1_enabled_fn=cnf2_slot1_enabled_fn,
+        intern_fn=bundle.intern_fn if bundle.intern_fn is not None else _ledger_intern.intern_nodes,
+        intern_cfg=intern_cfg,
+        emit_candidates_fn=bundle.emit_candidates_fn if bundle.emit_candidates_fn is not None else _emit_candidates_default,
+        runtime_fns=runtime_fns,
     )
+    if not bool(jax.device_get(ledger.corrupt)):
+        host_raise_if_bad_fn(ledger, "Ledger capacity exceeded during cycle")
+    return ledger, frontier_ids, strata, q_map
+
+
+def cycle_candidates_bound_state(
+    state: LedgerState,
+    frontier_ids,
+    cfg: Cnf2BoundConfig,
+    *,
+    validate_mode: ValidateMode = ValidateMode.NONE,
+    intern_fn: InternFn | None = None,
+    intern_cfg: InternConfig | None = None,
+    emit_candidates_fn: EmitCandidatesFn | None = None,
+    host_raise_if_bad_fn: HostRaiseFn | None = None,
+    guard_cfg: GuardConfig | None = None,
+    runtime_fns: Cnf2RuntimeFns = DEFAULT_CNF2_RUNTIME_FNS,
+):
+    """Interface/Control wrapper for CNF-2 evaluation (PolicyBinding, state)."""
+    if host_raise_if_bad_fn is None:
+        host_raise_if_bad_fn = _host_raise_if_bad
+    base_cfg = cfg.as_cfg()
+    if (
+        base_cfg.policy_binding is not None
+        or base_cfg.safe_gather_policy is not None
+        or base_cfg.safe_gather_policy_value is not None
+    ):
+        base_cfg = replace(
+            base_cfg,
+            policy_binding=None,
+            safe_gather_policy=None,
+            safe_gather_policy_value=None,
+        )
+    cfg = cnf2_config_bound(cfg.policy_binding, cfg=base_cfg)
+    bundle = _EmitInternFns(emit_candidates_fn=emit_candidates_fn, intern_fn=intern_fn)
+    state, frontier_ids, strata, q_map = _cycle_candidates_bound_state(
+        state,
+        frontier_ids,
+        cfg,
+        validate_mode=validate_mode,
+        guard_cfg=guard_cfg,
+        intern_fn=bundle.intern_fn if bundle.intern_fn is not None else _ledger_intern.intern_nodes,
+        intern_cfg=intern_cfg,
+        emit_candidates_fn=bundle.emit_candidates_fn if bundle.emit_candidates_fn is not None else _emit_candidates_default,
+        runtime_fns=runtime_fns,
+    )
+    if not bool(jax.device_get(state.ledger.corrupt)):
+        host_raise_if_bad_fn(state.ledger, "Ledger capacity exceeded during cycle")
+    return state, frontier_ids, strata, q_map

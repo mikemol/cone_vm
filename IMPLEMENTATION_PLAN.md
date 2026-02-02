@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # Prism VM Evolution Implementation Plan
 
 This plan implements the features described in `in/in-4.md` through
@@ -711,7 +716,7 @@ Tasks:
   - Local block sort and merge once the contract is stable.
 
 ## Acceptance Gates
-- **m1 gate:** univalence + no aliasing + baseline equivalence on small suite.
+- **baseline gate (m1 suite):** univalence + no aliasing + baseline equivalence on small suite.
 - **m2 gate:** strata validator passes + `q` projection total on emitted strata.
 - **m3 gate:** denotation invariance across unsorted/rank/morton/block schedulers,
   plus pre-step immutability enforced as a hyperstrata visibility rule.
@@ -755,7 +760,7 @@ m5:
 - CLI (banded): per-milestone configs use `--milestone-band` so each band is
   exclusive; running `m1`→`m5` covers the full suite without reruns.
   - `pytest -c pytest.m2.ini` runs only tests marked `m2`.
-  - `pytest -c pytest.m1.ini` runs `m1` plus unmarked tests (via
+  - `pytest -c pytest.baseline.ini` runs `m1` plus unmarked tests (via
     `--include-unmarked`).
 - CLI (inclusive): `pytest --milestone=m2` runs all tests at or below `m2`.
 - VS Code: edit `.vscode/pytest.env` to set `PRISM_MILESTONE=m2`, then refresh

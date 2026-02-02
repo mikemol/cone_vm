@@ -1,9 +1,12 @@
 import os
+from dataclasses import dataclass
 
 import jax
 import numpy as np
 
 from prism_vm_core.domains import _host_int_value
+
+# dataflow-bundle: changed, rewrite_child, wrap_emit
 
 _damage_metrics_cycles = 0
 _damage_metrics_hot_nodes = 0
@@ -13,6 +16,13 @@ _cnf2_metrics_cycles = 0
 _cnf2_metrics_rewrite_child = 0
 _cnf2_metrics_changed = 0
 _cnf2_metrics_wrap_emit = 0
+
+
+@dataclass(frozen=True)
+class _Cnf2MetricsArgs:
+    rewrite_child: object
+    changed: object
+    wrap_emit: object
 
 
 def _damage_metrics_enabled():
@@ -103,10 +113,13 @@ def _cnf2_metrics_update(rewrite_child, changed, wrap_emit):
     global _cnf2_metrics_wrap_emit
     if not _cnf2_metrics_enabled():
         return
+    bundle = _Cnf2MetricsArgs(
+        rewrite_child=rewrite_child, changed=changed, wrap_emit=wrap_emit
+    )
     _cnf2_metrics_cycles += 1
-    _cnf2_metrics_rewrite_child += int(rewrite_child)
-    _cnf2_metrics_changed += int(changed)
-    _cnf2_metrics_wrap_emit += int(wrap_emit)
+    _cnf2_metrics_rewrite_child += int(bundle.rewrite_child)
+    _cnf2_metrics_changed += int(bundle.changed)
+    _cnf2_metrics_wrap_emit += int(bundle.wrap_emit)
 
 
 def _damage_metrics_update(arena, tile_size, rank_hot=0):

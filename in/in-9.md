@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 NOTE: CONSOLIDATED by in-13.md and in-14.md. This is the source analysis for CNF-2 pipeline semantics.
 
 Below is a **formal, reviewer-grade comparison** between:

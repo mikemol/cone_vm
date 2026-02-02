@@ -1,13 +1,80 @@
 import os
 import sys
+import subprocess
 from pathlib import Path
 
-import jax
 import pytest
+
+
+def _gpu_total_mb() -> float | None:
+    try:
+        out = subprocess.check_output(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.total",
+                "--format=csv,noheader,nounits",
+            ],
+            text=True,
+        ).strip()
+    except Exception:
+        return None
+    if not out:
+        return None
+    try:
+        return float(out.splitlines()[0])
+    except Exception:
+        return None
+
+
+def _set_jax_gpu_memory_limits() -> None:
+    # Disable preallocation unless explicitly set.
+    os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+    if "XLA_PYTHON_CLIENT_MEM_FRACTION" in os.environ:
+        return
+    fraction = os.environ.get("PRISM_JAX_GPU_MEM_FRACTION", "").strip()
+    if fraction:
+        os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = fraction
+        return
+    cap_mb = os.environ.get("PRISM_JAX_GPU_MEM_CAP_MB", "").strip()
+    if not cap_mb:
+        return
+    try:
+        cap = float(cap_mb)
+    except Exception:
+        return
+    total = _gpu_total_mb()
+    if total is None or total <= 0:
+        return
+    frac = max(min(cap / total, 1.0), 0.0)
+    os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(frac)
+
+
+def _set_jax_compilation_cache() -> None:
+    cache_dir = os.environ.get("PRISM_JAX_COMPILATION_CACHE_DIR", "").strip()
+    if not cache_dir:
+        cache_dir = os.environ.get("PRISM_JAX_CACHE_DIR", "").strip()
+    if not cache_dir:
+        return
+    cache_path = Path(cache_dir).expanduser()
+    cache_path.mkdir(parents=True, exist_ok=True)
+    try:
+        from jax.experimental import compilation_cache as cc
+    except Exception:
+        return
+    set_cache_dir = getattr(cc, "set_cache_dir", None)
+    if set_cache_dir is None and hasattr(cc, "compilation_cache"):
+        set_cache_dir = getattr(cc.compilation_cache, "set_cache_dir", None)
+    if set_cache_dir is not None:
+        set_cache_dir(str(cache_path))
+
 
 # Enable strict scatter guard in tests unless explicitly overridden.
 os.environ.setdefault("PRISM_SCATTER_GUARD", "1")
 os.environ.setdefault("PRISM_TEST_GUARDS", "1")
+_set_jax_gpu_memory_limits()
+
+import jax
+_set_jax_compilation_cache()
 
 # Ensure repo root is importable when pytest uses importlib mode.
 ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -112,7 +179,11 @@ def pytest_configure(config):
     selector = _parse_milestone_selector(config.getoption("--milestone-band"))
     if selector is not None:
         low, high = selector
-        milestone = high if high is not None else low
+        if low == 1:
+            # Treat m1-band runs as baseline coverage (avoid m1-only semantics).
+            milestone = _parse_milestone(config.getoption("--milestone"))
+        else:
+            milestone = high if high is not None else low
     else:
         milestone = _parse_milestone(config.getoption("--milestone"))
     if milestone is None:
@@ -139,6 +210,21 @@ def pytest_generate_tests(metafunc):
         metafunc.parametrize("backend_device", backends, ids=ids, indirect=True)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _jax_warmup_session() -> None:
+    if os.environ.get("PRISM_JAX_WARMUP", "").strip().lower() not in {
+        "1",
+        "true",
+        "yes",
+    }:
+        return
+    from tests import harness
+
+    # Warm up the BSP intrinsic pipeline to populate JAX compile caches.
+    harness.denote_bsp_intrinsic("(add (suc zero) (suc zero))", max_steps=64)
+    harness.denote_bsp_intrinsic("(add zero (suc (suc zero)))", max_steps=64)
+
+
 @pytest.fixture
 def backend_device(request):
     backend = getattr(request, "param", None)
@@ -149,10 +235,10 @@ def backend_device(request):
 
 @pytest.fixture(autouse=True)
 def _set_default_device(request):
-    if not request.node.get_closest_marker("backend_matrix"):
-        yield
-        return
-    device = request.getfixturevalue("backend_device")
+    if request.node.get_closest_marker("backend_matrix"):
+        device = request.getfixturevalue("backend_device")
+    else:
+        device = jax.devices("cpu")[0]
     with jax.default_device(device):
         yield
 

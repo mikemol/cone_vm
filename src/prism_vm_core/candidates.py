@@ -1,3 +1,5 @@
+from typing import Callable
+
 import jax.numpy as jnp
 
 from prism_core.compact import (
@@ -23,7 +25,7 @@ def _candidate_indices(
 def candidate_indices_cfg(
     enabled,
     *,
-    candidate_indices_fn=None,
+    candidate_indices_fn: Callable[..., CompactResult] | None = None,
     compact_cfg: CompactConfig | None = None,
 ):
     """Interface/Control wrapper for candidate index selection."""

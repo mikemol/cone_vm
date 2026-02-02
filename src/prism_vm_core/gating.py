@@ -17,9 +17,7 @@ def _parse_milestone_value(value):
     return None
 
 
-def _read_pytest_milestone():
-    if not _TEST_GUARDS:
-        return None
+def _read_pytest_milestone_path():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     path = os.path.join(repo_root, ".pytest-milestone")
     try:
@@ -39,48 +37,40 @@ def _read_pytest_milestone():
     return None
 
 
-def _cnf2_enabled():
-    # CNF-2 pipeline is staged for m2+; guard uses env/milestone in tests.
-    # See IMPLEMENTATION_PLAN.md (m2 CNF-2 enablement).
-    value = os.environ.get("PRISM_ENABLE_CNF2", "").strip().lower()
-    if value in ("1", "true", "yes", "on"):
-        return True
-    milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
-    if milestone is None:
-        milestone = _read_pytest_milestone()
-    return milestone is not None and milestone >= 2
+def _read_pytest_milestone():
+    if not _TEST_GUARDS:
+        return None
+    return _read_pytest_milestone_path()
 
 
-def _cnf2_slot1_enabled():
-    # Slot1 continuation is staged for m2+; hyperstrata visibility is enforced
-    # under test guards (m3 normative) to justify continuation enablement.
-    # See IMPLEMENTATION_PLAN.md (CNF-2 continuation slot).
-    value = os.environ.get("PRISM_ENABLE_CNF2_SLOT1", "").strip().lower()
-    if value in ("1", "true", "yes", "on"):
-        return True
-    milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
-    if milestone is None:
-        milestone = _read_pytest_milestone()
-    return milestone is not None and milestone >= 2
+def _read_pytest_milestone_unprotected():
+    return _read_pytest_milestone_path()
+
+
+def _normalize_milestone(value):
+    milestone = _parse_milestone_value(value)
+    if milestone != 1:
+        return milestone
+    # m1-only mode is deprecated; treat m1 as baseline coverage when possible.
+    baseline = _read_pytest_milestone_unprotected()
+    return baseline or 2
 
 
 def _default_bsp_mode() -> BspMode:
     # CNF-2 becomes the default at m2; intrinsic remains the oracle path.
     # See IMPLEMENTATION_PLAN.md (m1/m2 engine staging).
-    return BspMode.CNF2 if _cnf2_enabled() else BspMode.INTRINSIC
+    return BspMode.CNF2
 
 
-def _normalize_bsp_mode(bsp_mode):
-    return coerce_bsp_mode(
-        bsp_mode, default_fn=_default_bsp_mode, context="bsp_mode"
-    )
+def _normalize_bsp_mode(bsp_mode: BspMode | str | None):
+    return coerce_bsp_mode(bsp_mode, default_fn=_default_bsp_mode)
 
 
 def _servo_enabled():
     value = os.environ.get("PRISM_ENABLE_SERVO", "").strip().lower()
     if value in ("1", "true", "yes", "on"):
         return True
-    milestone = _parse_milestone_value(os.environ.get("PRISM_MILESTONE", ""))
+    milestone = _normalize_milestone(os.environ.get("PRISM_MILESTONE", ""))
     if milestone is None:
         milestone = _read_pytest_milestone()
     return milestone is not None and milestone >= 5
@@ -103,8 +93,8 @@ def _gpu_metrics_device_index():
 __all__ = [
     "_parse_milestone_value",
     "_read_pytest_milestone",
-    "_cnf2_enabled",
-    "_cnf2_slot1_enabled",
+    "_read_pytest_milestone_unprotected",
+    "_normalize_milestone",
     "_default_bsp_mode",
     "_normalize_bsp_mode",
     "_servo_enabled",

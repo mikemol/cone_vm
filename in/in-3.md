@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 NOTE: OBSOLETED by in-1.md/in-2.md. This is a discarded prototype retained for history.
 
 Import jax

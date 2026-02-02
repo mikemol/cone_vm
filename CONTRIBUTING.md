@@ -1,3 +1,8 @@
+---
+doc_revision: 3
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # Contributing
 
 Thanks for contributing. This repo enforces a strict execution policy to protect
@@ -34,6 +39,14 @@ mise exec -- python scripts/policy_check.py --workflows
 CI also runs `scripts/policy_check.py --workflows --posture`, which checks the
 GitHub Actions settings for this repository.
 
+## Doc front-matter (reader-only re-internment signal)
+Markdown docs include a YAML front-matter block with:
+- `doc_revision` (integer)
+- `reader_reintern` (reader-only guidance)
+
+When you make a conceptual change, bump `doc_revision`. This is a reader-only
+signal to re-intern; it is not enforced by tooling or repo state.
+
 ## GPU tests and sandboxed environments
 Some tests rely on CUDA/JAX GPU backends. If you are running in a sandboxed
 environment, GPU access may require explicit sandbox escalation/privileged
@@ -49,9 +62,36 @@ scripts/run_tests.sh [pytest args...]
 If running under Codex or another sandboxed runner, increase the sandbox
 command timeout before invoking the helper.
 
+## Profiling targeted tests (bounded time)
+To capture a short profile of a slow test without waiting for completion:
+```
+mise exec -- python scripts/profile_pytest_slice.py \
+  --seconds 60 \
+  --out artifacts/profiles/pytest_slice.prof \
+  -- -q tests/test_strata_random_programs.py
+```
+This dumps a `.prof` file even if the test would take longer than the allotted
+time, so you can inspect hotspots without running the full suite.
+
 ## Agda proofs
 Agda checks run in a pinned container image. See `agda/README.md` for details.
 Local run:
 ```
 scripts/check_agda_container.sh
 ```
+
+## Dataflow grammar invariant
+Recurring parameter bundles are treated as type-level smells. Any bundle that
+crosses function boundaries must be promoted to a dataclass (config or local
+bundle), or explicitly documented.
+
+The dataflow grammar audit enforces:
+- Tier 1/2 bundles (crossing config or recurring across functions) must be
+  promoted to a dataclass bundle.
+- Tier 3 bundles (single-site) must either be promoted or documented in-place.
+
+To document an intentional unbundled tuple, add a marker comment:
+```
+# dataflow-bundle: a1, a2, a3
+```
+and explain why it must remain unbundled.

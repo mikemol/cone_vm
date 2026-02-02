@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 This is the **Prism IR** implementation.
 
 In this architecture, the **Host** acts as the static analyzer and deduplicator. It constructs a "perfect" (maximally shared) Intermediate Representation in the JAX memory space. The **Device** (JAX) serves as the evaluation engine, only running kernels when the IR explicitly demands computation that cannot be resolved statically.

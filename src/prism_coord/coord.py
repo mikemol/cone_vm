@@ -1,19 +1,66 @@
+from dataclasses import dataclass
+from functools import lru_cache, partial
+
 import jax
 import jax.numpy as jnp
 from jax import lax
-from functools import lru_cache, partial
 
-from prism_ledger.intern import _coord_norm_id_jax, intern_nodes
-from prism_ledger.config import InternConfig
+from prism_ledger.intern import _coord_norm_id_jax, intern_nodes, intern_nodes_state
+from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
+from prism_ledger.index import LedgerState, derive_ledger_index
+from prism_core.di import call_with_optional_kwargs
 from prism_coord.config import CoordConfig, DEFAULT_COORD_CONFIG
 from prism_vm_core.domains import _host_int_value
 from prism_vm_core.ontology import OP_COORD_ONE, OP_COORD_PAIR, OP_COORD_ZERO
 from prism_vm_core.structures import NodeBatch
 from prism_vm_core.protocols import InternFn, NodeBatchFn
 
+# dataflow-bundle: a1, a2, op
+# dataflow-bundle: left_id, right_id
+
+
+@dataclass(frozen=True)
+class _CoordNodeArgs:
+    op: object
+    a1: object
+    a2: object
+
+
+@dataclass(frozen=True)
+class _CoordBinaryArgs:
+    left_id: object
+    right_id: object
+
 
 def _node_batch(op, a1, a2) -> NodeBatch:
-    return NodeBatch(op=op, a1=a1, a2=a2)
+    bundle = _CoordNodeArgs(op=op, a1=a1, a2=a2)
+    return NodeBatch(op=bundle.op, a1=bundle.a1, a2=bundle.a2)
+
+
+def _intern_cfg_for_fn(intern_fn):
+    cfg = None
+    if isinstance(intern_fn, partial) and intern_fn.func is intern_nodes:
+        cfg = intern_fn.keywords.get("cfg")
+    return cfg or DEFAULT_INTERN_CONFIG
+
+
+def _call_intern(ledger, batch, *, intern_fn):
+    if isinstance(ledger, LedgerState) and (
+        intern_fn is intern_nodes
+        or (isinstance(intern_fn, partial) and intern_fn.func is intern_nodes)
+    ):
+        kwargs = {}
+        if isinstance(intern_fn, partial):
+            kwargs.update(intern_fn.keywords or {})
+            kwargs.pop("ledger_index", None)
+        return intern_nodes_state(ledger, batch, **kwargs)
+    cfg = _intern_cfg_for_fn(intern_fn)
+    ledger_index = derive_ledger_index(
+        ledger, op_buckets_full_range=cfg.op_buckets_full_range
+    )
+    return call_with_optional_kwargs(
+        intern_fn, {"ledger_index": ledger_index}, ledger, batch
+    )
 
 
 @jax.jit(static_argnames=("coord_norm_id_jax_fn",))
@@ -31,13 +78,14 @@ def _coord_leaf_id(
     node_batch_fn=_node_batch,
     host_int_value_fn=_host_int_value,
 ):
-    ids, ledger = intern_fn(
+    ids, ledger = _call_intern(
         ledger,
         node_batch_fn(
             jnp.array([op], dtype=jnp.int32),
             jnp.array([0], dtype=jnp.int32),
             jnp.array([0], dtype=jnp.int32),
         ),
+        intern_fn=intern_fn,
     )
     # SYNC: host reads device id for coord leaf (m1).
     return host_int_value_fn(ids[0]), ledger
@@ -59,13 +107,14 @@ def _coord_promote_leaf(
         node_batch_fn=node_batch_fn,
         host_int_value_fn=host_int_value_fn,
     )
-    ids, ledger = intern_fn(
+    ids, ledger = _call_intern(
         ledger,
         node_batch_fn(
             jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
             jnp.array([leaf_id], dtype=jnp.int32),
             jnp.array([zero_id], dtype=jnp.int32),
         ),
+        intern_fn=intern_fn,
     )
     # SYNC: host reads device id for coord promotion (m1).
     return host_int_value_fn(ids[0]), ledger
@@ -79,6 +128,8 @@ def _coord_cache_init(ledger, *, host_int_value_fn=_host_int_value):
     return ops, a1s, a2s, count
 
 
+# dataflow-bundle: a1, a2, op
+#   Host-only coord cache payload (kept local to coord helpers).
 def _coord_cache_update(cache, idx, op, a1, a2):
     ops, a1s, a2s, count = cache
     if idx == count:
@@ -102,13 +153,14 @@ def _coord_leaf_id_cached(
     cached = leaf_cache.get(int(op))
     if cached is not None:
         return cached, ledger, cache
-    ids, ledger = intern_fn(
+    ids, ledger = _call_intern(
         ledger,
         node_batch_fn(
             jnp.array([op], dtype=jnp.int32),
             jnp.array([0], dtype=jnp.int32),
             jnp.array([0], dtype=jnp.int32),
         ),
+        intern_fn=intern_fn,
     )
     new_id = host_int_value_fn(ids[0])
     cache = _coord_cache_update(cache, new_id, op, 0, 0)
@@ -136,13 +188,14 @@ def _coord_promote_leaf_cached(
         node_batch_fn=node_batch_fn,
         host_int_value_fn=host_int_value_fn,
     )
-    ids, ledger = intern_fn(
+    ids, ledger = _call_intern(
         ledger,
         node_batch_fn(
             jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
             jnp.array([leaf_id], dtype=jnp.int32),
             jnp.array([zero_id], dtype=jnp.int32),
         ),
+        intern_fn=intern_fn,
     )
     new_id = host_int_value_fn(ids[0])
     cache = _coord_cache_update(cache, new_id, OP_COORD_PAIR, leaf_id, zero_id)
@@ -266,13 +319,14 @@ def coord_xor(
         new_right, ledger, cache, leaf_cache = _coord_xor_cached(
             ledger, left_a2, right_a2, cache, leaf_cache
         )
-        ids, ledger = intern_fn(
+        ids, ledger = _call_intern(
             ledger,
             node_batch_fn(
                 jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
                 jnp.array([new_left], dtype=jnp.int32),
                 jnp.array([new_right], dtype=jnp.int32),
             ),
+            intern_fn=intern_fn,
         )
         new_id = host_int_value_fn(ids[0])
         cache = _coord_cache_update(cache, new_id, OP_COORD_PAIR, new_left, new_right)
@@ -326,8 +380,9 @@ def cd_lift_binary(
     If both inputs are OP_COORD_PAIR, apply op componentwise and re-pair.
     Otherwise, fall back to op(left, right).
     """
-    left_id = int(left_id)
-    right_id = int(right_id)
+    bundle = _CoordBinaryArgs(left_id=left_id, right_id=right_id)
+    left_id = int(bundle.left_id)
+    right_id = int(bundle.right_id)
     left_op = host_int_value_fn(ledger.opcode[left_id])
     right_op = host_int_value_fn(ledger.opcode[right_id])
     if left_op == OP_COORD_PAIR and right_op == OP_COORD_PAIR:
@@ -353,22 +408,24 @@ def cd_lift_binary(
             node_batch_fn=node_batch_fn,
             host_int_value_fn=host_int_value_fn,
         )
-        ids, ledger = intern_fn(
+        ids, ledger = _call_intern(
             ledger,
             node_batch_fn(
                 jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
                 jnp.array([new_left], dtype=jnp.int32),
                 jnp.array([new_right], dtype=jnp.int32),
             ),
+            intern_fn=intern_fn,
         )
         return host_int_value_fn(ids[0]), ledger
-    ids, ledger = intern_fn(
+    ids, ledger = _call_intern(
         ledger,
         node_batch_fn(
             jnp.array([op], dtype=jnp.int32),
             jnp.array([left_id], dtype=jnp.int32),
             jnp.array([right_id], dtype=jnp.int32),
         ),
+        intern_fn=intern_fn,
     )
     return host_int_value_fn(ids[0]), ledger
 
@@ -386,6 +443,7 @@ def cd_lift_binary_cfg(
     host_int_value_fn=_host_int_value,
 ):
     """Interface/Control wrapper for cd_lift_binary with DI bundle."""
+    bundle = _CoordBinaryArgs(left_id=left_id, right_id=right_id)
     if cfg.intern_cfg is not None and intern_cfg is not None:
         raise ValueError("Pass either cfg.intern_cfg or intern_cfg, not both.")
     intern_cfg = intern_cfg if intern_cfg is not None else cfg.intern_cfg
@@ -394,8 +452,8 @@ def cd_lift_binary_cfg(
     return cd_lift_binary(
         ledger,
         op,
-        left_id,
-        right_id,
+        bundle.left_id,
+        bundle.right_id,
         intern_fn=intern_fn,
         node_batch_fn=node_batch_fn,
         host_int_value_fn=host_int_value_fn,
@@ -527,7 +585,6 @@ def coord_xor_batch_cfg(
         right_ids,
         coord_xor_fn=coord_xor_fn,
         intern_fn=intern_fn,
-        intern_cfg=None,
         node_batch_fn=node_batch_fn,
         host_int_value_fn=host_int_value_fn,
     )

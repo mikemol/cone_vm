@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 This is a significant architectural pivot. By moving from string-based metaprogramming (`exec`) to a **First-Class Intermediate Representation (IR)**, we align the system with the principles of homoiconicity.
 
 In this model, the **instruction** to perform an addition is structurally identical to the **data** representing the number it adds. Both are just triplets in the `Manifest`. The "Compiler" is replaced by a static **Interpreter** that walks this graph.

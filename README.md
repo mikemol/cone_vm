@@ -1,3 +1,8 @@
+---
+doc_revision: 1
+reader_reintern: "Reader-only: re-intern if doc_revision changed since you last read this doc."
+---
+
 # Prism VM
 
 Prism VM is a small JAX-backed interpreter for a tiny IR (zero/suc/add/mul) with
@@ -109,6 +114,20 @@ Run the suite:
 ```
 mise exec -- pytest
 ```
+Optional: persist JAX compilation cache across runs (faster re-runs):
+```
+PRISM_JAX_CACHE_DIR=/tmp/jax-cache mise exec -- pytest
+```
+
+GPU memory cap (optional, for tests on GPU machines):
+```
+XLA_PYTHON_CLIENT_PREALLOCATE=false \
+XLA_PYTHON_CLIENT_ALLOCATOR=platform \
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.05 \
+mise exec -- pytest
+```
+Note: JAX exposes a fractional cap, not an absolute MiB cap. Adjust the fraction
+to approximate 128MiB for your GPU size.
 
 ## Agda proofs
 Agda checks run in a pinned container image. See `agda/README.md` for the
@@ -189,6 +208,10 @@ hard-cap is enforced (overflow => corrupt), corrupt/oom are sticky stop-paths
 (no further mutation), and baseline vs ledger equivalence holds on the m1 suite.
 Changes to these commitments require a milestone bump and updates in
 `MILESTONES.md`.
+
+m1-only mode is deprecated. The baseline suite (see `pytest.baseline.ini`)
+still runs the m1 test set, but under the current baseline milestone (from
+`.pytest-milestone`, currently `m3`), not under an m1-restricted semantic mode.
 
 ## Repo layout
 - `prism_vm.py` - VM, kernels, and REPL
