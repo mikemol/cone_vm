@@ -5,8 +5,10 @@ import jax
 import jax.numpy as jnp
 from jax import lax
 
-from prism_ledger.intern import _coord_norm_id_jax, intern_nodes
-from prism_ledger.config import InternConfig
+from prism_ledger.intern import _coord_norm_id_jax, intern_nodes, intern_nodes_state
+from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
+from prism_ledger.index import LedgerState, derive_ledger_index
+from prism_core.di import call_with_optional_kwargs
 from prism_coord.config import CoordConfig, DEFAULT_COORD_CONFIG
 from prism_vm_core.domains import _host_int_value
 from prism_vm_core.ontology import OP_COORD_ONE, OP_COORD_PAIR, OP_COORD_ZERO
@@ -35,6 +37,32 @@ def _node_batch(op, a1, a2) -> NodeBatch:
     return NodeBatch(op=bundle.op, a1=bundle.a1, a2=bundle.a2)
 
 
+def _intern_cfg_for_fn(intern_fn):
+    cfg = None
+    if isinstance(intern_fn, partial) and intern_fn.func is intern_nodes:
+        cfg = intern_fn.keywords.get("cfg")
+    return cfg or DEFAULT_INTERN_CONFIG
+
+
+def _call_intern(ledger, batch, *, intern_fn):
+    if isinstance(ledger, LedgerState) and (
+        intern_fn is intern_nodes
+        or (isinstance(intern_fn, partial) and intern_fn.func is intern_nodes)
+    ):
+        kwargs = {}
+        if isinstance(intern_fn, partial):
+            kwargs.update(intern_fn.keywords or {})
+            kwargs.pop("ledger_index", None)
+        return intern_nodes_state(ledger, batch, **kwargs)
+    cfg = _intern_cfg_for_fn(intern_fn)
+    ledger_index = derive_ledger_index(
+        ledger, op_buckets_full_range=cfg.op_buckets_full_range
+    )
+    return call_with_optional_kwargs(
+        intern_fn, {"ledger_index": ledger_index}, ledger, batch
+    )
+
+
 @jax.jit(static_argnames=("coord_norm_id_jax_fn",))
 def _coord_norm_id_host(
     ledger, coord_id, *, coord_norm_id_jax_fn=_coord_norm_id_jax
@@ -50,13 +78,14 @@ def _coord_leaf_id(
     node_batch_fn=_node_batch,
     host_int_value_fn=_host_int_value,
 ):
-    ids, ledger = intern_fn(
+    ids, ledger = _call_intern(
         ledger,
         node_batch_fn(
             jnp.array([op], dtype=jnp.int32),
             jnp.array([0], dtype=jnp.int32),
             jnp.array([0], dtype=jnp.int32),
         ),
+        intern_fn=intern_fn,
     )
     # SYNC: host reads device id for coord leaf (m1).
     return host_int_value_fn(ids[0]), ledger
@@ -78,13 +107,14 @@ def _coord_promote_leaf(
         node_batch_fn=node_batch_fn,
         host_int_value_fn=host_int_value_fn,
     )
-    ids, ledger = intern_fn(
+    ids, ledger = _call_intern(
         ledger,
         node_batch_fn(
             jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
             jnp.array([leaf_id], dtype=jnp.int32),
             jnp.array([zero_id], dtype=jnp.int32),
         ),
+        intern_fn=intern_fn,
     )
     # SYNC: host reads device id for coord promotion (m1).
     return host_int_value_fn(ids[0]), ledger
@@ -123,13 +153,14 @@ def _coord_leaf_id_cached(
     cached = leaf_cache.get(int(op))
     if cached is not None:
         return cached, ledger, cache
-    ids, ledger = intern_fn(
+    ids, ledger = _call_intern(
         ledger,
         node_batch_fn(
             jnp.array([op], dtype=jnp.int32),
             jnp.array([0], dtype=jnp.int32),
             jnp.array([0], dtype=jnp.int32),
         ),
+        intern_fn=intern_fn,
     )
     new_id = host_int_value_fn(ids[0])
     cache = _coord_cache_update(cache, new_id, op, 0, 0)
@@ -157,13 +188,14 @@ def _coord_promote_leaf_cached(
         node_batch_fn=node_batch_fn,
         host_int_value_fn=host_int_value_fn,
     )
-    ids, ledger = intern_fn(
+    ids, ledger = _call_intern(
         ledger,
         node_batch_fn(
             jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
             jnp.array([leaf_id], dtype=jnp.int32),
             jnp.array([zero_id], dtype=jnp.int32),
         ),
+        intern_fn=intern_fn,
     )
     new_id = host_int_value_fn(ids[0])
     cache = _coord_cache_update(cache, new_id, OP_COORD_PAIR, leaf_id, zero_id)
@@ -287,13 +319,14 @@ def coord_xor(
         new_right, ledger, cache, leaf_cache = _coord_xor_cached(
             ledger, left_a2, right_a2, cache, leaf_cache
         )
-        ids, ledger = intern_fn(
+        ids, ledger = _call_intern(
             ledger,
             node_batch_fn(
                 jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
                 jnp.array([new_left], dtype=jnp.int32),
                 jnp.array([new_right], dtype=jnp.int32),
             ),
+            intern_fn=intern_fn,
         )
         new_id = host_int_value_fn(ids[0])
         cache = _coord_cache_update(cache, new_id, OP_COORD_PAIR, new_left, new_right)
@@ -375,22 +408,24 @@ def cd_lift_binary(
             node_batch_fn=node_batch_fn,
             host_int_value_fn=host_int_value_fn,
         )
-        ids, ledger = intern_fn(
+        ids, ledger = _call_intern(
             ledger,
             node_batch_fn(
                 jnp.array([OP_COORD_PAIR], dtype=jnp.int32),
                 jnp.array([new_left], dtype=jnp.int32),
                 jnp.array([new_right], dtype=jnp.int32),
             ),
+            intern_fn=intern_fn,
         )
         return host_int_value_fn(ids[0]), ledger
-    ids, ledger = intern_fn(
+    ids, ledger = _call_intern(
         ledger,
         node_batch_fn(
             jnp.array([op], dtype=jnp.int32),
             jnp.array([left_id], dtype=jnp.int32),
             jnp.array([right_id], dtype=jnp.int32),
         ),
+        intern_fn=intern_fn,
     )
     return host_int_value_fn(ids[0]), ledger
 

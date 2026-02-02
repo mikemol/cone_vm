@@ -114,6 +114,10 @@ Run the suite:
 ```
 mise exec -- pytest
 ```
+Optional: persist JAX compilation cache across runs (faster re-runs):
+```
+PRISM_JAX_CACHE_DIR=/tmp/jax-cache mise exec -- pytest
+```
 
 GPU memory cap (optional, for tests on GPU machines):
 ```

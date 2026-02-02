@@ -49,12 +49,32 @@ def _set_jax_gpu_memory_limits() -> None:
     os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = str(frac)
 
 
+def _set_jax_compilation_cache() -> None:
+    cache_dir = os.environ.get("PRISM_JAX_COMPILATION_CACHE_DIR", "").strip()
+    if not cache_dir:
+        cache_dir = os.environ.get("PRISM_JAX_CACHE_DIR", "").strip()
+    if not cache_dir:
+        return
+    cache_path = Path(cache_dir).expanduser()
+    cache_path.mkdir(parents=True, exist_ok=True)
+    try:
+        from jax.experimental import compilation_cache as cc
+    except Exception:
+        return
+    set_cache_dir = getattr(cc, "set_cache_dir", None)
+    if set_cache_dir is None and hasattr(cc, "compilation_cache"):
+        set_cache_dir = getattr(cc.compilation_cache, "set_cache_dir", None)
+    if set_cache_dir is not None:
+        set_cache_dir(str(cache_path))
+
+
 # Enable strict scatter guard in tests unless explicitly overridden.
 os.environ.setdefault("PRISM_SCATTER_GUARD", "1")
 os.environ.setdefault("PRISM_TEST_GUARDS", "1")
 _set_jax_gpu_memory_limits()
 
 import jax
+_set_jax_compilation_cache()
 
 # Ensure repo root is importable when pytest uses importlib mode.
 ROOT = os.path.dirname(os.path.dirname(__file__))
