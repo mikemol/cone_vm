@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
 
+from prism_ledger.config import DEFAULT_INTERN_CONFIG
 from prism_ledger.intern import intern_nodes_state
 from prism_ledger.index import LedgerState, derive_ledger_state
 from prism_vm_core.domains import _host_int_value, _host_raise_if_bad, _ledger_id
@@ -35,7 +36,10 @@ def _project_graph_to_ledger(
     if isinstance(ledger, LedgerState):
         ledger_state = ledger
     else:
-        ledger_state = derive_ledger_state(ledger)
+        ledger_state = derive_ledger_state(
+            ledger,
+            op_buckets_full_range=DEFAULT_INTERN_CONFIG.op_buckets_full_range,
+        )
     bundle = _ProjectArgs(opcode=opcode, arg1=arg1, arg2=arg2)
     ops = jax.device_get(bundle.opcode[:count])
     a1s = jax.device_get(bundle.arg1[:count])
