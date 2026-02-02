@@ -26,6 +26,7 @@ class DecodePortFn(Protocol):
 
 @runtime_checkable
 class AllocPlanFn(Protocol):
+    # dataflow-bundle: state, pairs, count
     def __call__(
         self, state: ICState, pairs: jnp.ndarray, count: jnp.ndarray
     ) -> Tuple[ICState, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
@@ -34,6 +35,7 @@ class AllocPlanFn(Protocol):
 
 @runtime_checkable
 class ApplyTemplatePlannedFn(Protocol):
+    # dataflow-bundle: state, node_a, node_b, template_id, alloc_ids
     def __call__(
         self,
         state: ICState,
@@ -59,6 +61,7 @@ class ScanCorruptFn(Protocol):
 
 @runtime_checkable
 class RuleForTypesFn(Protocol):
+    # dataflow-bundle: type_a, type_b
     def __call__(
         self, type_a: jnp.ndarray, type_b: jnp.ndarray
     ) -> jnp.ndarray:
@@ -67,18 +70,21 @@ class RuleForTypesFn(Protocol):
 
 @runtime_checkable
 class ApplyAnnFn(Protocol):
+    # dataflow-bundle: state, node_a, node_b
     def __call__(self, state: ICState, node_a, node_b) -> ICState:
         ...
 
 
 @runtime_checkable
 class ApplyEraseFn(Protocol):
+    # dataflow-bundle: state, node_a, node_b
     def __call__(self, state: ICState, node_a, node_b) -> ICState:
         ...
 
 
 @runtime_checkable
 class ApplyCommuteFn(Protocol):
+    # dataflow-bundle: state, node_a, node_b
     def __call__(self, state: ICState, node_a, node_b) -> ICState:
         ...
 

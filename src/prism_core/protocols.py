@@ -20,6 +20,7 @@ class SafeGatherPolicyArgs:
 
 @runtime_checkable
 class SafeGatherFn(Protocol):
+    # dataflow-bundle: arr, idx, label, policy, return_ok
     def __call__(
         self, arr, idx, label: str, *, policy=None, return_ok: bool = False
     ):
@@ -28,6 +29,7 @@ class SafeGatherFn(Protocol):
 
 @runtime_checkable
 class SafeGatherOkFn(Protocol):
+    # dataflow-bundle: arr, idx, label, policy
     def __call__(self, arr, idx, label: str, *, policy=None):
         ...
 

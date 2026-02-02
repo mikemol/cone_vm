@@ -89,8 +89,8 @@ from prism_vm_core.hashes import _ledger_root_hash_host, _ledger_roots_hash_host
 from prism_vm_core.candidates import _candidate_indices, candidate_indices_cfg
 from prism_bsp.cnf2 import _scatter_compacted_ids
 from prism_vm_core.ontology import OP_ADD, OP_MUL, OP_NULL, OP_ZERO, HostBool
-from prism_vm_core.domains import _host_bool, _host_raise_if_bad
-from prism_vm_core.structures import NodeBatch
+from prism_vm_core.domains import QMap, _host_bool, _host_raise_if_bad
+from prism_vm_core.structures import Ledger, NodeBatch, Stratum
 from prism_bsp.space import RANK_FREE
 from prism_bsp.cnf2 import (
     emit_candidates as _emit_candidates_default,
@@ -1108,7 +1108,7 @@ def _key_order_commutative_host(op, a1, a2):
 
 
 def intern_nodes(
-    ledger,
+    ledger: Ledger | LedgerState,
     batch_or_ops,
     a1=None,
     a2=None,
@@ -1176,7 +1176,7 @@ def intern_nodes(
 
 
 def intern_nodes_with_index(
-    ledger,
+    ledger: Ledger,
     ledger_index: LedgerIndex,
     batch_or_ops,
     a1=None,
@@ -1259,9 +1259,9 @@ def cycle_jit(
 
 
 def commit_stratum_static(
-    ledger,
-    stratum,
-    prior_q=None,
+    ledger: Ledger,
+    stratum: Stratum,
+    prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     *,
@@ -1301,9 +1301,9 @@ def commit_stratum_static(
 
 
 def commit_stratum_value(
-    ledger,
-    stratum,
-    prior_q=None,
+    ledger: Ledger,
+    stratum: Stratum,
+    prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     *,
@@ -1343,9 +1343,9 @@ def commit_stratum_value(
 
 
 def commit_stratum(
-    ledger,
-    stratum,
-    prior_q=None,
+    ledger: Ledger,
+    stratum: Stratum,
+    prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
     intern_fn: InternFn | None = None,
     *,
@@ -1668,7 +1668,7 @@ def _cycle_candidates_common_state(
 
 
 def cycle_candidates_static(
-    ledger,
+    ledger: Ledger | LedgerState,
     frontier_ids,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
@@ -1718,7 +1718,7 @@ def cycle_candidates_static(
 
 
 def cycle_candidates_value(
-    ledger,
+    ledger: Ledger | LedgerState,
     frontier_ids,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
@@ -1886,7 +1886,7 @@ def cycle_candidates_state(
 
 
 def cycle_candidates(
-    ledger,
+    ledger: Ledger | LedgerState,
     frontier_ids,
     validate_mode: ValidateMode = ValidateMode.NONE,
     *,
@@ -1962,7 +1962,7 @@ def cycle_candidates(
 
 
 def cycle_candidates_bound(
-    ledger,
+    ledger: Ledger | LedgerState,
     frontier_ids,
     cfg: Cnf2BoundConfig,
     *,

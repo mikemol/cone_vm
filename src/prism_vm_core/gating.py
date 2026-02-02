@@ -17,9 +17,7 @@ def _parse_milestone_value(value):
     return None
 
 
-def _read_pytest_milestone(allow_unprotected: bool = False):
-    if not _TEST_GUARDS and not allow_unprotected:
-        return None
+def _read_pytest_milestone_path():
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
     path = os.path.join(repo_root, ".pytest-milestone")
     try:
@@ -39,12 +37,22 @@ def _read_pytest_milestone(allow_unprotected: bool = False):
     return None
 
 
+def _read_pytest_milestone():
+    if not _TEST_GUARDS:
+        return None
+    return _read_pytest_milestone_path()
+
+
+def _read_pytest_milestone_unprotected():
+    return _read_pytest_milestone_path()
+
+
 def _normalize_milestone(value):
     milestone = _parse_milestone_value(value)
     if milestone != 1:
         return milestone
     # m1-only mode is deprecated; treat m1 as baseline coverage when possible.
-    baseline = _read_pytest_milestone(allow_unprotected=True)
+    baseline = _read_pytest_milestone_unprotected()
     return baseline or 2
 
 
@@ -55,9 +63,7 @@ def _default_bsp_mode() -> BspMode:
 
 
 def _normalize_bsp_mode(bsp_mode: BspMode | str | None):
-    return coerce_bsp_mode(
-        bsp_mode, default_fn=_default_bsp_mode, context="bsp_mode"
-    )
+    return coerce_bsp_mode(bsp_mode, default_fn=_default_bsp_mode)
 
 
 def _servo_enabled():
@@ -87,6 +93,7 @@ def _gpu_metrics_device_index():
 __all__ = [
     "_parse_milestone_value",
     "_read_pytest_milestone",
+    "_read_pytest_milestone_unprotected",
     "_normalize_milestone",
     "_default_bsp_mode",
     "_normalize_bsp_mode",

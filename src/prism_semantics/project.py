@@ -6,7 +6,7 @@ from prism_ledger.intern import intern_nodes_state
 from prism_ledger.index import LedgerState, derive_ledger_state
 from prism_vm_core.domains import _host_int_value, _host_raise_if_bad, _ledger_id
 from prism_vm_core.ontology import OP_NULL
-from prism_vm_core.structures import NodeBatch
+from prism_vm_core.structures import Ledger, NodeBatch
 
 # dataflow-bundle: arg1, arg2, opcode
 
@@ -28,7 +28,7 @@ def _project_graph_to_ledger(
     arg2,
     count,
     root_idx,
-    ledger,
+    ledger: Ledger | LedgerState,
     label,
     limit=None,
 ):

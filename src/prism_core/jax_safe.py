@@ -146,6 +146,7 @@ def guard_gather_index(idx, size, label, guard=None):
     )
 
 
+# dataflow-bundle: arr, idx, label, policy, return_ok
 def safe_gather_1d(
     arr,
     idx,
@@ -175,6 +176,7 @@ def safe_gather_1d(
     return values
 
 
+# dataflow-bundle: arr, idx, label, policy
 def safe_gather_1d_ok(
     arr,
     idx,
@@ -208,19 +210,13 @@ def safe_gather_1d_value(
     return_ok: bool = False,
 ):
     """Guarded gather that accepts policy as a JAX value."""
-    bundle = _IndexPolicyValue(idx=idx, policy_value=policy_value)
-    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
-    idx_i = jnp.asarray(bundle.idx, dtype=jnp.int32)
-    policy_val = jnp.asarray(bundle.policy_value, dtype=jnp.int32)
-    guard_gather_index(idx_i, size, label, guard=guard)
-    ok = (idx_i >= 0) & (idx_i < size)
-    idx_safe = jnp.clip(idx_i, 0, size - 1)
-    drop_mask = policy_val == POLICY_VALUE_DROP
-    clamp_mask = policy_val == POLICY_VALUE_CLAMP
-    idx_safe = jnp.where(drop_mask, jnp.where(ok, idx_safe, jnp.int32(0)), idx_safe)
-    values = arr[idx_safe]
-    values = jnp.where(drop_mask & (~ok), jnp.zeros_like(values), values)
-    ok = jnp.where(clamp_mask, jnp.ones_like(ok, dtype=jnp.bool_), ok)
+    values, ok = _safe_gather_1d_value_ok(
+        arr,
+        idx,
+        label,
+        guard=guard,
+        policy_value=policy_value,
+    )
     if return_ok:
         return values, ok
     return values
@@ -235,18 +231,41 @@ def safe_gather_1d_ok_value(
     policy_value: PolicyValue,
 ):
     """Guarded gather that returns ok + corruption flag using policy value."""
-    values, ok = safe_gather_1d_value(
+    values, ok = _safe_gather_1d_value_ok(
         arr,
         idx,
         label,
         guard=guard,
         policy_value=policy_value,
-        return_ok=True,
     )
     bundle = _IndexPolicyValue(idx=idx, policy_value=policy_value)
     policy_val = jnp.asarray(bundle.policy_value, dtype=jnp.int32)
     corrupt = jnp.where(policy_val == POLICY_VALUE_CORRUPT, ~ok, False)
     return values, ok, corrupt
+
+
+def _safe_gather_1d_value_ok(
+    arr,
+    idx,
+    label,
+    *,
+    guard=None,
+    policy_value: PolicyValue,
+):
+    bundle = _IndexPolicyValue(idx=idx, policy_value=policy_value)
+    size = jnp.asarray(arr.shape[0], dtype=jnp.int32)
+    idx_i = jnp.asarray(bundle.idx, dtype=jnp.int32)
+    policy_val = jnp.asarray(bundle.policy_value, dtype=jnp.int32)
+    guard_gather_index(idx_i, size, label, guard=guard)
+    ok = (idx_i >= 0) & (idx_i < size)
+    idx_safe = jnp.clip(idx_i, 0, size - 1)
+    drop_mask = policy_val == POLICY_VALUE_DROP
+    clamp_mask = policy_val == POLICY_VALUE_CLAMP
+    idx_safe = jnp.where(drop_mask, jnp.where(ok, idx_safe, jnp.int32(0)), idx_safe)
+    values = arr[idx_safe]
+    values = jnp.where(drop_mask & (~ok), jnp.zeros_like(values), values)
+    ok = jnp.where(clamp_mask, jnp.ones_like(ok, dtype=jnp.bool_), ok)
+    return values, ok
 
 
 def safe_index_1d(

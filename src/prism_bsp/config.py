@@ -61,7 +61,12 @@ from prism_metrics.metrics import _cnf2_metrics_update
 from prism_vm_core.guards import _guards_enabled
 from prism_vm_core.domains import _host_bool_value, _host_int_value
 from prism_vm_core.hashes import _ledger_roots_hash_host
-from prism_semantics.commit import commit_stratum_bound, commit_stratum_value
+from prism_semantics.commit import (
+    apply_q,
+    apply_q_ok,
+    commit_stratum_bound,
+    commit_stratum_value,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -755,7 +760,7 @@ def resolve_validate_mode(
     validate_mode: ValidateMode,
     *,
     guards_enabled_fn,
-    context: str,
+    context: str = "cycle_candidates",
 ) -> ValidateMode:
     mode = require_validate_mode(validate_mode, context=context)
     if guards_enabled_fn() and mode == ValidateMode.NONE:
@@ -764,6 +769,10 @@ def resolve_validate_mode(
 
 
 def _apply_q_optional_ok(apply_q_fn: ApplyQFn, q_map, ids):
+    if apply_q_fn is apply_q:
+        return apply_q_ok(q_map, ids)
+    if apply_q_fn is apply_q_ok:
+        return apply_q_fn(q_map, ids)
     result = call_with_optional_kwargs(
         apply_q_fn, {"return_ok": True}, q_map, ids
     )

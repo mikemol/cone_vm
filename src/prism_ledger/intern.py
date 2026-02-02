@@ -173,7 +173,7 @@ def _coord_norm_id_jax_noprobe(
 
 
 def _lookup_node_id_bound(
-    ledger,
+    ledger: Ledger,
     op,
     a1,
     a2,
@@ -295,7 +295,7 @@ def _lookup_node_id_bound(
 
 
 def _lookup_node_id(
-    ledger,
+    ledger: Ledger,
     op,
     a1,
     a2,
@@ -333,7 +333,7 @@ def _key_safe_normalize_nodes(
 
 
 def _intern_nodes_impl_core(
-    ledger,
+    ledger: Ledger,
     proposed_ops,
     proposed_a1,
     proposed_a2,
@@ -1046,7 +1046,7 @@ def _intern_nodes_impl(
 
 
 def intern_nodes(
-    ledger,
+    ledger: Ledger,
     batch_or_ops,
     a1=None,
     a2=None,

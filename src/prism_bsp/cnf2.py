@@ -47,6 +47,7 @@ from prism_bsp.config import (
 from prism_semantics.commit import (
     _identity_q,
     apply_q,
+    apply_q_ok,
     commit_stratum,
     commit_stratum_bound,
     commit_stratum_static,
@@ -71,7 +72,7 @@ from prism_vm_core.ontology import (
     OP_ZERO,
     ZERO_PTR,
 )
-from prism_vm_core.structures import CandidateBuffer, Stratum, NodeBatch
+from prism_vm_core.structures import CandidateBuffer, Ledger, Stratum, NodeBatch
 from prism_vm_core.protocols import (
     ApplyQFn,
     CandidateIndicesFn,
@@ -414,7 +415,7 @@ def _ledger_index_is_bound(fn: Callable[..., object]) -> bool:
 
 
 def _bind_intern_with_index(
-    ledger,
+    ledger: Ledger,
     intern_inputs: Cnf2InternInputs,
     *,
     intern_cfg: InternConfig | None,
@@ -426,12 +427,14 @@ def _bind_intern_with_index(
         ledger, op_buckets_full_range=cfg.op_buckets_full_range
     ).index
 
-    def _intern_with_index(*args, **kwargs):
+    def _intern_with_index(ledger, batch_or_ops, a1=None, a2=None):
         return call_with_optional_kwargs(
             intern_inputs.intern_fn,
             {"ledger_index": ledger_index},
-            *args,
-            **kwargs,
+            ledger,
+            batch_or_ops,
+            a1,
+            a2,
         )
 
     setattr(_intern_with_index, "_prism_ledger_index_bound", True)
@@ -456,7 +459,7 @@ def _intern_candidates_core(
 
 
 def intern_candidates(
-    ledger,
+    ledger: Ledger,
     candidates,
     *,
     compact_candidates_fn: Callable[..., tuple] = compact_candidates,
@@ -488,7 +491,7 @@ def intern_candidates(
 
 
 def intern_candidates_cfg(
-    ledger,
+    ledger: Ledger,
     candidates,
     *,
     cfg: Cnf2Config | None = None,
@@ -855,7 +858,7 @@ def _cycle_candidates_core_static_bound(
     policy composition. Only algorithmic guards remain below.
     """
     mode = resolve_validate_mode(
-        validate_mode, guards_enabled_fn=guards_enabled_fn, context="cycle_candidates"
+        validate_mode, guards_enabled_fn=guards_enabled_fn
     )
     intern_cfg = _resolve_intern_cfg(cfg, intern_cfg)
     if isinstance(ledger, LedgerState):
@@ -971,7 +974,7 @@ def _cycle_candidates_core_value_bound(
     policy composition. Only algorithmic guards remain below.
     """
     mode = resolve_validate_mode(
-        validate_mode, guards_enabled_fn=guards_enabled_fn, context="cycle_candidates"
+        validate_mode, guards_enabled_fn=guards_enabled_fn
     )
     intern_cfg = _resolve_intern_cfg(cfg, intern_cfg)
     if isinstance(ledger, LedgerState):
@@ -1050,6 +1053,10 @@ def _cycle_candidates_core_value_bound(
 
 
 def _apply_q_optional_ok(apply_q_fn: ApplyQFn, q_map, ids):
+    if apply_q_fn is apply_q:
+        return apply_q_ok(q_map, ids)
+    if apply_q_fn is apply_q_ok:
+        return apply_q_fn(q_map, ids)
     result = call_with_optional_kwargs(
         apply_q_fn, {"return_ok": True}, q_map, ids
     )

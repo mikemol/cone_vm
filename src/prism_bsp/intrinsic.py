@@ -9,7 +9,7 @@ from prism_ledger.index import LedgerState, derive_ledger_state
 from prism_core.di import call_with_optional_kwargs
 from prism_vm_core.domains import _host_raise_if_bad
 from prism_vm_core.ontology import OP_ADD, OP_MUL, OP_SUC, OP_ZERO, ZERO_PTR
-from prism_vm_core.structures import NodeBatch
+from prism_vm_core.structures import Ledger, NodeBatch
 from prism_vm_core.protocols import HostRaiseFn, InternFn, InternStateFn, NodeBatchFn
 from prism_bsp.config import IntrinsicConfig, DEFAULT_INTRINSIC_CONFIG
 
@@ -152,7 +152,7 @@ def _cycle_intrinsic_jit(intern_state_fn: InternStateFn, node_batch_fn: NodeBatc
 
 
 def cycle_intrinsic(
-    ledger,
+    ledger: Ledger | LedgerState,
     frontier_ids,
     *,
     intern_fn: InternFn = intern_nodes,
@@ -196,7 +196,7 @@ def cycle_intrinsic(
 
 
 def cycle_intrinsic_cfg(
-    ledger,
+    ledger: Ledger | LedgerState,
     frontier_ids,
     *,
     cfg: IntrinsicConfig = DEFAULT_INTRINSIC_CONFIG,

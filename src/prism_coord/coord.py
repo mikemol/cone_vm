@@ -550,7 +550,6 @@ def coord_xor_batch_cfg(
         right_ids,
         coord_xor_fn=coord_xor_fn,
         intern_fn=intern_fn,
-        intern_cfg=None,
         node_batch_fn=node_batch_fn,
         host_int_value_fn=host_int_value_fn,
     )

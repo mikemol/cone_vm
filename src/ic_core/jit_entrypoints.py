@@ -100,7 +100,7 @@ def apply_active_pairs_jit_runtime(cfg: ICRuntimeResolved):
 def _reduce_jit(cfg: ICEngineConfig):
     resolved = resolve_engine_config(cfg)
 
-    def _impl(state: ICState, max_steps):
+    def _impl(state: ICState, max_steps: int):
         return ic_reduce(state, max_steps, cfg=resolved)
 
     return _impl
@@ -120,7 +120,7 @@ def reduce_jit_cfg(cfg: ICEngineConfig | None = None):
 
 @cached_jit
 def _reduce_resolved_jit(cfg: ICEngineResolved):
-    def _impl(state: ICState, max_steps):
+    def _impl(state: ICState, max_steps: int):
         return ic_reduce(state, max_steps, cfg=cfg)
 
     return _impl
@@ -133,7 +133,7 @@ def reduce_jit_resolved(cfg: ICEngineResolved = DEFAULT_ENGINE_RESOLVED):
 
 @cached_jit
 def _reduce_jit_exec(cfg: ICExecutionResolved):
-    def _impl(state: ICState, max_steps):
+    def _impl(state: ICState, max_steps: int):
         return ic_reduce(state, max_steps, cfg=cfg.engine)
 
     return _impl
@@ -146,7 +146,7 @@ def reduce_jit_exec(cfg: ICExecutionResolved):
 
 @cached_jit
 def _reduce_jit_runtime(cfg: ICRuntimeResolved):
-    def _impl(state: ICState, max_steps):
+    def _impl(state: ICState, max_steps: int):
         return ic_reduce(state, max_steps, cfg=cfg.engine)
 
     return _impl

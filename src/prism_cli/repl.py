@@ -53,7 +53,7 @@ from prism_metrics.metrics import (
     damage_metrics_get,
     damage_metrics_reset,
 )
-from prism_semantics.commit import apply_q
+from prism_semantics.commit import apply_q_ok
 from prism_vm_core.types import (
     _arena_ptr,
     _committed_ids,
@@ -91,7 +91,7 @@ from prism_vm_core.facade import (
     DEFAULT_INTERN_CONFIG,
 )
 from prism_core.modes import BspMode
-from prism_vm_core.guards import _expect_token, _pop_token
+from prism_vm_core.guards import _expect_rparen, _pop_token
 
 _TEST_GUARDS = _jax_safe.TEST_GUARDS
 
@@ -219,7 +219,7 @@ class PrismVM:
             return self.cons(op, a1, a2)
         if token == "(":
             val = self.parse(tokens)
-            _expect_token(tokens, ")")
+            _expect_rparen(tokens)
             return val
         raise ValueError(f"Unknown: {token}")
 
@@ -282,7 +282,7 @@ class PrismVM_BSP_Legacy:
             return self._alloc(op, a1, a2)
         if token == "(":
             val = self.parse(tokens)
-            _expect_token(tokens, ")")
+            _expect_rparen(tokens)
             return val
         raise ValueError(f"Unknown: {token}")
 
@@ -354,7 +354,7 @@ class PrismVM_BSP:
             return self._intern(op, a1, a2)
         if token == "(":
             val = self.parse(tokens)
-            _expect_token(tokens, ")")
+            _expect_rparen(tokens)
             return val
         raise ValueError(f"Unknown: {token}")
 
@@ -549,7 +549,7 @@ def run_program_lines_bsp(
                 vm.ledger, frontier_prov, _, q_map = cycle_candidates(
                     vm.ledger, frontier, validate_mode=validate_mode
                 )
-                frontier, ok = apply_q(q_map, frontier_prov, return_ok=True)
+                frontier, ok = apply_q_ok(q_map, frontier_prov)
                 meta = getattr(q_map, "_prism_meta", None)
                 if meta is not None and meta.safe_gather_policy is not None:
                     corrupt = jnp.any(
@@ -652,6 +652,9 @@ def main():
     do_sort = True
     use_morton = False
     block_size = None
+    l2_block_size = None
+    l1_block_size = None
+    do_global = False
     path = None
     i = 0
     while i < len(args):

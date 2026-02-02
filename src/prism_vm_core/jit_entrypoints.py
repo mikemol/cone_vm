@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Optional
+from typing import Callable, Optional
 
 import jax
 import jax.numpy as jnp
@@ -34,7 +34,7 @@ from prism_core.safety import (
 from prism_core.modes import ValidateMode
 from prism_ledger import intern as _ledger_intern
 from prism_ledger.config import InternConfig, DEFAULT_INTERN_CONFIG
-from prism_ledger.index import derive_ledger_state
+from prism_ledger.index import LedgerIndex, LedgerState, derive_ledger_state
 from prism_bsp.config import (
     Cnf2Config,
     Cnf2RuntimeFns,
@@ -75,7 +75,7 @@ def _safe_gather_is_bound(safe_gather_fn) -> bool:
         return False
     return bool(getattr(safe_gather_fn, "_prism_policy_bound", False))
 
-from prism_vm_core.structures import NodeBatch
+from prism_vm_core.structures import Ledger, NodeBatch
 from prism_vm_core.candidates import _candidate_indices, candidate_indices_cfg
 from prism_bsp.cnf2 import (
     emit_candidates as _emit_candidates_default,
@@ -150,7 +150,7 @@ def _noop_metrics(_arena, _tile_size):
 
 @cached_jit
 def _intern_nodes_jit(cfg: InternConfig):
-    def _impl(ledger, ledger_index, batch: NodeBatch):
+    def _impl(ledger: Ledger, ledger_index: LedgerIndex, batch: NodeBatch):
         return _ledger_intern.intern_nodes(
             ledger, batch, cfg=cfg, ledger_index=ledger_index
         )
@@ -317,7 +317,7 @@ def emit_candidates_jit(emit_candidates_fn: EmitCandidatesFn | None = None):
         emit_candidates_fn = _emit_candidates_default
 
     @jax.jit
-    def _impl(ledger, frontier_ids):
+    def _impl(ledger: Ledger, frontier_ids):
         return emit_candidates_fn(ledger, frontier_ids)
 
     return _impl
@@ -419,7 +419,7 @@ def compact_candidates_with_index_result_jit_cfg(cfg: Cnf2Config | None = None):
 
 def intern_candidates_jit(
     *,
-    compact_candidates_fn=_compact_candidates,
+    compact_candidates_fn: Callable[..., tuple] = _compact_candidates,
     intern_fn: InternFn = _ledger_intern.intern_nodes,
     intern_cfg: InternConfig | None = None,
     node_batch_fn=None,
@@ -431,13 +431,12 @@ def intern_candidates_jit(
         node_batch_fn = NodeBatch
 
     @jax.jit
-    def _impl(ledger, candidates):
+    def _impl(ledger: Ledger, candidates):
         return _intern_candidates(
             ledger,
             candidates,
             compact_candidates_fn=compact_candidates_fn,
             intern_fn=intern_fn,
-            intern_cfg=None,
             node_batch_fn=node_batch_fn,
         )
 
@@ -529,7 +528,7 @@ def cycle_candidates_static_jit(
         safe_gather_policy = DEFAULT_SAFETY_POLICY
 
     @jax.jit
-    def _impl(ledger, frontier_ids):
+    def _impl(ledger: Ledger, frontier_ids):
         return _cycle_candidates_static(
             ledger,
             frontier_ids,
@@ -611,7 +610,7 @@ def cycle_candidates_value_jit(
         safe_gather_policy_value = POLICY_VALUE_DEFAULT
 
     @jax.jit
-    def _impl(ledger, frontier_ids):
+    def _impl(ledger: Ledger, frontier_ids):
         return _cycle_candidates_value(
             ledger,
             frontier_ids,
@@ -691,7 +690,7 @@ def cycle_candidates_static_state_jit(
         safe_gather_policy = DEFAULT_SAFETY_POLICY
 
     @jax.jit
-    def _impl(state, frontier_ids):
+    def _impl(state: LedgerState, frontier_ids):
         return _cycle_candidates_static_state(
             state,
             frontier_ids,
@@ -774,7 +773,7 @@ def cycle_candidates_value_state_jit(
         safe_gather_policy_value = POLICY_VALUE_DEFAULT
 
     @jax.jit
-    def _impl(state, frontier_ids):
+    def _impl(state: LedgerState, frontier_ids):
         return _cycle_candidates_value_state(
             state,
             frontier_ids,

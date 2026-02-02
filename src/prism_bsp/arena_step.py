@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import asdict, dataclass, replace
 from typing import Callable
 
 import jax
@@ -8,7 +8,12 @@ from jax import jit, lax
 from prism_core import jax_safe as _jax_safe
 from prism_core.errors import PrismPolicyBindingError
 from prism_core.di import call_with_optional_kwargs
-from prism_core.guards import resolve_safe_gather_fn, resolve_safe_gather_value_fn
+from prism_core.guards import (
+    GuardConfig,
+    resolve_safe_gather_fn,
+    resolve_safe_gather_value_fn,
+)
+from prism_core.protocols import SafeGatherFn, SafeGatherValueFn
 from prism_core.safety import (
     PolicyBinding,
     PolicyMode,
@@ -21,6 +26,7 @@ from prism_vm_core.gating import _servo_enabled
 from prism_vm_core.guards import _guard_max
 from prism_vm_core.hashes import _arena_root_hash_host
 from prism_vm_core.ontology import OP_ADD, OP_SUC, OP_ZERO
+from prism_vm_core.protocols import OpSortWithPermFn
 from prism_vm_core.structures import Arena
 
 from prism_bsp.space import (
@@ -68,6 +74,17 @@ _DEFAULT_SWIZZLE_WITH_PERM_VALUE_FNS = SwizzleWithPermFnsBound(
     hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_value,
     servo_with_perm=op_sort_and_swizzle_servo_with_perm_value,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class SwizzleWithPermFnsBundle:
+    """Local bundle documenting swizzle-with-perm forwarding group."""
+
+    with_perm: OpSortWithPermFn
+    morton_with_perm: OpSortWithPermFn
+    blocked_with_perm: OpSortWithPermFn
+    hierarchical_with_perm: OpSortWithPermFn
+    servo_with_perm: OpSortWithPermFn
 
 
 def _op_interact_core(
@@ -406,8 +423,8 @@ def cycle_core(
     servo_update_fn=_servo_update,
     op_morton_fn=op_morton,
     swizzle_with_perm_fns: SwizzleWithPermFnsBound = _DEFAULT_SWIZZLE_WITH_PERM_FNS,
-    safe_gather_fn=_jax_safe.safe_gather_1d,
-    guard_cfg=None,
+    safe_gather_fn: SafeGatherFn = _jax_safe.safe_gather_1d,
+    guard_cfg: GuardConfig | None = None,
     arena_root_hash_fn=_arena_root_hash_host,
     damage_tile_size_fn=_damage_tile_size,
     damage_metrics_update_fn=_damage_metrics_update,
@@ -507,8 +524,8 @@ def cycle_core_value(
     servo_update_fn=_servo_update,
     op_morton_fn=op_morton,
     swizzle_with_perm_fns: SwizzleWithPermFnsBound = _DEFAULT_SWIZZLE_WITH_PERM_VALUE_FNS,
-    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
-    guard_cfg=None,
+    safe_gather_value_fn: SafeGatherValueFn = _jax_safe.safe_gather_1d_value,
+    guard_cfg: GuardConfig | None = None,
     arena_root_hash_fn=_arena_root_hash_host,
     damage_tile_size_fn=_damage_tile_size,
     damage_metrics_update_fn=_damage_metrics_update,
@@ -614,8 +631,8 @@ def cycle(
     servo_update_fn=_servo_update,
     op_morton_fn=op_morton,
     swizzle_with_perm_fns: SwizzleWithPermFnsBound = _DEFAULT_SWIZZLE_WITH_PERM_FNS,
-    safe_gather_fn=_jax_safe.safe_gather_1d,
-    guard_cfg=None,
+    safe_gather_fn: SafeGatherFn = _jax_safe.safe_gather_1d,
+    guard_cfg: GuardConfig | None = None,
     arena_root_hash_fn=_arena_root_hash_host,
     damage_tile_size_fn=_damage_tile_size,
     damage_metrics_update_fn=_damage_metrics_update,
@@ -650,8 +667,8 @@ def cycle_value(
     servo_update_fn=_servo_update,
     op_morton_fn=op_morton,
     swizzle_with_perm_fns: SwizzleWithPermFnsBound = _DEFAULT_SWIZZLE_WITH_PERM_VALUE_FNS,
-    safe_gather_value_fn=_jax_safe.safe_gather_1d_value,
-    guard_cfg=None,
+    safe_gather_value_fn: SafeGatherValueFn = _jax_safe.safe_gather_1d_value,
+    guard_cfg: GuardConfig | None = None,
     arena_root_hash_fn=_arena_root_hash_host,
     damage_tile_size_fn=_damage_tile_size,
     damage_metrics_update_fn=_damage_metrics_update,
@@ -800,14 +817,15 @@ def cycle_cfg(
             op_interact_fn = op_interact_value
         else:
             op_interact_fn = lambda a: op_interact(a, safe_gather_fn=safe_gather_fn)
+    swizzle_bundle = SwizzleWithPermFnsBundle(
+        with_perm=op_sort_and_swizzle_with_perm_fn,
+        morton_with_perm=op_sort_and_swizzle_morton_with_perm_fn,
+        blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_fn,
+        hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_fn,
+        servo_with_perm=op_sort_and_swizzle_servo_with_perm_fn,
+    )
+    swizzle_with_perm_fns = SwizzleWithPermFnsBound(**asdict(swizzle_bundle))
     if safe_gather_policy_value is not None and safe_gather_value_fn is not None:
-        swizzle_with_perm_fns = SwizzleWithPermFnsBound(
-            with_perm=op_sort_and_swizzle_with_perm_fn,
-            morton_with_perm=op_sort_and_swizzle_morton_with_perm_fn,
-            blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_fn,
-            hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_fn,
-            servo_with_perm=op_sort_and_swizzle_servo_with_perm_fn,
-        )
         return cycle_value(
             arena,
             root_ptr,
@@ -825,13 +843,6 @@ def cycle_cfg(
             damage_metrics_update_fn=damage_metrics_update_fn,
             op_interact_value_fn=op_interact_fn,
         )
-    swizzle_with_perm_fns = SwizzleWithPermFnsBound(
-        with_perm=op_sort_and_swizzle_with_perm_fn,
-        morton_with_perm=op_sort_and_swizzle_morton_with_perm_fn,
-        blocked_with_perm=op_sort_and_swizzle_blocked_with_perm_fn,
-        hierarchical_with_perm=op_sort_and_swizzle_hierarchical_with_perm_fn,
-        servo_with_perm=op_sort_and_swizzle_servo_with_perm_fn,
-    )
     return cycle_core(
         arena,
         root_ptr,

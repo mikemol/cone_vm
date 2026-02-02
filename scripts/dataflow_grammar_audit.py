@@ -1105,7 +1105,13 @@ def _local_main() -> None:
 def main() -> None:
     """Dispatch to gabion's analyzer when available, else run local audit."""
     if _gabion_main is not None:
-        return _gabion_main()
+        try:
+            return _gabion_main()
+        except Exception as exc:  # pragma: no cover - fallback for CI robustness.
+            print(
+                f"dataflow_grammar_audit: gabion failed ({exc}); falling back to local audit.",
+                file=sys.stderr,
+            )
     return _local_main()
 
 

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import partial
-from typing import Callable
+from typing import Callable, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -50,13 +50,15 @@ from prism_vm_core.domains import (
 )
 from prism_vm_core.ontology import ProvisionalIds
 from prism_vm_core.guards import _guards_enabled
-from prism_vm_core.structures import NodeBatch, Stratum
+from prism_vm_core.structures import Ledger, NodeBatch, Stratum
 from prism_core.protocols import SafeGatherOkBoundFn, SafeGatherOkFn, SafeGatherOkValueFn
 from prism_vm_core.protocols import HostRaiseFn, InternFn, NodeBatchFn
 
 safe_gather_1d = _jax_safe.safe_gather_1d
 safe_gather_1d_ok = _jax_safe.safe_gather_1d_ok
 safe_gather_1d_ok_value = _jax_safe.safe_gather_1d_ok_value
+
+T = TypeVar("T")
 
 
 def _ledger_index_is_bound(fn: Callable[..., object]) -> bool:
@@ -69,11 +71,12 @@ def _ledger_index_is_bound(fn: Callable[..., object]) -> bool:
 
 
 def _bind_ledger_index(
-    fn: Callable[..., object], ledger_index: LedgerIndex | None
-) -> Callable[..., object]:
+    fn: Callable[..., T], ledger_index: LedgerIndex | None
+) -> Callable[..., T]:
     if ledger_index is None or _ledger_index_is_bound(fn):
         return fn
 
+    # dataflow-bundle: args, kwargs
     def _wrapped(*args, **kwargs):
         return call_with_optional_kwargs(
             fn, {"ledger_index": ledger_index}, *args, **kwargs
@@ -245,13 +248,29 @@ def apply_q(
     return out, ok
 
 
+def apply_q_ok(
+    q: QMap,
+    ids,
+    *,
+    provisional_ids_fn=_provisional_ids,
+):
+    """Collapseʰ: homomorphic projection q with ok mask."""
+    ids_in = provisional_ids_fn(ids)
+    out = q(ids_in)
+    meta = getattr(q, "_prism_meta", None)
+    if meta is None:
+        ok = jnp.ones_like(out.a, dtype=jnp.bool_)
+        return out, ok
+    ok = _q_map_ok(ids_in, meta)
+    return out, ok
+
+
 def _apply_stratum_q_core(
     ids,
     stratum: Stratum,
     canon_ids,
     label: str,
     *,
-    safe_gather_fn=safe_gather_1d,
     safe_gather_ok_fn: SafeGatherOkFn = safe_gather_1d_ok,
     guards_enabled_fn=_guards_enabled,
     provisional_ids_fn=_provisional_ids,
@@ -296,7 +315,6 @@ def _apply_stratum_q_static(
     canon_ids,
     label: str,
     *,
-    safe_gather_fn=safe_gather_1d,
     safe_gather_ok_fn: SafeGatherOkBoundFn = safe_gather_1d_ok,
     guards_enabled_fn=_guards_enabled,
     provisional_ids_fn=_provisional_ids,
@@ -309,7 +327,6 @@ def _apply_stratum_q_static(
         stratum,
         canon_ids,
         label,
-        safe_gather_fn=safe_gather_fn,
         safe_gather_ok_fn=safe_gather_ok_fn,
         guards_enabled_fn=guards_enabled_fn,
         provisional_ids_fn=provisional_ids_fn,
@@ -324,7 +341,6 @@ def _apply_stratum_q_dynamic(
     canon_ids,
     label: str,
     *,
-    safe_gather_fn=safe_gather_1d,
     safe_gather_ok_fn: SafeGatherOkFn = safe_gather_1d_ok,
     guards_enabled_fn=_guards_enabled,
     provisional_ids_fn=_provisional_ids,
@@ -343,7 +359,6 @@ def _apply_stratum_q_dynamic(
         stratum,
         canon_ids,
         label,
-        safe_gather_fn=safe_gather_fn,
         safe_gather_ok_fn=safe_gather_ok_fn,
         guards_enabled_fn=guards_enabled_fn,
         provisional_ids_fn=provisional_ids_fn,
@@ -411,7 +426,7 @@ def _apply_stratum_q_value(
 
 
 def _commit_stratum_core(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
@@ -507,7 +522,7 @@ def _commit_stratum_core(
 
 
 def _commit_stratum_common_static(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
@@ -571,7 +586,7 @@ def _commit_stratum_common_static(
 
 
 def _commit_stratum_common_value(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
@@ -629,7 +644,7 @@ def _commit_stratum_common_value(
 
 
 def _commit_stratum_common_bound(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
@@ -693,7 +708,7 @@ def _commit_stratum_common_bound(
 
 
 def commit_stratum_static(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
@@ -762,7 +777,7 @@ def commit_stratum_static(
 
 
 def commit_stratum_bound(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
@@ -819,7 +834,7 @@ def commit_stratum_bound(
 
 
 def commit_stratum_value(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
@@ -878,7 +893,7 @@ def commit_stratum_value(
 
 
 def commit_stratum(
-    ledger,
+    ledger: Ledger,
     stratum: Stratum,
     prior_q: QMap | None = None,
     validate_mode: ValidateMode = ValidateMode.NONE,
@@ -1016,6 +1031,7 @@ def commit_stratum(
 
 __all__ = [
     "apply_q",
+    "apply_q_ok",
     "commit_stratum",
     "commit_stratum_static",
     "commit_stratum_bound",

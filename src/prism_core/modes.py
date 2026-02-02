@@ -66,7 +66,7 @@ def coerce_bsp_mode(
     mode: BspMode | str | None,
     *,
     default_fn=None,
-    context: str | None = None,
+    context: str | None = "bsp_mode",
 ) -> BspMode:
     if mode is None or mode == "" or mode == BspMode.AUTO:
         return default_fn() if default_fn is not None else BspMode.AUTO
