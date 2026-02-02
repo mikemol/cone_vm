@@ -216,7 +216,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest pytest-xdist jax jaxlib
+          python -m pip install pytest pytest-xdist jax jaxlib jaxtyping beartype
       - name: Record telemetry metadata (baseline)
         run: |
           mkdir -p artifacts
@@ -230,7 +230,7 @@ jobs:
           mkdir -p artifacts
           set -euo pipefail
           pytest -c pytest.baseline.ini \
-            -n auto \
+            -n auto -vv -ra \
             --junitxml artifacts/pytest-baseline.xml \
             2>&1 | tee artifacts/pytest-baseline.txt
       - name: Upload pytest artifact (baseline)
@@ -258,7 +258,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest pytest-xdist jax jaxlib
+          python -m pip install pytest pytest-xdist jax jaxlib jaxtyping beartype
       - name: Record telemetry metadata (suite)
         run: |
           mkdir -p artifacts
@@ -384,7 +384,7 @@ jobs:
       - name: Install test dependencies (GPU)
         run: |
           mise exec -- python -m pip install --upgrade pip
-          mise exec -- python -m pip install pytest nvidia-ml-py "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+          mise exec -- python -m pip install pytest nvidia-ml-py jaxtyping beartype "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
       - name: Verify GPU backend
         run: |
           mise exec -- python - <<'PY'
@@ -452,7 +452,7 @@ jobs:
       - name: Install test dependencies (GPU)
         run: |
           mise exec -- python -m pip install --upgrade pip
-          mise exec -- python -m pip install pytest nvidia-ml-py "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+          mise exec -- python -m pip install pytest nvidia-ml-py jaxtyping beartype "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
       - name: Verify GPU backend
         run: |
           mise exec -- python - <<'PY'
